@@ -1,0 +1,1688 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>星岩傳說 — 多人養成對戰</title>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+TC:wght@400;700;900&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #0a0c14;
+  --bg2: #0f1220;
+  --bg3: #161b2e;
+  --surface: #1a2035;
+  --surface2: #212840;
+  --border: #2a3555;
+  --border2: #3a4a70;
+  --accent: #4f8ef7;
+  --accent2: #7b5ea7;
+  --gold: #e8c84a;
+  --red: #e05555;
+  --green: #4ec97a;
+  --cyan: #3ecfcf;
+  --text: #dce3f5;
+  --text2: #8a9abf;
+  --text3: #5a6a8f;
+  --iron: #9e9e9e;
+  --bronze: #cd7f32;
+  --silver: #c0c0c0;
+  --yellow: #ffd700;
+  --plat: #a8d8ea;
+  --diamond: #b9f2ff;
+  --jade: #00a86b;
+  --obsidian: #3d1766;
+  --meteor: #ff6b35;
+  --starrock: #f9ca24;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font-family:'Noto Serif TC',serif;min-height:100vh;overflow-x:hidden}
+body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellipse at 20% 20%,#0d1a3a 0%,transparent 60%),radial-gradient(ellipse at 80% 80%,#1a0d3a 0%,transparent 60%);pointer-events:none;z-index:0}
+
+/* ===== SCROLLBAR ===== */
+::-webkit-scrollbar{width:6px}
+::-webkit-scrollbar-track{background:var(--bg2)}
+::-webkit-scrollbar-thumb{background:var(--border2);border-radius:3px}
+
+/* ===== UTILS ===== */
+.hidden{display:none!important}
+.flex{display:flex}
+.col{flex-direction:column}
+.gap4{gap:4px}.gap8{gap:8px}.gap12{gap:12px}.gap16{gap:16px}
+.center{align-items:center;justify-content:center}
+.between{justify-content:space-between}
+.wrap{flex-wrap:wrap}
+.bold{font-weight:700}
+.mono{font-family:'Share Tech Mono',monospace}
+.gold{color:var(--gold)}
+.red{color:var(--red)}
+.green{color:var(--green)}
+.cyan{color:var(--cyan)}
+.accent{color:var(--accent)}
+
+/* ===== SCREENS ===== */
+.screen{position:fixed;inset:0;z-index:10;overflow-y:auto;padding:20px}
+.screen.active{display:flex;flex-direction:column;align-items:center;justify-content:flex-start}
+
+/* ===== AUTH SCREEN ===== */
+#authScreen{background:var(--bg);padding:0}
+#authScreen::before{content:'';position:fixed;inset:0;background:
+  radial-gradient(circle at 30% 40%, #0d2a5a44 0%,transparent 50%),
+  radial-gradient(circle at 70% 60%, #2a0d5a33 0%,transparent 50%);pointer-events:none}
+.auth-hero{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;padding:40px 20px;position:relative;z-index:1}
+.auth-logo{font-size:52px;font-weight:900;letter-spacing:8px;color:var(--gold);text-shadow:0 0 30px #e8c84a88,0 0 60px #e8c84a33;margin-bottom:8px;animation:glow 3s ease-in-out infinite}
+@keyframes glow{0%,100%{text-shadow:0 0 30px #e8c84a88,0 0 60px #e8c84a33}50%{text-shadow:0 0 50px #e8c84aaa,0 0 100px #e8c84a55}}
+.auth-sub{color:var(--text2);font-size:14px;letter-spacing:4px;margin-bottom:40px}
+.auth-card{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:32px;width:100%;max-width:380px;backdrop-filter:blur(10px)}
+.auth-tabs{display:flex;border-bottom:1px solid var(--border);margin-bottom:24px}
+.auth-tab{flex:1;padding:10px;text-align:center;cursor:pointer;color:var(--text2);font-size:15px;transition:.2s;border-bottom:2px solid transparent;margin-bottom:-1px}
+.auth-tab.active{color:var(--gold);border-bottom-color:var(--gold)}
+.form-group{margin-bottom:16px}
+.form-label{font-size:12px;color:var(--text2);margin-bottom:6px;letter-spacing:1px}
+.form-input{width:100%;padding:10px 14px;background:var(--bg3);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:14px;outline:none;transition:.2s;font-family:inherit}
+.form-input:focus{border-color:var(--accent);box-shadow:0 0 0 3px #4f8ef722}
+.btn{padding:10px 20px;border-radius:8px;border:none;cursor:pointer;font-size:14px;font-weight:700;font-family:inherit;transition:.2s;letter-spacing:1px}
+.btn-primary{background:linear-gradient(135deg,var(--accent),var(--accent2));color:#fff;box-shadow:0 4px 20px #4f8ef744}
+.btn-primary:hover{transform:translateY(-1px);box-shadow:0 6px 28px #4f8ef766}
+.btn-primary:active{transform:translateY(0)}
+.btn-secondary{background:var(--surface2);border:1px solid var(--border2);color:var(--text)}
+.btn-secondary:hover{background:var(--border);border-color:var(--border2)}
+.btn-danger{background:linear-gradient(135deg,#c0392b,#e74c3c);color:#fff}
+.btn-gold{background:linear-gradient(135deg,#b8860b,var(--gold));color:#0a0c14}
+.btn-sm{padding:6px 14px;font-size:12px}
+.btn-full{width:100%}
+.err-msg{color:var(--red);font-size:12px;margin-top:8px;text-align:center}
+.ok-msg{color:var(--green);font-size:12px;margin-top:8px;text-align:center}
+
+/* ===== MAIN LAYOUT ===== */
+#mainScreen{padding:0;align-items:stretch}
+.main-layout{display:flex;flex-direction:column;width:100%;max-width:1200px;margin:0 auto;min-height:100vh;position:relative;z-index:1}
+.topbar{display:flex;align-items:center;justify-content:space-between;padding:12px 20px;background:var(--surface);border-bottom:1px solid var(--border);position:sticky;top:0;z-index:100}
+.topbar-logo{font-size:20px;font-weight:900;color:var(--gold);letter-spacing:4px}
+.player-info{display:flex;align-items:center;gap:12px}
+.rank-badge{padding:3px 10px;border-radius:20px;font-size:11px;font-weight:700;letter-spacing:1px}
+.player-stats-mini{font-size:12px;color:var(--text2);display:flex;gap:12px}
+.stat-item{display:flex;align-items:center;gap:4px}
+.nav-tabs{display:flex;border-bottom:1px solid var(--border);background:var(--bg2);overflow-x:auto}
+.nav-tab{padding:12px 20px;cursor:pointer;font-size:13px;color:var(--text2);border-bottom:2px solid transparent;margin-bottom:-1px;white-space:nowrap;transition:.2s;letter-spacing:1px}
+.nav-tab.active{color:var(--accent);border-bottom-color:var(--accent)}
+.nav-tab:hover{color:var(--text)}
+.tab-content{padding:20px;flex:1}
+
+/* ===== HOME TAB ===== */
+.home-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px;margin-bottom:24px}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px}
+.card-title{font-size:12px;color:var(--text2);letter-spacing:2px;margin-bottom:12px;text-transform:uppercase}
+.rank-display{text-align:center;padding:20px 0}
+.rank-name{font-size:36px;font-weight:900;margin-bottom:4px}
+.rank-exp{font-size:12px;color:var(--text2)}
+.progress-bar{height:6px;background:var(--bg3);border-radius:3px;overflow:hidden;margin-top:8px}
+.progress-fill{height:100%;background:linear-gradient(90deg,var(--accent),var(--accent2));border-radius:3px;transition:width .5s ease}
+.attrs-display{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;text-align:center}
+.attr-box{background:var(--bg3);border-radius:8px;padding:10px 8px}
+.attr-val{font-size:22px;font-weight:700;font-family:'Share Tech Mono',monospace}
+.attr-lbl{font-size:10px;color:var(--text2);letter-spacing:1px;margin-top:2px}
+.hp .attr-val{color:var(--green)}
+.atk .attr-val{color:var(--red)}
+.def .attr-val{color:var(--cyan)}
+.gold-display{text-align:center;padding:16px 0}
+.gold-amount{font-size:40px;font-weight:900;font-family:'Share Tech Mono',monospace;color:var(--gold)}
+
+/* ===== SKILLS TAB ===== */
+.skills-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:16px}
+.skill-card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px;position:relative;overflow:hidden}
+.skill-card::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,var(--accent),var(--accent2))}
+.skill-name{font-size:16px;font-weight:700;margin-bottom:6px;color:var(--gold)}
+.skill-desc{font-size:12px;color:var(--text2);line-height:1.6;margin-bottom:12px}
+.skill-level{display:flex;align-items:center;gap:8px;margin-bottom:10px}
+.skill-lvl-badge{background:var(--bg3);border:1px solid var(--border2);border-radius:6px;padding:3px 10px;font-size:12px;font-family:'Share Tech Mono',monospace}
+.skill-cap{font-size:11px;color:var(--text3)}
+.skill-cost{font-size:12px;color:var(--gold);margin-bottom:10px}
+
+/* ===== FRIENDS TAB ===== */
+.friend-list{display:flex;flex-direction:column;gap:8px}
+.friend-item{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:12px 16px;display:flex;align-items:center;justify-content:space-between}
+.friend-name{font-size:14px;font-weight:700}
+.friend-rank{font-size:11px;color:var(--text2)}
+.friend-add{display:flex;gap:8px;margin-bottom:16px}
+.friend-input{flex:1;padding:8px 12px;background:var(--bg3);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px;outline:none;font-family:inherit}
+.friend-input:focus{border-color:var(--accent)}
+
+/* ===== LEADERBOARD ===== */
+.lb-list{display:flex;flex-direction:column;gap:8px}
+.lb-item{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:12px 16px;display:flex;align-items:center;gap:12px}
+.lb-rank{width:32px;height:32px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;font-family:'Share Tech Mono',monospace;background:var(--bg3);flex-shrink:0}
+.lb-rank.top1{background:linear-gradient(135deg,#b8860b,var(--gold));color:#000}
+.lb-rank.top2{background:linear-gradient(135deg,#888,#ccc);color:#000}
+.lb-rank.top3{background:linear-gradient(135deg,#7a4f00,#cd7f32);color:#000}
+.lb-name{flex:1;font-size:14px;font-weight:700}
+.lb-info{font-size:12px;color:var(--text2);text-align:right}
+
+/* ===== CHAT ===== */
+.chat-layout{display:flex;flex-direction:column;height:calc(100vh - 180px);min-height:400px}
+.chat-messages{flex:1;overflow-y:auto;padding:12px;background:var(--bg3);border:1px solid var(--border);border-radius:10px 10px 0 0;display:flex;flex-direction:column;gap:6px}
+.chat-msg{padding:6px 10px;border-radius:8px;max-width:85%}
+.chat-msg.own{background:var(--surface2);border:1px solid var(--border2);align-self:flex-end}
+.chat-msg.other{background:var(--surface);border:1px solid var(--border);align-self:flex-start}
+.chat-msg-user{font-size:11px;color:var(--text2);margin-bottom:2px;display:flex;align-items:center;gap:6px}
+.chat-msg-text{font-size:13px;line-height:1.5}
+.chat-input-row{display:flex;gap:8px;background:var(--surface);border:1px solid var(--border);border-top:none;padding:10px;border-radius:0 0 10px 10px}
+.chat-input{flex:1;padding:8px 12px;background:var(--bg3);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px;outline:none;font-family:inherit;resize:none}
+.chat-input:focus{border-color:var(--accent)}
+
+/* ===== MATCH/TEAM SCREEN ===== */
+#matchScreen,.game-overlay{position:fixed;inset:0;z-index:200;background:var(--bg);display:flex;flex-direction:column;align-items:center;justify-content:center;padding:20px}
+.match-card{background:var(--surface);border:1px solid var(--border);border-radius:20px;padding:40px;width:100%;max-width:480px;text-align:center}
+.match-title{font-size:28px;font-weight:900;color:var(--gold);margin-bottom:8px;letter-spacing:4px}
+.match-sub{font-size:13px;color:var(--text2);margin-bottom:32px;letter-spacing:2px}
+.match-btn-group{display:flex;flex-direction:column;gap:12px}
+.team-display{display:flex;gap:12px;justify-content:center;margin:20px 0;flex-wrap:wrap}
+.team-slot{width:100px;height:100px;background:var(--bg3);border:2px dashed var(--border2);border-radius:12px;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:12px;color:var(--text3);gap:4px;transition:.3s}
+.team-slot.filled{border-style:solid;border-color:var(--accent);color:var(--text);background:var(--surface2)}
+.team-slot.bot{border-color:var(--text3)}
+.match-status{font-size:14px;color:var(--text2);margin:16px 0;letter-spacing:2px}
+.match-timer{font-size:32px;font-weight:700;font-family:'Share Tech Mono',monospace;color:var(--gold);margin:8px 0}
+.spinner{width:40px;height:40px;border:3px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin 1s linear infinite;margin:16px auto}
+@keyframes spin{to{transform:rotate(360deg)}}
+.room-code-display{background:var(--bg3);border:1px solid var(--border2);border-radius:10px;padding:12px 20px;font-size:28px;font-family:'Share Tech Mono',monospace;color:var(--gold);letter-spacing:6px;margin:16px 0}
+
+/* ===== GAME SCREEN ===== */
+#gameScreen{position:fixed;inset:0;z-index:300;background:var(--bg);overflow-y:auto;padding:16px}
+.game-container{max-width:900px;margin:0 auto}
+.game-header{text-align:center;margin-bottom:20px;padding:12px;background:var(--surface);border:1px solid var(--border);border-radius:10px}
+.game-stage{font-size:18px;font-weight:900;color:var(--gold);letter-spacing:4px}
+.alloc-panel{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:20px;margin-bottom:20px}
+.alloc-title{font-size:14px;color:var(--text2);letter-spacing:2px;margin-bottom:16px;text-align:center}
+.points-left{text-align:center;margin-bottom:16px;font-size:24px;font-weight:700;font-family:'Share Tech Mono',monospace;color:var(--accent)}
+.alloc-row{display:flex;align-items:center;gap:12px;margin-bottom:12px}
+.alloc-lbl{width:60px;font-size:13px;color:var(--text2)}
+.alloc-val{width:50px;text-align:center;font-size:18px;font-weight:700;font-family:'Share Tech Mono',monospace}
+.alloc-btn{width:32px;height:32px;border-radius:6px;border:1px solid var(--border2);background:var(--bg3);color:var(--text);font-size:18px;cursor:pointer;transition:.2s;display:flex;align-items:center;justify-content:center}
+.alloc-btn:hover:not(:disabled){background:var(--surface2);border-color:var(--accent)}
+.alloc-btn:disabled{opacity:.3;cursor:not-allowed}
+.alloc-hint{font-size:11px;color:var(--text3);margin-left:4px}
+
+/* ===== BATTLE AREA ===== */
+.battle-area{display:grid;grid-template-columns:1fr auto 1fr;gap:16px;align-items:start;margin-bottom:20px}
+.team-panel{display:flex;flex-direction:column;gap:8px}
+.team-label{font-size:11px;letter-spacing:2px;color:var(--text2);text-align:center;margin-bottom:4px}
+.fighter-card{background:var(--surface);border:2px solid var(--border);border-radius:10px;padding:10px;cursor:default;transition:.2s;position:relative}
+.fighter-card.alive{border-color:var(--border2)}
+.fighter-card.dead{opacity:.4;border-color:var(--border);filter:grayscale(.8)}
+.fighter-card.enemy.alive{cursor:pointer}
+.fighter-card.enemy.alive:hover{border-color:var(--red);background:var(--surface2)}
+.fighter-card.active-turn{border-color:var(--gold);box-shadow:0 0 12px #e8c84a44;animation:pulse .8s ease-in-out infinite alternate}
+@keyframes pulse{0%{box-shadow:0 0 8px #e8c84a44}100%{box-shadow:0 0 20px #e8c84a88}}
+.fighter-card.target-selected{border-color:var(--red);box-shadow:0 0 12px #e0555544}
+.fighter-name{font-size:13px;font-weight:700;margin-bottom:6px;display:flex;justify-content:space-between}
+.hp-bar{height:6px;background:var(--bg3);border-radius:3px;overflow:hidden;margin-bottom:6px}
+.hp-fill{height:100%;border-radius:3px;transition:width .4s ease}
+.hp-fill.high{background:var(--green)}
+.hp-fill.mid{background:var(--gold)}
+.hp-fill.low{background:var(--red)}
+.fighter-stats{display:flex;gap:8px;font-size:11px;font-family:'Share Tech Mono',monospace}
+.fs-hp{color:var(--green)}
+.fs-atk{color:var(--red)}
+.fs-def{color:var(--cyan)}
+.vs-badge{display:flex;align-items:center;justify-content:center;font-size:24px;font-weight:900;color:var(--text2);padding:20px 0}
+.battle-log{background:var(--bg3);border:1px solid var(--border);border-radius:10px;padding:12px;height:180px;overflow-y:auto;margin-bottom:16px}
+.log-entry{font-size:12px;line-height:1.8;padding:2px 0;border-bottom:1px solid #ffffff08}
+.log-entry:last-child{border-bottom:none}
+.battle-controls{display:flex;gap:12px;justify-content:center;flex-wrap:wrap}
+.battle-hint{text-align:center;font-size:12px;color:var(--text3);margin-bottom:8px;letter-spacing:1px}
+.turn-indicator{text-align:center;padding:8px;background:var(--surface);border:1px solid var(--border);border-radius:8px;font-size:13px;margin-bottom:12px;letter-spacing:1px}
+.result-overlay{position:fixed;inset:0;z-index:400;background:#00000099;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(6px)}
+.result-card{background:var(--surface);border:2px solid var(--border2);border-radius:20px;padding:40px;text-align:center;max-width:420px;width:100%;animation:popIn .4s cubic-bezier(.175,.885,.32,1.275) forwards}
+@keyframes popIn{from{transform:scale(.7);opacity:0}to{transform:scale(1);opacity:1}}
+.result-title{font-size:40px;font-weight:900;margin-bottom:12px;letter-spacing:4px}
+.result-win{color:var(--gold)}
+.result-lose{color:var(--red)}
+.result-rewards{margin:16px 0;font-size:14px;color:var(--text2);line-height:2}
+.dmg-popup{position:absolute;top:-10px;left:50%;transform:translateX(-50%);font-size:18px;font-weight:900;font-family:'Share Tech Mono',monospace;pointer-events:none;animation:dmgFloat 1.2s ease-out forwards;z-index:50;white-space:nowrap}
+@keyframes dmgFloat{0%{opacity:1;transform:translateX(-50%) translateY(0)}100%{opacity:0;transform:translateX(-50%) translateY(-40px)}}
+.dmg-normal{color:var(--red)}
+.dmg-crit{color:var(--gold)}
+.dmg-thorns{color:var(--cyan)}
+.dmg-block{color:var(--text3)}
+.dmg-heal{color:var(--green)}
+
+/* ===== RANK COLORS ===== */
+.rank-鐵{color:var(--iron)}.rank-銅{color:var(--bronze)}.rank-銀{color:var(--silver)}.rank-金{color:var(--yellow)}.rank-白金{color:var(--plat)}.rank-鑽{color:var(--diamond)}.rank-翡{color:var(--jade)}.rank-曜{color:var(--accent2)}.rank-隕{color:var(--meteor)}.rank-岩{color:var(--starrock)}
+
+/* ===== RESPONSIVE ===== */
+@media(max-width:700px){
+  .battle-area{grid-template-columns:1fr;grid-template-rows:auto auto auto}
+  .vs-badge{transform:rotate(90deg)}
+  .home-grid{grid-template-columns:1fr}
+  .skills-grid{grid-template-columns:1fr}
+}
+
+/* ===== MODAL ===== */
+.modal-overlay{position:fixed;inset:0;z-index:500;background:#00000099;display:flex;align-items:center;justify-content:center;padding:20px;backdrop-filter:blur(4px)}
+.modal-card{background:var(--surface);border:1px solid var(--border2);border-radius:16px;padding:28px;width:100%;max-width:420px;animation:popIn .3s ease forwards}
+.modal-title{font-size:18px;font-weight:700;margin-bottom:16px;color:var(--gold)}
+.modal-actions{display:flex;gap:10px;margin-top:20px}
+
+/* ===== NOTIFICATION ===== */
+.notif{position:fixed;top:20px;right:20px;z-index:1000;padding:12px 20px;border-radius:10px;font-size:13px;font-weight:700;animation:slideIn .3s ease,fadeOut .3s ease 2.7s forwards;pointer-events:none;max-width:300px}
+.notif-ok{background:var(--green);color:#000}
+.notif-err{background:var(--red);color:#fff}
+.notif-info{background:var(--accent);color:#fff}
+@keyframes slideIn{from{transform:translateX(100%);opacity:0}to{transform:translateX(0);opacity:1}}
+@keyframes fadeOut{to{opacity:0;transform:translateX(20px)}}
+</style>
+</head>
+<body>
+
+<!-- AUTH SCREEN -->
+<div id="authScreen" class="screen active">
+  <div class="auth-hero">
+    <div class="auth-logo">星岩傳說</div>
+    <div class="auth-sub">LEGEND OF STARROCK</div>
+    <div class="auth-card">
+      <div class="auth-tabs">
+        <div class="auth-tab active" onclick="switchAuthTab('login')">登入</div>
+        <div class="auth-tab" onclick="switchAuthTab('register')">註冊</div>
+      </div>
+      <!-- Login -->
+      <div id="loginForm">
+        <div class="form-group"><div class="form-label">暱稱</div><input class="form-input" id="loginName" placeholder="輸入暱稱" autocomplete="username"></div>
+        <div class="form-group"><div class="form-label">密碼</div><input class="form-input" id="loginPass" type="password" placeholder="輸入密碼" autocomplete="current-password"></div>
+        <button class="btn btn-primary btn-full" onclick="doLogin()">登入遊戲</button>
+        <div id="loginMsg"></div>
+      </div>
+      <!-- Register -->
+      <div id="registerForm" class="hidden">
+        <div class="form-group"><div class="form-label">暱稱</div><input class="form-input" id="regName" placeholder="2-12字元" autocomplete="username"></div>
+        <div class="form-group"><div class="form-label">密碼</div><input class="form-input" id="regPass" type="password" placeholder="4字元以上" autocomplete="new-password"></div>
+        <div class="form-group"><div class="form-label">確認密碼</div><input class="form-input" id="regPass2" type="password" placeholder="再輸入一次" autocomplete="new-password"></div>
+        <button class="btn btn-primary btn-full" onclick="doRegister()">建立帳號</button>
+        <div id="registerMsg"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- MAIN SCREEN -->
+<div id="mainScreen" class="screen hidden">
+  <div class="main-layout">
+    <div class="topbar">
+      <div class="topbar-logo">星岩傳說</div>
+      <div class="player-info">
+        <span id="tb-rank" class="rank-badge"></span>
+        <span id="tb-name" class="bold" style="font-size:14px"></span>
+        <div class="player-stats-mini">
+          <div class="stat-item gold">💰<span id="tb-gold">0</span></div>
+          <div class="stat-item green">⬡<span id="tb-exp">0</span></div>
+        </div>
+        <button class="btn btn-secondary btn-sm" onclick="doLogout()">登出</button>
+      </div>
+    </div>
+    <div class="nav-tabs">
+      <div class="nav-tab active" onclick="switchTab('home')">🏠 主頁</div>
+      <div class="nav-tab" onclick="switchTab('play')">⚔️ 進行遊戲</div>
+      <div class="nav-tab" onclick="switchTab('skills')">✨ 技能商店</div>
+      <div class="nav-tab" onclick="switchTab('friends')">👥 好友</div>
+      <div class="nav-tab" onclick="switchTab('leaderboard')">🏆 排行榜</div>
+      <div class="nav-tab" onclick="switchTab('globalChat')">💬 全服聊天</div>
+      <div class="nav-tab" onclick="switchTab('teamChat')">🔗 小隊聊天</div>
+    </div>
+    <div class="tab-content">
+
+      <!-- HOME TAB -->
+      <div id="tab-home">
+        <div class="home-grid">
+          <div class="card">
+            <div class="card-title">等級 / 排名</div>
+            <div class="rank-display">
+              <div id="rank-name-big" class="rank-name"></div>
+              <div id="rank-exp-text" class="rank-exp"></div>
+              <div class="progress-bar"><div id="rank-progress" class="progress-fill" style="width:0%"></div></div>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-title">基礎屬性</div>
+            <div class="attrs-display">
+              <div class="attr-box hp"><div class="attr-val" id="stat-hp">5</div><div class="attr-lbl">血量</div></div>
+              <div class="attr-box atk"><div class="attr-val" id="stat-atk">0</div><div class="attr-lbl">攻擊</div></div>
+              <div class="attr-box def"><div class="attr-val" id="stat-def">0</div><div class="attr-lbl">防禦</div></div>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-title">金幣</div>
+            <div class="gold-display"><div class="gold-amount" id="stat-gold">0</div></div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-title">已解鎖技能</div>
+          <div id="home-skills-list" style="font-size:13px;color:var(--text2);line-height:2"></div>
+        </div>
+      </div>
+
+      <!-- PLAY TAB -->
+      <div id="tab-play" class="hidden">
+        <div style="max-width:500px;margin:0 auto;text-align:center">
+          <div style="font-size:24px;font-weight:900;color:var(--gold);letter-spacing:4px;margin-bottom:8px">選擇遊玩方式</div>
+          <div style="font-size:13px;color:var(--text2);margin-bottom:32px;letter-spacing:1px">與隊友一起挑戰五關怪物</div>
+          <div style="display:flex;flex-direction:column;gap:16px">
+            <button class="btn btn-primary" style="padding:16px;font-size:16px" onclick="showCreateTeam()">⚔️ 建立小隊</button>
+            <button class="btn btn-secondary" style="padding:16px;font-size:16px;border-color:var(--accent2);color:var(--accent2)" onclick="showJoinTeam()">🔑 加入小隊</button>
+            <button class="btn btn-secondary" style="padding:16px;font-size:16px" onclick="startMatchmaking()">🔀 隨機匹配</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- SKILLS TAB -->
+      <div id="tab-skills" class="hidden">
+        <div id="skills-grid" class="skills-grid"></div>
+      </div>
+
+      <!-- FRIENDS TAB -->
+      <div id="tab-friends" class="hidden">
+        <div class="friend-add">
+          <input class="friend-input" id="friendInput" placeholder="輸入玩家暱稱">
+          <button class="btn btn-primary" onclick="addFriend()">新增好友</button>
+        </div>
+        <div id="friendRequests" class="hidden" style="margin-bottom:16px">
+          <div style="font-size:12px;color:var(--text2);letter-spacing:2px;margin-bottom:8px">好友邀請</div>
+          <div id="friendReqList"></div>
+        </div>
+        <div style="font-size:12px;color:var(--text2);letter-spacing:2px;margin-bottom:8px">好友列表</div>
+        <div id="friendsList" class="friend-list"></div>
+      </div>
+
+      <!-- LEADERBOARD TAB -->
+      <div id="tab-leaderboard" class="hidden">
+        <div id="lbList" class="lb-list"></div>
+      </div>
+
+      <!-- GLOBAL CHAT -->
+      <div id="tab-globalChat" class="hidden">
+        <div class="chat-layout">
+          <div id="globalChatMessages" class="chat-messages"></div>
+          <div class="chat-input-row">
+            <input class="chat-input" id="globalChatInput" placeholder="輸入訊息..." onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendGlobalChat()}">
+            <button class="btn btn-primary" onclick="sendGlobalChat()">發送</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- TEAM CHAT -->
+      <div id="tab-teamChat" class="hidden">
+        <div id="teamChatContent">
+          <div style="text-align:center;color:var(--text2);font-size:13px;padding:40px">尚未加入小隊</div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<!-- MATCH SCREEN -->
+<div id="matchScreen" class="hidden">
+  <div class="match-card">
+    <div class="match-title" id="matchTitle">隨機匹配</div>
+    <div class="match-sub" id="matchSub">搜尋隊友中...</div>
+    <div class="team-display" id="matchTeamDisplay"></div>
+    <div class="match-timer" id="matchTimer"></div>
+    <div class="match-status" id="matchStatus"></div>
+    <div class="spinner" id="matchSpinner"></div>
+    <div style="margin-top:16px;display:flex;flex-direction:column;gap:10px" id="matchBtns">
+      <button class="btn btn-danger" onclick="cancelMatchmaking()">取消匹配</button>
+    </div>
+  </div>
+</div>
+
+<!-- GAME SCREEN -->
+<div id="gameScreen" class="hidden">
+  <div class="game-container">
+    <div class="game-header">
+      <div class="game-stage" id="gameStageText">第 1 關</div>
+      <div style="font-size:12px;color:var(--text2);margin-top:4px" id="gameStageSub">分配屬性點數</div>
+    </div>
+
+    <!-- Alloc Panel -->
+    <div class="alloc-panel" id="allocPanel">
+      <div class="alloc-title">分配屬性點（每點：+5血量 / +1攻擊 / +1防禦）</div>
+      <div class="points-left">剩餘點數：<span id="allocPointsLeft">10</span></div>
+      <div class="alloc-row">
+        <div class="alloc-lbl green">❤ 血量</div>
+        <button class="alloc-btn" onclick="allocAttr('hp',-1)">−</button>
+        <div class="alloc-val green" id="alloc-hp">0</div>
+        <button class="alloc-btn" onclick="allocAttr('hp',1)">+</button>
+        <div class="alloc-hint" id="alloc-hp-total"></div>
+      </div>
+      <div class="alloc-row">
+        <div class="alloc-lbl red">⚔ 攻擊</div>
+        <button class="alloc-btn" onclick="allocAttr('atk',-1)">−</button>
+        <div class="alloc-val red" id="alloc-atk">0</div>
+        <button class="alloc-btn" onclick="allocAttr('atk',1)">+</button>
+        <div class="alloc-hint" id="alloc-atk-total"></div>
+      </div>
+      <div class="alloc-row">
+        <div class="alloc-lbl cyan">🛡 防禦</div>
+        <button class="alloc-btn" onclick="allocAttr('def',-1)">−</button>
+        <div class="alloc-val cyan" id="alloc-def">0</div>
+        <button class="alloc-btn" onclick="allocAttr('def',1)">+</button>
+        <div class="alloc-hint" id="alloc-def-total"></div>
+      </div>
+      <div style="margin-top:16px;text-align:center">
+        <button class="btn btn-primary" onclick="confirmAlloc()" id="confirmAllocBtn">確認屬性，開始戰鬥</button>
+      </div>
+    </div>
+
+    <!-- Battle Area -->
+    <div id="battleSection" class="hidden">
+      <div class="turn-indicator" id="turnIndicator">等待中...</div>
+      <div class="battle-area">
+        <div class="team-panel" id="playerTeamPanel">
+          <div class="team-label accent">✦ 我方</div>
+        </div>
+        <div class="vs-badge">VS</div>
+        <div class="team-panel" id="enemyTeamPanel">
+          <div class="team-label red">✦ 敵方</div>
+        </div>
+      </div>
+      <div class="battle-hint" id="battleHint">選擇要攻擊的敵人</div>
+      <div class="battle-log" id="battleLog"></div>
+      <div class="battle-controls" id="battleControls"></div>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: Create Team -->
+<div id="createTeamModal" class="modal-overlay hidden">
+  <div class="modal-card">
+    <div class="modal-title">⚔️ 建立小隊</div>
+    <div class="form-group">
+      <div class="form-label">小隊代碼（4-8字元）</div>
+      <input class="form-input" id="createTeamCode" placeholder="自訂代碼，例：HERO1234" maxlength="8">
+    </div>
+    <div id="createTeamMsg" style="font-size:12px;color:var(--red);margin-top:4px"></div>
+    <div class="modal-actions">
+      <button class="btn btn-primary" onclick="doCreateTeam()">建立</button>
+      <button class="btn btn-secondary" onclick="closeModal('createTeamModal')">取消</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: Join Team -->
+<div id="joinTeamModal" class="modal-overlay hidden">
+  <div class="modal-card">
+    <div class="modal-title">🔑 加入小隊</div>
+    <div class="form-group">
+      <div class="form-label">小隊代碼</div>
+      <input class="form-input" id="joinTeamCode" placeholder="輸入小隊代碼" maxlength="8">
+    </div>
+    <div id="joinTeamMsg" style="font-size:12px;color:var(--red);margin-top:4px"></div>
+    <div class="modal-actions">
+      <button class="btn btn-primary" onclick="doJoinTeam()">加入</button>
+      <button class="btn btn-secondary" onclick="closeModal('joinTeamModal')">取消</button>
+    </div>
+  </div>
+</div>
+
+<!-- RESULT OVERLAY -->
+<div id="resultOverlay" class="result-overlay hidden">
+  <div class="result-card">
+    <div class="result-title" id="resultTitle"></div>
+    <div class="result-rewards" id="resultRewards"></div>
+    <div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap">
+      <button class="btn btn-primary" id="nextStageBtn" onclick="nextStage()">下一關</button>
+      <button class="btn btn-secondary" onclick="exitGame()">結束遊戲</button>
+    </div>
+  </div>
+</div>
+
+<!-- Firebase -->
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+import { getDatabase, ref, set, get, push, onValue, off, remove, update, serverTimestamp, query, orderByChild, limitToLast, onChildAdded }
+  from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
+
+// ===== FIREBASE CONFIG =====
+// IMPORTANT: Replace with your own Firebase config
+const firebaseConfig = {
+  apiKey: "AIzaSyCaWzHzxTte5_o02Opq7002T386pVHTMHY",
+  authDomain: "large-rpg.firebaseapp.com",
+  databaseURL: "https://large-rpg-default-rtdb.asia-southeast1.firebasedatabase.app",
+  projectId: "large-rpg",
+  storageBucket: "large-rpg.firebasestorage.app",
+  messagingSenderId: "285439658443",
+  appId: "1:285439658443:web:e0ba91ac0c6725f3464e4e",
+  measurementId: "G-JE1BVYM7P8"
+};
+const app = initializeApp(firebaseConfig);
+const db = getDatabase(app);
+
+// ===== CONSTANTS =====
+const RANKS = [
+  {name:'黑鐵',key:'鐵',exp:0,hp:5,atk:0,def:0},
+  {name:'青銅',key:'銅',exp:1000,hp:6,atk:1,def:0},
+  {name:'白銀',key:'銀',exp:10000,hp:7,atk:1,def:1},
+  {name:'黃金',key:'金',exp:100000,hp:9,atk:2,def:2},
+  {name:'白金',key:'白金',exp:1000000,hp:12,atk:3,def:3},
+  {name:'鑽石',key:'鑽',exp:10000000,hp:16,atk:4,def:4},
+  {name:'翡翠',key:'翡',exp:100000000,hp:21,atk:5,def:5},
+  {name:'曜石',key:'曜',exp:1000000000,hp:27,atk:6,def:6},
+  {name:'隕鐵',key:'隕',exp:10000000000,hp:34,atk:7,def:7},
+  {name:'星岩',key:'岩',exp:100000000000,hp:40,atk:10,def:10}
+];
+const STAGE_CONFIG = [
+  {stage:1,playerPts:10,monsterPts:9,exp:100,gold:100},
+  {stage:2,playerPts:5,monsterPts:15,exp:250,gold:250},
+  {stage:3,playerPts:5,monsterPts:21,exp:500,gold:500},
+  {stage:4,playerPts:10,monsterPts:35,exp:1500,gold:1500},
+  {stage:5,playerPts:10,monsterPts:50,exp:5000,gold:5000}
+];
+const SKILLS_DEF = [
+  {id:'反傷',name:'反傷',desc:'受到傷害時，將傷害的5%返還給攻擊者（最低1點）。每升1級+7%。',basePct:5,perLv:7,baseCost:1000},
+  {id:'爆擊',name:'爆擊',desc:'每次攻擊有10%機率造成120%傷害。每升1級各+5%機率和+5%傷害。',baseChance:10,baseDmgPct:120,perLvChance:5,perLvDmg:5,baseCost:1000},
+  {id:'賭徒',name:'賭徒',desc:'每次攻擊有50%機率造成200%傷害，50%機率僅造成10%傷害（最低1點）。每升1級各加10%。',baseHighPct:200,baseLowPct:10,perLv:10,baseCost:1000}
+];
+
+// ===== STATE =====
+window.G = {
+  uid: null, // use nickname as uid
+  player: null,
+  currentTab: 'home',
+  matchRef: null,
+  matchTimer: null,
+  matchCountdown: null,
+  teamId: null,
+  teamRef: null,
+  globalChatRef: null,
+  teamChatRef: null,
+  listeners: {},
+  // game state
+  gameState: null,
+};
+
+// ===== HELPERS =====
+function getRankIndex(exp) {
+  let idx = 0;
+  for (let i = RANKS.length-1; i >= 0; i--) {
+    if (exp >= RANKS[i].exp) { idx = i; break; }
+  }
+  return idx;
+}
+function getRank(exp) { return RANKS[getRankIndex(exp)]; }
+function getRankColor(key) {
+  const map = {'鐵':'#9e9e9e','銅':'#cd7f32','銀':'#c0c0c0','金':'#ffd700','白金':'#a8d8ea','鑽':'#b9f2ff','翡':'#00a86b','曜':'#7b5ea7','隕':'#ff6b35','岩':'#f9ca24'};
+  return map[key] || '#fff';
+}
+function skillUpgradeCost(baseCost, level) {
+  // level=current level. cost to go from level to level+1
+  if (level === 0) return baseCost;
+  return Math.round(baseCost * Math.pow(15, level));
+}
+function getSkillMaxLevel(exp) { return getRankIndex(exp) + 1; }
+function rollMonsterStats(pts) {
+  // randomly distribute pts into hp(×5), atk(×1), def(×1)
+  let remaining = pts;
+  let hp = 0, atk = 0, def = 0;
+  const arr = ['hp','hp','hp','atk','def'];
+  for (let i = 0; i < pts; i++) {
+    const r = Math.floor(Math.random() * 3);
+    if (r === 0) hp += 5;
+    else if (r === 1) atk++;
+    else def++;
+  }
+  return {hp: hp || 5, atk, def, maxHp: hp || 5};
+}
+function botStats(rankOffset, playerExp) {
+  let rankIdx = getRankIndex(playerExp);
+  rankIdx = Math.max(0, Math.min(RANKS.length-1, rankIdx + rankOffset));
+  const r = RANKS[rankIdx];
+  return {name:'人機', isBot:true, rankKey:r.key, rankName:r.name, hp:r.hp, maxHp:r.hp, atk:r.atk, def:r.def, exp:RANKS[rankIdx].exp, skills:{}};
+}
+function notify(msg, type='info') {
+  const el = document.createElement('div');
+  el.className = `notif notif-${type}`;
+  el.textContent = msg;
+  document.body.appendChild(el);
+  setTimeout(() => el.remove(), 3200);
+}
+function showMsg(id, msg, type='err') {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.className = type === 'ok' ? 'ok-msg' : 'err-msg';
+  el.textContent = msg;
+}
+function closeModal(id) { document.getElementById(id).classList.add('hidden'); }
+function openModal(id) { document.getElementById(id).classList.remove('hidden'); }
+function fmtBig(n) {
+  if (n >= 1e11) return (n/1e11).toFixed(0)+'千億';
+  if (n >= 1e10) return (n/1e10).toFixed(0)+'百億';
+  if (n >= 1e8) return (n/1e8).toFixed(1)+'億';
+  if (n >= 1e4) return (n/1e4).toFixed(1)+'萬';
+  return String(n);
+}
+
+// ===== AUTH =====
+window.switchAuthTab = (tab) => {
+  document.querySelectorAll('.auth-tab').forEach((t,i) => t.classList.toggle('active', (i===0&&tab==='login')||(i===1&&tab==='register')));
+  document.getElementById('loginForm').classList.toggle('hidden', tab !== 'login');
+  document.getElementById('registerForm').classList.toggle('hidden', tab !== 'register');
+};
+
+window.doRegister = async () => {
+  const name = document.getElementById('regName').value.trim();
+  const pass = document.getElementById('regPass').value;
+  const pass2 = document.getElementById('regPass2').value;
+  if (!name || name.length < 2 || name.length > 12) return showMsg('registerMsg','暱稱需2-12字元');
+  if (!pass || pass.length < 4) return showMsg('registerMsg','密碼需4字元以上');
+  if (pass !== pass2) return showMsg('registerMsg','兩次密碼不同');
+  const snap = await get(ref(db, `players/${name}`));
+  if (snap.exists()) return showMsg('registerMsg','此暱稱已被使用');
+  const newPlayer = {name, password: btoa(pass), exp:0, gold:0, skills:{}, friends:{}, createdAt:Date.now()};
+  await set(ref(db, `players/${name}`), newPlayer);
+  showMsg('registerMsg','註冊成功！請登入', 'ok');
+  setTimeout(() => switchAuthTab('login'), 1200);
+};
+
+window.doLogin = async () => {
+  const name = document.getElementById('loginName').value.trim();
+  const pass = document.getElementById('loginPass').value;
+  if (!name || !pass) return showMsg('loginMsg','請輸入暱稱和密碼');
+  const snap = await get(ref(db, `players/${name}`));
+  if (!snap.exists()) return showMsg('loginMsg','帳號不存在');
+  const data = snap.val();
+  if (data.password !== btoa(pass)) return showMsg('loginMsg','密碼錯誤');
+  G.uid = name;
+  G.player = data;
+  enterMain();
+};
+
+window.doLogout = () => {
+  cleanupListeners();
+  G.uid = null; G.player = null;
+  document.getElementById('mainScreen').classList.add('hidden');
+  document.getElementById('authScreen').classList.remove('hidden');
+  document.getElementById('authScreen').classList.add('active');
+};
+
+// ===== MAIN =====
+function enterMain() {
+  document.getElementById('authScreen').classList.add('hidden');
+  document.getElementById('authScreen').classList.remove('active');
+  document.getElementById('mainScreen').classList.remove('hidden');
+  document.getElementById('mainScreen').classList.add('active');
+  updateUI();
+  setupGlobalChat();
+  setupFriendListeners();
+  switchTab('home');
+}
+
+function updateUI() {
+  const p = G.player;
+  const rank = getRank(p.exp || 0);
+  const idx = getRankIndex(p.exp || 0);
+  const color = getRankColor(rank.key);
+  document.getElementById('tb-name').textContent = p.name;
+  document.getElementById('tb-gold').textContent = (p.gold||0).toLocaleString();
+  document.getElementById('tb-exp').textContent = fmtBig(p.exp||0);
+  document.getElementById('tb-rank').textContent = rank.name;
+  document.getElementById('tb-rank').style.background = color + '33';
+  document.getElementById('tb-rank').style.color = color;
+  document.getElementById('tb-rank').style.border = `1px solid ${color}66`;
+  // home
+  document.getElementById('rank-name-big').textContent = rank.name;
+  document.getElementById('rank-name-big').style.color = color;
+  const nextExp = idx < RANKS.length-1 ? RANKS[idx+1].exp : p.exp;
+  const curExp = RANKS[idx].exp;
+  const pct = idx >= RANKS.length-1 ? 100 : Math.floor((p.exp - curExp)/(nextExp-curExp)*100);
+  document.getElementById('rank-exp-text').textContent = `${fmtBig(p.exp||0)} / ${fmtBig(nextExp)} EXP`;
+  document.getElementById('rank-progress').style.width = pct + '%';
+  document.getElementById('stat-hp').textContent = rank.hp;
+  document.getElementById('stat-atk').textContent = rank.atk;
+  document.getElementById('stat-def').textContent = rank.def;
+  document.getElementById('stat-gold').textContent = (p.gold||0).toLocaleString();
+  // home skills
+  const skills = p.skills || {};
+  const skillsEl = document.getElementById('home-skills-list');
+  let html = '';
+  for (const sid of Object.keys(skills)) {
+    const lv = skills[sid];
+    const sd = SKILLS_DEF.find(s => s.id === sid);
+    if (sd && lv > 0) html += `<span style="margin-right:16px">【${sd.name} Lv.${lv}】</span>`;
+  }
+  skillsEl.innerHTML = html || '<span>尚未擁有技能</span>';
+}
+
+window.switchTab = (tab) => {
+  document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.tab-content > div').forEach(d => d.classList.add('hidden'));
+  const tabs = ['home','play','skills','friends','leaderboard','globalChat','teamChat'];
+  const idx = tabs.indexOf(tab);
+  if (idx >= 0) document.querySelectorAll('.nav-tab')[idx].classList.add('active');
+  document.getElementById(`tab-${tab}`).classList.remove('hidden');
+  G.currentTab = tab;
+  if (tab === 'skills') renderSkillsTab();
+  if (tab === 'leaderboard') loadLeaderboard();
+  if (tab === 'friends') renderFriends();
+  if (tab === 'teamChat') renderTeamChat();
+};
+
+// ===== SKILLS TAB =====
+function renderSkillsTab() {
+  const p = G.player;
+  const maxLv = getSkillMaxLevel(p.exp || 0);
+  let html = '';
+  for (const sd of SKILLS_DEF) {
+    const curLv = (p.skills || {})[sd.id] || 0;
+    const canLevelUp = curLv < maxLv;
+    const upgradeCost = skillUpgradeCost(sd.baseCost, curLv);
+    const canAfford = (p.gold || 0) >= upgradeCost;
+    html += `<div class="skill-card">
+      <div class="skill-name">${sd.name}</div>
+      <div class="skill-desc">${sd.desc}</div>
+      <div class="skill-level">
+        <div class="skill-lvl-badge">Lv.${curLv}</div>
+        <div class="skill-cap">/ 上限 Lv.${maxLv}</div>
+      </div>
+      <div class="skill-cost">升級費用：💰 ${canLevelUp ? upgradeCost.toLocaleString() : '已達上限'}</div>
+      <button class="btn ${canLevelUp && canAfford ? 'btn-gold' : 'btn-secondary'} btn-sm"
+        onclick="upgradeSkill('${sd.id}')"
+        ${!canLevelUp || !canAfford ? 'disabled' : ''}>
+        ${curLv === 0 ? '購買' : '升級'}
+      </button>
+    </div>`;
+  }
+  document.getElementById('skills-grid').innerHTML = html;
+}
+
+window.upgradeSkill = async (sid) => {
+  const p = G.player;
+  const maxLv = getSkillMaxLevel(p.exp || 0);
+  const curLv = (p.skills || {})[sid] || 0;
+  if (curLv >= maxLv) return notify('已達技能等級上限','err');
+  const cost = skillUpgradeCost(SKILLS_DEF.find(s=>s.id===sid).baseCost, curLv);
+  if ((p.gold||0) < cost) return notify('金幣不足','err');
+  const newSkills = { ...(p.skills||{}), [sid]: curLv+1 };
+  const newGold = (p.gold||0) - cost;
+  await update(ref(db, `players/${G.uid}`), { skills: newSkills, gold: newGold });
+  G.player.skills = newSkills;
+  G.player.gold = newGold;
+  updateUI();
+  renderSkillsTab();
+  notify(`${sid} 升至 Lv.${curLv+1}！`, 'ok');
+};
+
+// ===== FRIENDS =====
+function setupFriendListeners() {
+  const fReqRef = ref(db, `friendRequests/${G.uid}`);
+  G.listeners.friendReq = onValue(fReqRef, snap => {
+    const data = snap.val() || {};
+    const keys = Object.keys(data);
+    const el = document.getElementById('friendRequests');
+    el.classList.toggle('hidden', keys.length === 0);
+    let html = '';
+    for (const k of keys) {
+      html += `<div class="friend-item">
+        <div><div class="friend-name">${k}</div><div class="friend-rank">邀請你成為好友</div></div>
+        <div style="display:flex;gap:6px">
+          <button class="btn btn-primary btn-sm" onclick="acceptFriend('${k}')">接受</button>
+          <button class="btn btn-secondary btn-sm" onclick="declineFriend('${k}')">拒絕</button>
+        </div>
+      </div>`;
+    }
+    document.getElementById('friendReqList').innerHTML = html;
+  });
+}
+
+window.renderFriends = async () => {
+  const friends = G.player.friends || {};
+  const keys = Object.keys(friends);
+  let html = '';
+  for (const k of keys) {
+    const snap = await get(ref(db, `players/${k}`));
+    if (!snap.exists()) continue;
+    const fp = snap.val();
+    const rank = getRank(fp.exp||0);
+    const color = getRankColor(rank.key);
+    html += `<div class="friend-item">
+      <div><div class="friend-name">${k}</div><div class="friend-rank" style="color:${color}">${rank.name}</div></div>
+      <button class="btn btn-secondary btn-sm" onclick="removeFriend('${k}')">移除</button>
+    </div>`;
+  }
+  document.getElementById('friendsList').innerHTML = html || '<div style="color:var(--text2);font-size:13px;text-align:center;padding:20px">尚無好友</div>';
+};
+
+window.addFriend = async () => {
+  const name = document.getElementById('friendInput').value.trim();
+  if (!name) return;
+  if (name === G.uid) return notify('不能加自己','err');
+  if ((G.player.friends||{})[name]) return notify('已是好友','err');
+  const snap = await get(ref(db, `players/${name}`));
+  if (!snap.exists()) return notify('找不到玩家','err');
+  await set(ref(db, `friendRequests/${name}/${G.uid}`), true);
+  notify('好友邀請已送出','ok');
+  document.getElementById('friendInput').value = '';
+};
+
+window.acceptFriend = async (from) => {
+  const myFriends = { ...(G.player.friends||{}), [from]: true };
+  await update(ref(db, `players/${G.uid}`), { friends: myFriends });
+  G.player.friends = myFriends;
+  const theirSnap = await get(ref(db, `players/${from}`));
+  if (theirSnap.exists()) {
+    const theirFriends = { ...(theirSnap.val().friends||{}), [G.uid]: true };
+    await update(ref(db, `players/${from}`), { friends: theirFriends });
+  }
+  await remove(ref(db, `friendRequests/${G.uid}/${from}`));
+  renderFriends();
+  notify(`已與 ${from} 成為好友！`, 'ok');
+};
+
+window.declineFriend = async (from) => {
+  await remove(ref(db, `friendRequests/${G.uid}/${from}`));
+};
+
+window.removeFriend = async (name) => {
+  const myFriends = { ...(G.player.friends||{}) };
+  delete myFriends[name];
+  await update(ref(db, `players/${G.uid}`), { friends: myFriends });
+  G.player.friends = myFriends;
+  renderFriends();
+};
+
+// ===== LEADERBOARD =====
+window.loadLeaderboard = async () => {
+  const snap = await get(query(ref(db,'players'), orderByChild('exp'), limitToLast(20)));
+  const data = snap.val() || {};
+  const arr = Object.values(data).sort((a,b) => (b.exp||0) - (a.exp||0));
+  let html = '';
+  arr.slice(0,20).forEach((p,i) => {
+    const rank = getRank(p.exp||0);
+    const color = getRankColor(rank.key);
+    const badgeClass = i===0?'top1':i===1?'top2':i===2?'top3':'';
+    html += `<div class="lb-item">
+      <div class="lb-rank ${badgeClass}">${i+1}</div>
+      <div class="lb-name">${p.name}${p.name===G.uid?' (我)':''}</div>
+      <div class="lb-info"><span style="color:${color}">${rank.name}</span><br>${fmtBig(p.exp||0)} EXP<br>💰${(p.gold||0).toLocaleString()}</div>
+    </div>`;
+  });
+  document.getElementById('lbList').innerHTML = html;
+};
+
+// ===== GLOBAL CHAT =====
+function setupGlobalChat() {
+  const chatRef = ref(db, 'globalChat');
+  const recentQ = query(chatRef, orderByChild('ts'), limitToLast(80));
+  G.listeners.globalChat = onChildAdded(recentQ, snap => {
+    const msg = snap.val();
+    appendChatMsg('globalChatMessages', msg.name, msg.text, msg.rankKey, msg.name === G.uid);
+  });
+}
+
+function appendChatMsg(containerId, name, text, rankKey, isOwn) {
+  const el = document.getElementById(containerId);
+  if (!el) return;
+  const color = getRankColor(rankKey || '鐵');
+  const div = document.createElement('div');
+  div.className = `chat-msg ${isOwn ? 'own' : 'other'}`;
+  div.innerHTML = `<div class="chat-msg-user"><span style="color:${color}">${name}</span></div><div class="chat-msg-text">${text.replace(/</g,'&lt;')}</div>`;
+  el.appendChild(div);
+  el.scrollTop = el.scrollHeight;
+}
+
+window.sendGlobalChat = async () => {
+  const input = document.getElementById('globalChatInput');
+  const text = input.value.trim();
+  if (!text) return;
+  input.value = '';
+  const rank = getRank(G.player.exp||0);
+  await push(ref(db,'globalChat'), { name: G.uid, text, rankKey: rank.key, ts: Date.now() });
+};
+
+// ===== TEAM CHAT =====
+window.renderTeamChat = () => {
+  if (!G.teamId) {
+    document.getElementById('teamChatContent').innerHTML = '<div style="text-align:center;color:var(--text2);font-size:13px;padding:40px">尚未加入小隊<br><br><button class="btn btn-secondary" onclick="switchTab(\'play\')">前往組隊</button></div>';
+    return;
+  }
+  document.getElementById('teamChatContent').innerHTML = `
+    <div style="margin-bottom:8px;font-size:12px;color:var(--text2)">小隊代碼：<span style="color:var(--gold);font-family:monospace;font-size:16px">${G.teamId}</span></div>
+    <div class="chat-layout">
+      <div id="teamChatMessages" class="chat-messages"></div>
+      <div class="chat-input-row">
+        <input class="chat-input" id="teamChatInput" placeholder="小隊聊天..." onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendTeamChat()}">
+        <button class="btn btn-primary" onclick="sendTeamChat()">發送</button>
+      </div>
+    </div>`;
+  setupTeamChatListener();
+};
+
+function setupTeamChatListener() {
+  if (G.listeners.teamChat) { off(ref(db, `rooms/${G.teamId}/chat`)); }
+  const chatRef = query(ref(db, `rooms/${G.teamId}/chat`), orderByChild('ts'), limitToLast(80));
+  G.listeners.teamChat = onChildAdded(chatRef, snap => {
+    const msg = snap.val();
+    appendChatMsg('teamChatMessages', msg.name, msg.text, msg.rankKey, msg.name === G.uid);
+  });
+}
+
+window.sendTeamChat = async () => {
+  if (!G.teamId) return;
+  const input = document.getElementById('teamChatInput');
+  const text = input.value.trim();
+  if (!text) return;
+  input.value = '';
+  const rank = getRank(G.player.exp||0);
+  await push(ref(db, `rooms/${G.teamId}/chat`), { name: G.uid, text, rankKey: rank.key, ts: Date.now() });
+};
+
+// ===== PLAY / MATCHMAKING =====
+window.showCreateTeam = () => {
+  document.getElementById('createTeamCode').value = '';
+  document.getElementById('createTeamMsg').textContent = '';
+  openModal('createTeamModal');
+};
+window.showJoinTeam = () => {
+  document.getElementById('joinTeamCode').value = '';
+  document.getElementById('joinTeamMsg').textContent = '';
+  openModal('joinTeamModal');
+};
+
+window.doCreateTeam = async () => {
+  const code = document.getElementById('createTeamCode').value.trim().toUpperCase();
+  if (!code || code.length < 4 || code.length > 8) {
+    document.getElementById('createTeamMsg').textContent = '代碼需4-8字元';
+    return;
+  }
+  const snap = await get(ref(db, `rooms/${code}`));
+  if (snap.exists()) {
+    document.getElementById('createTeamMsg').textContent = '此代碼已被使用';
+    return;
+  }
+  closeModal('createTeamModal');
+  G.teamId = code;
+  await setupRoom(code, true);
+};
+
+window.doJoinTeam = async () => {
+  const code = document.getElementById('joinTeamCode').value.trim().toUpperCase();
+  if (!code) { document.getElementById('joinTeamMsg').textContent = '請輸入代碼'; return; }
+  const snap = await get(ref(db, `rooms/${code}`));
+  if (!snap.exists()) { document.getElementById('joinTeamMsg').textContent = '找不到此小隊'; return; }
+  closeModal('joinTeamModal');
+  G.teamId = code;
+  await joinRoom(code);
+};
+
+async function setupRoom(code, isLeader) {
+  const rank = getRank(G.player.exp||0);
+  const room = {
+    status: 'waiting',
+    createdAt: Date.now(),
+    members: { [G.uid]: { name: G.uid, rankKey: rank.key, rankName: rank.name, isBot: false, ready: false } },
+    leader: G.uid
+  };
+  await set(ref(db, `rooms/${code}`), room);
+  listenToRoom(code);
+  showRoomWaiting(code);
+}
+
+async function joinRoom(code) {
+  const rank = getRank(G.player.exp||0);
+  await update(ref(db, `rooms/${code}/members/${G.uid}`), { name: G.uid, rankKey: rank.key, rankName: rank.name, isBot: false, ready: false });
+  listenToRoom(code);
+  showRoomWaiting(code);
+}
+
+function showRoomWaiting(code) {
+  document.getElementById('matchScreen').classList.remove('hidden');
+  document.getElementById('matchTitle').textContent = '小隊等待室';
+  document.getElementById('matchSub').textContent = `小隊代碼：${code}`;
+  document.getElementById('matchTimer').textContent = '';
+  document.getElementById('matchSpinner').classList.add('hidden');
+  document.getElementById('matchStatus').textContent = '等待隊員加入...';
+  document.getElementById('matchBtns').innerHTML = `
+    <button class="btn btn-primary" onclick="readyUp()" id="readyBtn">準備</button>
+    <button class="btn btn-danger" onclick="leaveRoom()">離開小隊</button>`;
+  renderMatchTeam();
+}
+
+function listenToRoom(code) {
+  if (G.listeners.room) off(ref(db, `rooms/${code}`));
+  G.listeners.room = onValue(ref(db, `rooms/${code}`), snap => {
+    if (!snap.exists()) { leaveRoom(); return; }
+    const room = snap.val();
+    const members = room.members || {};
+    renderMatchTeam(members);
+    if (room.status === 'starting') {
+      // All ready, start game
+      startGameFromRoom(room, code);
+    }
+    if (room.status === 'disbanded') { leaveRoom(); }
+  });
+}
+
+window.readyUp = async () => {
+  const snap = await get(ref(db, `rooms/${G.teamId}/members`));
+  if (!snap.exists()) return;
+  const members = snap.val();
+  const count = Object.keys(members).length;
+  // Mark self ready
+  await update(ref(db, `rooms/${G.teamId}/members/${G.uid}`), { ready: true });
+  document.getElementById('readyBtn').disabled = true;
+  document.getElementById('readyBtn').textContent = '已準備';
+  // Check if all ready & 3 members
+  setTimeout(async () => {
+    const snap2 = await get(ref(db, `rooms/${G.teamId}`));
+    if (!snap2.exists()) return;
+    const room = snap2.val();
+    const mems = room.members || {};
+    const memVals = Object.values(mems);
+    const allReady = memVals.every(m => m.ready);
+    if (allReady && memVals.length >= 1) {
+      // fill with bots if < 3
+      const updated = { ...mems };
+      for (let i = memVals.length; i < 3; i++) {
+        const botOffset = [0,1,-1][Math.floor(Math.random()*3)];
+        const bs = botStats(botOffset, G.player.exp||0);
+        updated[`Bot_${i}`] = { name:`人機${i}`, rankKey:bs.rankKey, rankName:bs.rankName, isBot:true, ready:true };
+      }
+      await update(ref(db, `rooms/${G.teamId}`), { status: 'starting', members: updated });
+    }
+  }, 500);
+};
+
+window.leaveRoom = async () => {
+  if (G.teamId) {
+    if (G.listeners.room) { off(ref(db, `rooms/${G.teamId}`)); G.listeners.room = null; }
+    try {
+      await remove(ref(db, `rooms/${G.teamId}/members/${G.uid}`));
+      const snap = await get(ref(db, `rooms/${G.teamId}/members`));
+      if (!snap.exists() || Object.keys(snap.val()).length === 0) {
+        await remove(ref(db, `rooms/${G.teamId}`));
+      }
+    } catch(e){}
+    G.teamId = null;
+  }
+  document.getElementById('matchScreen').classList.add('hidden');
+};
+
+function renderMatchTeam(members) {
+  if (!members) {
+    get(ref(db, `rooms/${G.teamId}/members`)).then(s => renderMatchTeam(s.val()||{}));
+    return;
+  }
+  const memVals = Object.values(members);
+  let html = '';
+  for (let i = 0; i < 3; i++) {
+    const m = memVals[i];
+    if (m) {
+      const color = getRankColor(m.rankKey || '鐵');
+      html += `<div class="team-slot filled ${m.isBot?'bot':''}">
+        <div style="font-size:16px">${m.isBot?'🤖':'👤'}</div>
+        <div style="font-size:12px;font-weight:700">${m.name}</div>
+        <div style="font-size:10px;color:${color}">${m.rankName||''}</div>
+        <div style="font-size:10px;color:${m.ready?'var(--green)':'var(--text3)'}">${m.ready?'準備':'等待'}</div>
+      </div>`;
+    } else {
+      html += `<div class="team-slot"><div style="font-size:20px">？</div><div>等待中</div></div>`;
+    }
+  }
+  document.getElementById('matchTeamDisplay').innerHTML = html;
+}
+
+// ===== MATCHMAKING =====
+window.startMatchmaking = async () => {
+  document.getElementById('matchScreen').classList.remove('hidden');
+  document.getElementById('matchTitle').textContent = '隨機匹配';
+  document.getElementById('matchSub').textContent = '搜尋隊友中...';
+  document.getElementById('matchSpinner').classList.remove('hidden');
+  document.getElementById('matchTeamDisplay').innerHTML = '';
+  document.getElementById('matchBtns').innerHTML = `<button class="btn btn-danger" onclick="cancelMatchmaking()">取消匹配</button>`;
+  let seconds = 0;
+  document.getElementById('matchTimer').textContent = '0s';
+  G.matchCountdown = setInterval(() => {
+    seconds++;
+    document.getElementById('matchTimer').textContent = seconds + 's';
+  }, 1000);
+  // Add to matchmaking pool
+  const rank = getRank(G.player.exp||0);
+  const myPoolRef = ref(db, `matchPool/${G.uid}`);
+  await set(myPoolRef, { name: G.uid, rankKey: rank.key, rankName: rank.name, ts: Date.now() });
+  G.matchRef = myPoolRef;
+  // Poll for match
+  G.matchTimer = setTimeout(async () => { await formBotMatch(); }, 15000);
+  // Listen for a room assignment
+  const assignRef = ref(db, `matchAssign/${G.uid}`);
+  G.listeners.matchAssign = onValue(assignRef, async snap => {
+    if (snap.exists()) {
+      clearInterval(G.matchCountdown);
+      clearTimeout(G.matchTimer);
+      const { roomId } = snap.val();
+      await remove(assignRef);
+      G.teamId = roomId;
+      listenToRoom(roomId);
+      // Wait for room to start
+      document.getElementById('matchStatus').textContent = '已找到隊伍！等待準備...';
+      document.getElementById('matchSpinner').classList.add('hidden');
+    }
+  });
+  // Try to form a team from pool
+  setTimeout(() => tryFormMatch(), 2000);
+};
+
+async function tryFormMatch() {
+  if (!G.matchRef) return;
+  const poolSnap = await get(ref(db, 'matchPool'));
+  const pool = poolSnap.val() || {};
+  const players = Object.keys(pool).filter(k => pool[k]);
+  if (players.length >= 3) {
+    // Form a team (leader is first player in pool)
+    const team = players.slice(0, 3);
+    const roomId = 'MATCH_' + Date.now().toString(36).toUpperCase();
+    const members = {};
+    for (const p of team) {
+      members[p] = { name: p, rankKey: pool[p].rankKey, rankName: pool[p].rankName, isBot: false, ready: true };
+    }
+    await set(ref(db, `rooms/${roomId}`), { status: 'starting', members, createdAt: Date.now() });
+    for (const p of team) {
+      await set(ref(db, `matchAssign/${p}`), { roomId });
+      await remove(ref(db, `matchPool/${p}`));
+    }
+  } else if (G.matchRef) {
+    setTimeout(() => tryFormMatch(), 3000);
+  }
+}
+
+async function formBotMatch() {
+  if (!G.matchRef) return;
+  clearInterval(G.matchCountdown);
+  document.getElementById('matchStatus').textContent = '補充人機隊友...';
+  const roomId = 'MATCH_' + Date.now().toString(36).toUpperCase();
+  const rank = getRank(G.player.exp||0);
+  const members = {
+    [G.uid]: { name: G.uid, rankKey: rank.key, rankName: rank.name, isBot: false, ready: true }
+  };
+  for (let i = 1; i < 3; i++) {
+    const o = [0,1,-1][Math.floor(Math.random()*3)];
+    const bs = botStats(o, G.player.exp||0);
+    members[`Bot_${i}`] = { name:`人機${i}`, rankKey:bs.rankKey, rankName:bs.rankName, isBot:true, ready:true };
+  }
+  await set(ref(db, `rooms/${roomId}`), { status: 'starting', members, createdAt: Date.now() });
+  await remove(G.matchRef);
+  G.matchRef = null;
+  G.teamId = roomId;
+  listenToRoom(roomId);
+}
+
+window.cancelMatchmaking = async () => {
+  clearInterval(G.matchCountdown);
+  clearTimeout(G.matchTimer);
+  if (G.matchRef) { await remove(G.matchRef); G.matchRef = null; }
+  if (G.listeners.matchAssign) { off(ref(db, `matchAssign/${G.uid}`)); G.listeners.matchAssign = null; }
+  document.getElementById('matchScreen').classList.add('hidden');
+};
+
+// ===== GAME START FROM ROOM =====
+function startGameFromRoom(room, code) {
+  if (G.listeners.room) { off(ref(db, `rooms/${code}`)); G.listeners.room = null; }
+  document.getElementById('matchScreen').classList.add('hidden');
+  const members = room.members || {};
+  initGame(members, code);
+}
+
+// ===== GAME ENGINE =====
+function initGame(members, roomId) {
+  const rank = getRank(G.player.exp||0);
+  const memVals = Object.values(members);
+  // Build player team: self + teammates
+  const team = [];
+  for (const m of memVals) {
+    if (m.isBot) {
+      const botOffset = [0,1,-1][Math.floor(Math.random()*3)];
+      const bs = botStats(botOffset, G.player.exp||0);
+      team.push({ name: m.name, isBot:true, isMe:false,
+        hp: bs.hp, maxHp: bs.hp, atk: bs.atk, def: bs.def,
+        rankKey: m.rankKey, rankName: m.rankName, skills:{}, allocPts:10, allocDone:true });
+    } else if (m.name === G.uid) {
+      team.push({ name: G.uid, isBot:false, isMe:true,
+        baseHp: rank.hp, baseAtk: rank.atk, baseDef: rank.def,
+        hp: rank.hp, maxHp: rank.hp, atk: rank.atk, def: rank.def,
+        rankKey: rank.key, rankName: rank.name, skills: G.player.skills||{}, allocPts:0, allocDone:false,
+        allocExtra:{hp:0,atk:0,def:0} });
+    } else {
+      const mr = getRank(0);
+      team.push({ name: m.name, isBot:false, isMe:false,
+        hp: mr.hp, maxHp: mr.hp, atk: mr.atk, def: mr.def,
+        rankKey: m.rankKey, rankName: m.rankName, skills:{}, allocPts:10, allocDone:true });
+    }
+  }
+  G.gameState = {
+    stage: 1,
+    team,
+    enemies: [],
+    currentTurn: 0, // index in turnOrder
+    turnOrder: [],
+    battleActive: false,
+    roomId,
+    pendingAlloc: true,
+    log: [],
+    selectedEnemy: -1
+  };
+  document.getElementById('gameScreen').classList.remove('hidden');
+  startStage(1);
+}
+
+function startStage(stage) {
+  const gs = G.gameState;
+  gs.stage = stage;
+  gs.selectedEnemy = -1;
+  const cfg = STAGE_CONFIG[stage-1];
+  // Restore team HP to max
+  for (const m of gs.team) {
+    m.hp = m.maxHp;
+  }
+  // Generate enemies
+  gs.enemies = [];
+  for (let i = 0; i < 3; i++) {
+    const s = rollMonsterStats(cfg.monsterPts);
+    gs.enemies.push({ name:`怪物${i+1}`, isMonster:true, hp:s.hp, maxHp:s.hp, atk:s.atk, def:s.def, skills:{} });
+  }
+  gs.battleActive = false;
+  gs.pendingAlloc = true;
+  gs.log = [];
+  document.getElementById('gameStageText').textContent = `第 ${stage} 關`;
+  document.getElementById('gameStageSub').textContent = '分配屬性點數';
+  document.getElementById('allocPanel').classList.remove('hidden');
+  document.getElementById('battleSection').classList.add('hidden');
+  document.getElementById('resultOverlay').classList.add('hidden');
+  // Alloc panel setup
+  const pts = stage === 1 ? 10 : cfg.playerPts;
+  const myMem = gs.team.find(m => m.isMe);
+  if (myMem) {
+    myMem.allocPts = pts;
+    myMem.allocExtra = {hp:0,atk:0,def:0};
+  }
+  resetAllocUI(pts, myMem);
+}
+
+function resetAllocUI(pts, myMem) {
+  document.getElementById('allocPointsLeft').textContent = pts;
+  document.getElementById('alloc-hp').textContent = '0';
+  document.getElementById('alloc-atk').textContent = '0';
+  document.getElementById('alloc-def').textContent = '0';
+  updateAllocTotals(myMem);
+}
+
+function updateAllocTotals(myMem) {
+  if (!myMem) return;
+  const base = myMem;
+  const ex = myMem.allocExtra || {hp:0,atk:0,def:0};
+  // accumulated from previous stages
+  const totalHp = myMem.maxHp + ex.hp*5;
+  const totalAtk = myMem.atk + ex.atk;
+  const totalDef = myMem.def + ex.def;
+  // show current + what will be added
+  document.getElementById('alloc-hp-total').textContent = `→ ${totalHp + parseInt(document.getElementById('alloc-hp').textContent)*5}`;
+  document.getElementById('alloc-atk-total').textContent = `→ ${totalAtk + parseInt(document.getElementById('alloc-atk').textContent)}`;
+  document.getElementById('alloc-def-total').textContent = `→ ${totalDef + parseInt(document.getElementById('alloc-def').textContent)}`;
+}
+
+window.allocAttr = (attr, delta) => {
+  const gs = G.gameState;
+  const myMem = gs.team.find(m => m.isMe);
+  if (!myMem) return;
+  const ptsLeft = parseInt(document.getElementById('allocPointsLeft').textContent);
+  const current = parseInt(document.getElementById(`alloc-${attr}`).textContent);
+  if (delta > 0 && ptsLeft <= 0) return;
+  if (delta < 0 && current <= 0) return;
+  document.getElementById(`alloc-${attr}`).textContent = current + delta;
+  document.getElementById('allocPointsLeft').textContent = ptsLeft - delta;
+  updateAllocTotals(myMem);
+};
+
+window.confirmAlloc = () => {
+  const gs = G.gameState;
+  const myMem = gs.team.find(m => m.isMe);
+  if (!myMem) { startBattle(); return; }
+  const addHp = parseInt(document.getElementById('alloc-hp').textContent);
+  const addAtk = parseInt(document.getElementById('alloc-atk').textContent);
+  const addDef = parseInt(document.getElementById('alloc-def').textContent);
+  // Apply to myMem permanently for this game
+  myMem.maxHp = myMem.maxHp + addHp*5;
+  myMem.atk = myMem.atk + addAtk;
+  myMem.def = myMem.def + addDef;
+  myMem.hp = myMem.maxHp; // full heal on alloc
+  myMem.allocDone = true;
+  // Bots without alloc done get random allocation from team
+  for (const m of gs.team) {
+    if (!m.allocDone) {
+      const pts = myMem.allocPts || 10;
+      const rs = rollMonsterStats(pts);
+      m.maxHp = (m.maxHp||5) + rs.hp;
+      m.hp = m.maxHp;
+      m.atk = (m.atk||0) + rs.atk;
+      m.def = (m.def||0) + rs.def;
+      m.allocDone = true;
+    }
+  }
+  document.getElementById('allocPanel').classList.add('hidden');
+  document.getElementById('gameStageSub').textContent = '戰鬥中';
+  startBattle();
+};
+
+function startBattle() {
+  const gs = G.gameState;
+  gs.battleActive = true;
+  gs.pendingAlloc = false;
+  gs.log = [];
+  document.getElementById('battleSection').classList.remove('hidden');
+  // Build turn order: all alive team members first (random), then enemies
+  buildTurnOrder();
+  renderBattle();
+  processNextTurn();
+}
+
+function buildTurnOrder() {
+  const gs = G.gameState;
+  const team = gs.team.filter(m => m.hp > 0);
+  const enemies = gs.enemies.filter(e => e.hp > 0);
+  const shuffleArr = arr => arr.sort(() => Math.random()-0.5);
+  gs.turnOrder = [...shuffleArr(team.map((_,i)=>({type:'team',i}))), ...shuffleArr(enemies.map((_,i)=>({type:'enemy',i})))];
+  gs.currentTurn = 0;
+}
+
+function getActor() {
+  const gs = G.gameState;
+  if (gs.currentTurn >= gs.turnOrder.length) return null;
+  const t = gs.turnOrder[gs.currentTurn];
+  return t.type === 'team' ? gs.team[t.i] : gs.enemies[t.i];
+}
+
+function processNextTurn() {
+  const gs = G.gameState;
+  // Skip dead
+  while (gs.currentTurn < gs.turnOrder.length) {
+    const t = gs.turnOrder[gs.currentTurn];
+    const actor = t.type === 'team' ? gs.team[t.i] : gs.enemies[t.i];
+    if (actor && actor.hp > 0) break;
+    gs.currentTurn++;
+  }
+  if (gs.currentTurn >= gs.turnOrder.length) {
+    // Round over, check win/lose
+    if (checkBattleEnd()) return;
+    // New round
+    buildTurnOrder();
+    renderBattle();
+    processNextTurn();
+    return;
+  }
+  const t = gs.turnOrder[gs.currentTurn];
+  const actor = t.type === 'team' ? gs.team[t.i] : gs.enemies[t.i];
+  renderBattle();
+  if (!actor || actor.hp <= 0) { gs.currentTurn++; processNextTurn(); return; }
+  if (t.type === 'team' && actor.isMe) {
+    // Player's turn — wait for click
+    document.getElementById('battleHint').textContent = '請選擇要攻擊的敵人';
+    document.getElementById('turnIndicator').innerHTML = `<span class="gold">輪到你了！</span>`;
+    highlightActiveActor();
+  } else {
+    // AI turn
+    document.getElementById('battleHint').textContent = '';
+    document.getElementById('turnIndicator').textContent = `${actor.name} 的回合`;
+    highlightActiveActor();
+    setTimeout(() => aiTakeTurn(t), 800);
+  }
+}
+
+function aiTakeTurn(t) {
+  const gs = G.gameState;
+  const actor = t.type === 'team' ? gs.team[t.i] : gs.enemies[t.i];
+  if (!actor || actor.hp <= 0) { gs.currentTurn++; processNextTurn(); return; }
+  let targets;
+  if (t.type === 'team') {
+    // Bot attacks random enemy
+    targets = gs.enemies.filter(e => e.hp > 0);
+  } else {
+    // Enemy attacks random team
+    targets = gs.team.filter(m => m.hp > 0);
+  }
+  if (targets.length === 0) { gs.currentTurn++; processNextTurn(); return; }
+  const target = targets[Math.floor(Math.random()*targets.length)];
+  performAttack(actor, target, t.type === 'team' ? 'team' : 'enemy');
+  gs.currentTurn++;
+  if (checkBattleEnd()) return;
+  renderBattle();
+  setTimeout(() => processNextTurn(), 600);
+}
+
+window.clickEnemy = (i) => {
+  const gs = G.gameState;
+  if (!gs.battleActive) return;
+  const t = gs.turnOrder[gs.currentTurn];
+  if (!t || t.type !== 'team') return;
+  const actor = gs.team[t.i];
+  if (!actor || !actor.isMe || actor.hp <= 0) return;
+  const enemy = gs.enemies[i];
+  if (!enemy || enemy.hp <= 0) return;
+  gs.selectedEnemy = i;
+  performAttack(actor, enemy, 'team');
+  gs.currentTurn++;
+  if (checkBattleEnd()) return;
+  renderBattle();
+  setTimeout(() => processNextTurn(), 500);
+};
+
+function calcDamage(attacker, defender) {
+  let dmg = attacker.atk - defender.def;
+  if (attacker.atk <= defender.def) dmg = 1; // forced
+  let isCrit = false;
+  let isGamble = false;
+  let gamblerHigh = false;
+  const skills = attacker.skills || {};
+  // Gambler overrides base damage calc
+  const gamblerLv = skills['賭徒'] || 0;
+  if (gamblerLv > 0) {
+    const highPct = 200 + (gamblerLv-1)*10;
+    const lowPct = 10 + (gamblerLv-1)*10;
+    if (Math.random() < 0.5) {
+      // high
+      dmg = Math.round(attacker.atk * highPct/100);
+      if (dmg < 1) dmg = 1;
+      gamblerHigh = true;
+    } else {
+      // low
+      dmg = Math.round(attacker.atk * lowPct/100);
+      if (dmg < 1) dmg = 1;
+    }
+    isGamble = true;
+    // still apply def reduction unless gamble
+    if (!isGamble) { dmg = Math.max(1, dmg - defender.def); }
+  }
+  if (!isGamble) {
+    // Crit
+    const critLv = skills['爆擊'] || 0;
+    if (critLv > 0) {
+      const critChance = 10 + (critLv-1)*5;
+      const critDmg = 120 + (critLv-1)*5;
+      if (Math.random()*100 < critChance) {
+        dmg = Math.round(dmg * critDmg/100);
+        isCrit = true;
+      }
+    }
+  }
+  if (dmg < 1 && attacker.atk <= defender.def) dmg = 1;
+  if (dmg < 1) dmg = Math.round(dmg) || 1;
+  return { dmg, isCrit, isGamble, gamblerHigh };
+}
+
+function performAttack(attacker, defender, attackerType) {
+  const { dmg, isCrit, isGamble, gamblerHigh } = calcDamage(attacker, defender);
+  defender.hp = Math.max(0, defender.hp - dmg);
+  // Log
+  let msg = `<span class="accent">${attacker.name}</span> 攻擊 <span class="red">${defender.name}</span>`;
+  if (isCrit) msg += ` 💥<span class="gold">爆擊！</span>`;
+  if (isGamble) msg += gamblerHigh ? ` 🎰<span class="gold">賭徒大成功！</span>` : ` 🎰<span class="red">賭徒失敗...</span>`;
+  msg += ` 造成 <span class="red">${dmg}</span> 點傷害`;
+  if (defender.hp <= 0) msg += ` 💀`;
+  addLog(msg);
+  // Thorns (反傷)
+  const thornLv = (defender.skills||{})['反傷'] || 0;
+  if (thornLv > 0 && attacker.hp > 0) {
+    const thornPct = 5 + (thornLv-1)*7;
+    let thornDmg = Math.round(dmg * thornPct/100);
+    if (thornDmg < 1) thornDmg = 1;
+    attacker.hp = Math.max(0, attacker.hp - thornDmg);
+    addLog(`<span class="cyan">${defender.name}</span> 反傷！${attacker.name} 受到 <span class="cyan">${thornDmg}</span> 點傷害`);
+  }
+  showDmgPopup(attacker, defender, dmg, isCrit, 'normal');
+}
+
+function addLog(msg) {
+  const el = document.getElementById('battleLog');
+  const div = document.createElement('div');
+  div.className = 'log-entry';
+  div.innerHTML = msg;
+  el.appendChild(div);
+  el.scrollTop = el.scrollHeight;
+}
+
+function checkBattleEnd() {
+  const gs = G.gameState;
+  const teamAlive = gs.team.some(m => m.hp > 0);
+  const enemiesAlive = gs.enemies.some(e => e.hp > 0);
+  if (!enemiesAlive) {
+    setTimeout(() => showStageResult(true), 600);
+    return true;
+  }
+  if (!teamAlive) {
+    setTimeout(() => showStageResult(false), 600);
+    return true;
+  }
+  return false;
+}
+
+function showDmgPopup(attacker, defender, dmg, isCrit) {
+  // Visual only — find defender's card and add popup
+  renderBattle();
+}
+
+function renderBattle() {
+  const gs = G.gameState;
+  if (!gs) return;
+  const pPanel = document.getElementById('playerTeamPanel');
+  const ePanel = document.getElementById('enemyTeamPanel');
+  // Preserve label
+  pPanel.innerHTML = '<div class="team-label accent">✦ 我方</div>';
+  ePanel.innerHTML = '<div class="team-label red">✦ 敵方</div>';
+  const curT = gs.turnOrder[gs.currentTurn];
+  gs.team.forEach((m, i) => {
+    const isActive = curT && curT.type === 'team' && curT.i === i;
+    const hpPct = m.maxHp > 0 ? (m.hp/m.maxHp*100) : 0;
+    const hpClass = hpPct > 60 ? 'high' : hpPct > 30 ? 'mid' : 'low';
+    const rankColor = getRankColor(m.rankKey || '鐵');
+    pPanel.innerHTML += `<div class="fighter-card ${m.hp>0?'alive':'dead'} ${isActive?'active-turn':''}">
+      <div class="fighter-name">
+        <span>${m.isMe?'★ ':''}<span style="color:${rankColor}">${m.name}</span></span>
+        <span style="font-size:10px;color:var(--text3)">${m.rankName||''}</span>
+      </div>
+      <div class="hp-bar"><div class="hp-fill ${hpClass}" style="width:${hpPct}%"></div></div>
+      <div class="fighter-stats">
+        <span class="fs-hp">HP ${m.hp}/${m.maxHp}</span>
+        <span class="fs-atk">ATK ${m.atk}</span>
+        <span class="fs-def">DEF ${m.def}</span>
+      </div>
+    </div>`;
+  });
+  gs.enemies.forEach((e, i) => {
+    const isActive = curT && curT.type === 'enemy' && curT.i === i;
+    const isSelected = gs.selectedEnemy === i;
+    const hpPct = e.maxHp > 0 ? (e.hp/e.maxHp*100) : 0;
+    const hpClass = hpPct > 60 ? 'high' : hpPct > 30 ? 'mid' : 'low';
+    ePanel.innerHTML += `<div class="fighter-card enemy ${e.hp>0?'alive':'dead'} ${isActive?'active-turn':''} ${isSelected?'target-selected':''}" onclick="clickEnemy(${i})">
+      <div class="fighter-name">
+        <span>👾 ${e.name}</span>
+        ${e.hp>0?'<span style="font-size:10px;color:var(--text3)">點擊攻擊</span>':'<span style="font-size:10px;color:var(--red)">已擊敗</span>'}
+      </div>
+      <div class="hp-bar"><div class="hp-fill ${hpClass}" style="width:${hpPct}%"></div></div>
+      <div class="fighter-stats">
+        <span class="fs-hp">HP ${e.hp}/${e.maxHp}</span>
+        <span class="fs-atk">ATK ${e.atk}</span>
+        <span class="fs-def">DEF ${e.def}</span>
+      </div>
+    </div>`;
+  });
+}
+
+function highlightActiveActor() { renderBattle(); }
+
+function showStageResult(win) {
+  const gs = G.gameState;
+  gs.battleActive = false;
+  const cfg = STAGE_CONFIG[gs.stage-1];
+  const overlay = document.getElementById('resultOverlay');
+  overlay.classList.remove('hidden');
+  document.getElementById('resultTitle').textContent = win ? '勝利！' : '落敗...';
+  document.getElementById('resultTitle').className = `result-title ${win ? 'result-win' : 'result-lose'}`;
+  if (win) {
+    document.getElementById('resultRewards').innerHTML = `🎉 獲得 <span class="gold">${cfg.exp}</span> 經驗 + <span class="gold">${cfg.gold}</span> 金幣`;
+    document.getElementById('nextStageBtn').classList.toggle('hidden', gs.stage >= STAGE_CONFIG.length);
+    awardRewards(cfg.exp, cfg.gold);
+  } else {
+    document.getElementById('resultRewards').innerHTML = '隊伍全員陣亡，遊戲結束';
+    document.getElementById('nextStageBtn').classList.add('hidden');
+  }
+}
+
+async function awardRewards(exp, gold) {
+  const newExp = (G.player.exp||0) + exp;
+  const newGold = (G.player.gold||0) + gold;
+  await update(ref(db, `players/${G.uid}`), { exp: newExp, gold: newGold });
+  G.player.exp = newExp;
+  G.player.gold = newGold;
+  updateUI();
+}
+
+window.nextStage = () => {
+  const gs = G.gameState;
+  document.getElementById('resultOverlay').classList.add('hidden');
+  if (gs.stage < STAGE_CONFIG.length) {
+    startStage(gs.stage+1);
+  }
+};
+
+window.exitGame = async () => {
+  document.getElementById('gameScreen').classList.add('hidden');
+  document.getElementById('resultOverlay').classList.add('hidden');
+  // Cleanup room
+  if (G.teamId) {
+    try {
+      await remove(ref(db, `rooms/${G.teamId}/members/${G.uid}`));
+      const snap = await get(ref(db, `rooms/${G.teamId}/members`));
+      if (!snap.exists() || Object.keys(snap.val()||{}).length === 0) {
+        await remove(ref(db, `rooms/${G.teamId}`));
+      }
+    } catch(e){}
+    G.teamId = null;
+  }
+  G.gameState = null;
+  // Refresh player data
+  const snap = await get(ref(db, `players/${G.uid}`));
+  if (snap.exists()) { G.player = snap.val(); updateUI(); }
+  switchTab('home');
+};
+
+// ===== CLEANUP =====
+function cleanupListeners() {
+  if (G.matchTimer) clearTimeout(G.matchTimer);
+  if (G.matchCountdown) clearInterval(G.matchCountdown);
+  if (G.matchRef) remove(G.matchRef);
+  for (const key of Object.keys(G.listeners)) {
+    // off() requires the ref; simplified cleanup
+  }
+  G.listeners = {};
+}
+
+window.addEventListener('beforeunload', () => {
+  if (G.matchRef) remove(G.matchRef);
+  if (G.teamId && G.uid) remove(ref(db, `rooms/${G.teamId}/members/${G.uid}`));
+});
+</script>
+</body>
+</html>
