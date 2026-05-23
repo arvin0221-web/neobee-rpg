@@ -469,6 +469,10 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
       </div>
       <div style="margin-top:16px;text-align:center">
         <button class="btn btn-primary" onclick="confirmAlloc()" id="confirmAllocBtn">確認屬性，開始戰鬥</button>
+        <div id="allocWaitMsg" class="hidden" style="margin-top:16px;color:var(--text2);font-size:13px;letter-spacing:1px">
+          <div class="spinner" style="width:28px;height:28px;margin:0 auto 8px"></div>
+          等待隊友選擇屬性中...
+        </div>
       </div>
     </div>
 
@@ -1106,25 +1110,37 @@ window.readyUp = async () => {
   const snap = await get(ref(db, `rooms/${G.teamId}/members`));
   if (!snap.exists()) return;
   const members = snap.val();
-  const count = Object.keys(members).length;
+  const memVals = Object.values(members).filter(m => !m.isBot);
+  if (memVals.length < 2) {
+    notify('至少需要2位玩家才能開始', 'err');
+    return;
+  }
   // Mark self ready
   await update(ref(db, `rooms/${G.teamId}/members/${G.uid}`), { ready: true });
   document.getElementById('readyBtn').disabled = true;
   document.getElementById('readyBtn').textContent = '已準備';
-  // Check if all ready & 3 members
+  // Check if all ready
   setTimeout(async () => {
     const snap2 = await get(ref(db, `rooms/${G.teamId}`));
     if (!snap2.exists()) return;
     const room = snap2.val();
     const mems = room.members || {};
-    const memVals = Object.values(mems);
-    const allReady = memVals.every(m => m.ready);
-    if (allReady && memVals.length >= 1) {
-      // fill with bots if < 3
+    const memValsAll = Object.values(mems);
+    const realMembers = memValsAll.filter(m => !m.isBot);
+    const allReady = realMembers.every(m => m.ready);
+    if (allReady && realMembers.length >= 2) {
       const updated = { ...mems };
-      for (let i = memVals.length; i < 3; i++) {
-        const botOffset = [0,1,-1][Math.floor(Math.random()*3)];
-        const bs = botStats(botOffset, G.player.exp||0);
+      // Find highest rank among real players to base bot level on
+      const highestExp = realMembers.reduce((maxExp, m) => {
+        const rIdx = RANKS.findIndex(r => r.key === m.rankKey);
+        const exp = rIdx >= 0 ? RANKS[rIdx].exp : 0;
+        return exp > maxExp ? exp : maxExp;
+      }, 0);
+      // Fill up to 3 with bots
+      const currentCount = memValsAll.length;
+      for (let i = currentCount; i < 3; i++) {
+        const botOffset = [0, 1, -1][Math.floor(Math.random() * 3)];
+        const bs = botStats(botOffset, highestExp);
         updated[`Bot_${i}`] = { name:`人機${i}`, rankKey:bs.rankKey, rankName:bs.rankName, isBot:true, ready:true };
       }
       await update(ref(db, `rooms/${G.teamId}`), { status: 'starting', members: updated });
@@ -1268,6 +1284,22 @@ function startGameFromRoom(room, code) {
   if (G.listeners.room) { off(ref(db, `rooms/${code}`)); G.listeners.room = null; }
   document.getElementById('matchScreen').classList.add('hidden');
   const members = room.members || {};
+
+  // Listen for member disconnects during game
+  const membersRef = ref(db, `rooms/${code}/members`);
+  G.listeners.gameMembers = onValue(membersRef, snap => {
+    if (!G.gameState) return;
+    const current = snap.val() || {};
+    const gs = G.gameState;
+    for (const m of gs.team) {
+      if (m.isBot || m.isMe) continue;
+      // If a real teammate is no longer in the room, replace with bot
+      if (!current[m.name]) {
+        handleTeammateDisconnect(m.name);
+      }
+    }
+  });
+
   initGame(members, code);
 }
 
@@ -1393,36 +1425,123 @@ window.allocAttr = (attr, delta) => {
   updateAllocTotals(myMem);
 };
 
-window.confirmAlloc = () => {
+window.confirmAlloc = async () => {
   const gs = G.gameState;
   const myMem = gs.team.find(m => m.isMe);
   if (!myMem) { startBattle(); return; }
-  const addHp = parseInt(document.getElementById('alloc-hp').textContent);
-  const addAtk = parseInt(document.getElementById('alloc-atk').textContent);
-  const addDef = parseInt(document.getElementById('alloc-def').textContent);
-  // Apply allocated pts to player
+  const addHp  = parseInt(document.getElementById('alloc-hp').textContent)  || 0;
+  const addAtk = parseInt(document.getElementById('alloc-atk').textContent) || 0;
+  const addDef = parseInt(document.getElementById('alloc-def').textContent) || 0;
+
+  // Apply to local state
   myMem.maxHp = myMem.maxHp + addHp * 5;
-  myMem.atk = myMem.atk + addAtk;
-  myMem.def = myMem.def + addDef;
-  myMem.hp = myMem.maxHp;
+  myMem.atk   = myMem.atk + addAtk;
+  myMem.def   = myMem.def + addDef;
+  myMem.hp    = myMem.maxHp;
   myMem.allocDone = true;
-  // For other real (non-bot) teammates not yet allocated, give them random pts on top of their rank base stats
-  const cfg = STAGE_CONFIG[gs.stage - 1];
-  const pts = gs.stage === 1 ? 10 : cfg.playerPts;
-  for (const m of gs.team) {
-    if (!m.allocDone) {
-      const extra = rollMonsterStats(pts);
-      m.maxHp = m.maxHp + extra.hp;
-      m.hp = m.maxHp;
-      m.atk = m.atk + extra.atk;
-      m.def = m.def + extra.def;
+
+  // Check if there are any real teammates (not just solo/bots)
+  const realTeammates = gs.team.filter(m => !m.isMe && !m.isBot);
+
+  if (realTeammates.length === 0) {
+    // Solo or all-bot team — start immediately
+    document.getElementById('allocPanel').classList.add('hidden');
+    document.getElementById('gameStageSub').textContent = '戰鬥中';
+    startBattle();
+    return;
+  }
+
+  // Multiplayer: write alloc to Firebase and wait for others
+  document.getElementById('confirmAllocBtn').disabled = true;
+  document.getElementById('confirmAllocBtn').textContent = '等待隊友...';
+
+  const allocData = {
+    hp: myMem.maxHp, atk: myMem.atk, def: myMem.def,
+    maxHp: myMem.maxHp, done: true, ts: Date.now()
+  };
+  await set(ref(db, `rooms/${gs.roomId}/alloc/${G.uid}/stage${gs.stage}`), allocData);
+
+  // Show waiting overlay inside alloc panel
+  document.getElementById('allocWaitMsg').classList.remove('hidden');
+
+  // Listen for all players' alloc to be done
+  listenForAllocReady(gs);
+};
+
+function listenForAllocReady(gs) {
+  const allocRef = ref(db, `rooms/${gs.roomId}/alloc`);
+  if (G.listeners.alloc) { off(allocRef); }
+  G.listeners.alloc = onValue(allocRef, snap => {
+    const allocData = snap.val() || {};
+    // Check each real member has submitted
+    const realMembers = gs.team.filter(m => !m.isBot);
+    const allDone = realMembers.every(m => {
+      const d = (allocData[m.name] || {})[`stage${gs.stage}`];
+      return d && d.done;
+    });
+    if (!allDone) return;
+
+    // All done — apply each teammate's alloc to local team state
+    off(allocRef);
+    G.listeners.alloc = null;
+    for (const m of gs.team) {
+      if (m.isMe) continue;
+      if (m.isBot) continue;
+      const d = (allocData[m.name] || {})[`stage${gs.stage}`];
+      if (d) {
+        m.hp = d.hp; m.maxHp = d.maxHp;
+        m.atk = d.atk; m.def = d.def;
+      }
       m.allocDone = true;
     }
+    document.getElementById('allocWaitMsg').classList.add('hidden');
+    document.getElementById('confirmAllocBtn').disabled = false;
+    document.getElementById('confirmAllocBtn').textContent = '確認屬性，開始戰鬥';
+    document.getElementById('allocPanel').classList.add('hidden');
+    document.getElementById('gameStageSub').textContent = '戰鬥中';
+    startBattle();
+  });
+}
+
+// Called when a teammate disconnects mid-game — replace with bot
+function handleTeammateDisconnect(name) {
+  const gs = G.gameState;
+  if (!gs) return;
+  const idx = gs.team.findIndex(m => m.name === name);
+  if (idx < 0) return;
+  const m = gs.team[idx];
+  if (m.isBot || m.isMe) return;
+  // Replace with bot of same rank
+  const rankIdx = RANKS.findIndex(r => r.key === m.rankKey);
+  const exp = rankIdx >= 0 ? RANKS[rankIdx].exp : 0;
+  const bs = botStats(0, exp); // same rank
+  const extra = rollMonsterStats(10);
+  gs.team[idx] = {
+    name: `人機(${name})`, isBot: true, isMe: false,
+    hp: Math.min(m.hp, bs.hp + extra.hp), // keep current hp if lower
+    maxHp: bs.hp + extra.hp,
+    atk: bs.atk + extra.atk,
+    def: bs.def + extra.def,
+    rankKey: m.rankKey, rankName: m.rankName,
+    skills: {}, allocDone: true
+  };
+  addLog(`<span class="red">${name} 已離線，由同等級人機接替</span>`);
+  renderBattle();
+  // If we were waiting for their alloc, treat it as done
+  if (gs.pendingAlloc) {
+    const myMem = gs.team.find(t => t.isMe);
+    if (myMem && myMem.allocDone) {
+      // Re-trigger alloc check
+      const fakeAllocRef = ref(db, `rooms/${gs.roomId}/alloc/${name}/stage${gs.stage}`);
+      const rankData = RANKS[rankIdx >= 0 ? rankIdx : 0];
+      set(fakeAllocRef, {
+        hp: rankData.hp + extra.hp, maxHp: rankData.hp + extra.hp,
+        atk: rankData.atk + extra.atk, def: rankData.def + extra.def,
+        done: true, ts: Date.now()
+      });
+    }
   }
-  document.getElementById('allocPanel').classList.add('hidden');
-  document.getElementById('gameStageSub').textContent = '戰鬥中';
-  startBattle();
-};
+}
 function startBattle() {
   const gs = G.gameState;
   gs.battleActive = true;
@@ -1732,7 +1851,9 @@ window.nextStage = () => {
 window.exitGame = async () => {
   document.getElementById('gameScreen').classList.add('hidden');
   document.getElementById('resultOverlay').classList.add('hidden');
-  // Cleanup room
+  if (G.listeners.alloc) { off(ref(db, `rooms/${G.teamId}/alloc`)); G.listeners.alloc = null; }
+  if (G.listeners.gameMembers) { off(ref(db, `rooms/${G.teamId}/members`)); G.listeners.gameMembers = null; }
+  // Remove self from room so teammates detect disconnect
   if (G.teamId) {
     try {
       await remove(ref(db, `rooms/${G.teamId}/members/${G.uid}`));
@@ -1744,7 +1865,6 @@ window.exitGame = async () => {
     G.teamId = null;
   }
   G.gameState = null;
-  // Refresh player data
   const snap = await get(ref(db, `players/${G.uid}`));
   if (snap.exists()) { G.player = snap.val(); updateUI(); }
   switchTab('home');
@@ -1763,7 +1883,10 @@ function cleanupListeners() {
 
 window.addEventListener('beforeunload', () => {
   if (G.matchRef) remove(G.matchRef);
-  if (G.teamId && G.uid) remove(ref(db, `rooms/${G.teamId}/members/${G.uid}`));
+  if (G.teamId && G.uid) {
+    // Remove from room members — other clients will detect and replace with bot
+    remove(ref(db, `rooms/${G.teamId}/members/${G.uid}`));
+  }
 });
 </script>
 </body>
