@@ -230,7 +230,7 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
 .log-entry{font-size:12px;line-height:1.8;padding:2px 0;border-bottom:1px solid #ffffff08}
 .log-entry:last-child{border-bottom:none}
 .battle-controls{display:flex;gap:12px;justify-content:center;flex-wrap:wrap}
-.battle-hint{text-align:center;font-size:12px;color:var(--text3);margin-bottom:8px;letter-spacing:1px}
+.battle-hint{text-align:center;font-size:13px;color:var(--gold);margin-bottom:8px;letter-spacing:1px;min-height:22px;font-weight:700}
 .turn-indicator{text-align:center;padding:8px;background:var(--surface);border:1px solid var(--border);border-radius:8px;font-size:13px;margin-bottom:12px;letter-spacing:1px}
 .result-overlay{position:fixed;inset:0;z-index:400;background:#00000099;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(6px)}
 .result-card{background:var(--surface);border:2px solid var(--border2);border-radius:20px;padding:40px;text-align:center;max-width:420px;width:100%;animation:popIn .4s cubic-bezier(.175,.885,.32,1.275) forwards}
@@ -484,7 +484,7 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
           <div class="team-label red">✦ 敵方</div>
         </div>
       </div>
-      <div class="battle-hint" id="battleHint">選擇要攻擊的敵人</div>
+      <div class="battle-hint" id="battleHint" style="min-height:22px"></div>
       <div class="battle-log" id="battleLog"></div>
       <div class="battle-controls" id="battleControls"></div>
     </div>
@@ -1383,6 +1383,7 @@ function startBattle() {
   const gs = G.gameState;
   gs.battleActive = true;
   gs.pendingAlloc = false;
+  gs.waitingForPlayer = false;
   gs.log = [];
   document.getElementById('battleSection').classList.remove('hidden');
   // Build turn order: all alive team members first (random), then enemies
@@ -1393,89 +1394,114 @@ function startBattle() {
 
 function buildTurnOrder() {
   const gs = G.gameState;
-  const team = gs.team.filter(m => m.hp > 0);
-  const enemies = gs.enemies.filter(e => e.hp > 0);
-  const shuffleArr = arr => arr.sort(() => Math.random()-0.5);
-  gs.turnOrder = [...shuffleArr(team.map((_,i)=>({type:'team',i}))), ...shuffleArr(enemies.map((_,i)=>({type:'enemy',i})))];
+  // Build indices from the ORIGINAL arrays (not filtered), so indices stay correct
+  const teamTurns = gs.team
+    .map((m, i) => ({ type: 'team', i }))
+    .filter(t => gs.team[t.i].hp > 0);
+  const enemyTurns = gs.enemies
+    .map((e, i) => ({ type: 'enemy', i }))
+    .filter(t => gs.enemies[t.i].hp > 0);
+  // Shuffle each group independently, then team goes first (per spec: 玩家方先攻)
+  const shuffle = arr => arr.sort(() => Math.random() - 0.5);
+  gs.turnOrder = [...shuffle(teamTurns), ...shuffle(enemyTurns)];
   gs.currentTurn = 0;
-}
-
-function getActor() {
-  const gs = G.gameState;
-  if (gs.currentTurn >= gs.turnOrder.length) return null;
-  const t = gs.turnOrder[gs.currentTurn];
-  return t.type === 'team' ? gs.team[t.i] : gs.enemies[t.i];
+  gs.waitingForPlayer = false;
 }
 
 function processNextTurn() {
   const gs = G.gameState;
-  // Skip dead
+  if (!gs.battleActive) return;
+  if (gs.waitingForPlayer) return; // already waiting, don't recurse
+
+  // Skip dead actors
   while (gs.currentTurn < gs.turnOrder.length) {
     const t = gs.turnOrder[gs.currentTurn];
     const actor = t.type === 'team' ? gs.team[t.i] : gs.enemies[t.i];
     if (actor && actor.hp > 0) break;
     gs.currentTurn++;
   }
+
+  // End of round — start a new one
   if (gs.currentTurn >= gs.turnOrder.length) {
-    // Round over, check win/lose
     if (checkBattleEnd()) return;
-    // New round
     buildTurnOrder();
     renderBattle();
+    setTimeout(() => processNextTurn(), 300);
+    return;
+  }
+
+  const t = gs.turnOrder[gs.currentTurn];
+  const actor = t.type === 'team' ? gs.team[t.i] : gs.enemies[t.i];
+
+  if (!actor || actor.hp <= 0) {
+    gs.currentTurn++;
     processNextTurn();
     return;
   }
-  const t = gs.turnOrder[gs.currentTurn];
-  const actor = t.type === 'team' ? gs.team[t.i] : gs.enemies[t.i];
+
   renderBattle();
-  if (!actor || actor.hp <= 0) { gs.currentTurn++; processNextTurn(); return; }
+
   if (t.type === 'team' && actor.isMe) {
-    // Player's turn — wait for click
-    document.getElementById('battleHint').textContent = '請選擇要攻擊的敵人';
-    document.getElementById('turnIndicator').innerHTML = `<span class="gold">輪到你了！</span>`;
-    highlightActiveActor();
+    // Player's turn — pause and wait for click
+    gs.waitingForPlayer = true;
+    document.getElementById('battleHint').innerHTML =
+      '⚔️ <strong>輪到你！點擊右側任意敵人發起攻擊</strong>';
+    document.getElementById('turnIndicator').innerHTML =
+      `<span class="gold">★ 你的回合 ★</span>`;
   } else {
-    // AI turn
+    // AI / enemy turn
+    gs.waitingForPlayer = false;
+    const label = t.type === 'team' ? `${actor.name}（隊友）` : `${actor.name}（敵方）`;
     document.getElementById('battleHint').textContent = '';
-    document.getElementById('turnIndicator').textContent = `${actor.name} 的回合`;
-    highlightActiveActor();
+    document.getElementById('turnIndicator').textContent = `${label} 的回合`;
     setTimeout(() => aiTakeTurn(t), 800);
   }
 }
 
 function aiTakeTurn(t) {
   const gs = G.gameState;
+  if (!gs.battleActive) return;
   const actor = t.type === 'team' ? gs.team[t.i] : gs.enemies[t.i];
-  if (!actor || actor.hp <= 0) { gs.currentTurn++; processNextTurn(); return; }
+  if (!actor || actor.hp <= 0) {
+    gs.currentTurn++;
+    processNextTurn();
+    return;
+  }
   let targets;
   if (t.type === 'team') {
-    // Bot attacks random enemy
     targets = gs.enemies.filter(e => e.hp > 0);
   } else {
-    // Enemy attacks random team
     targets = gs.team.filter(m => m.hp > 0);
   }
-  if (targets.length === 0) { gs.currentTurn++; processNextTurn(); return; }
-  const target = targets[Math.floor(Math.random()*targets.length)];
-  performAttack(actor, target, t.type === 'team' ? 'team' : 'enemy');
+  if (targets.length === 0) {
+    gs.currentTurn++;
+    processNextTurn();
+    return;
+  }
+  const target = targets[Math.floor(Math.random() * targets.length)];
+  performAttack(actor, target);
   gs.currentTurn++;
   if (checkBattleEnd()) return;
   renderBattle();
-  setTimeout(() => processNextTurn(), 600);
+  setTimeout(() => processNextTurn(), 700);
 }
 
 window.clickEnemy = (i) => {
   const gs = G.gameState;
-  if (!gs.battleActive) return;
+  if (!gs || !gs.battleActive) return;
+  if (!gs.waitingForPlayer) return; // not player's turn
   const t = gs.turnOrder[gs.currentTurn];
   if (!t || t.type !== 'team') return;
   const actor = gs.team[t.i];
   if (!actor || !actor.isMe || actor.hp <= 0) return;
   const enemy = gs.enemies[i];
   if (!enemy || enemy.hp <= 0) return;
+
+  gs.waitingForPlayer = false;
   gs.selectedEnemy = i;
-  performAttack(actor, enemy, 'team');
+  performAttack(actor, enemy);
   gs.currentTurn++;
+  document.getElementById('battleHint').textContent = '';
   if (checkBattleEnd()) return;
   renderBattle();
   setTimeout(() => processNextTurn(), 500);
@@ -1524,7 +1550,7 @@ function calcDamage(attacker, defender) {
   return { dmg, isCrit, isGamble, gamblerHigh };
 }
 
-function performAttack(attacker, defender, attackerType) {
+function performAttack(attacker, defender) {
   const { dmg, isCrit, isGamble, gamblerHigh } = calcDamage(attacker, defender);
   defender.hp = Math.max(0, defender.hp - dmg);
   // Log
