@@ -542,7 +542,7 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
 <!-- Firebase -->
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-import { getDatabase, ref, set, get, push, onValue, off, remove, update, serverTimestamp, query, orderByChild, limitToLast, onChildAdded }
+import { getDatabase, ref, set, get, push, onValue, off, remove, update, serverTimestamp, query, orderByChild, limitToLast, onChildAdded, onChildRemoved }
   from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
 
 // ===== FIREBASE CONFIG =====
@@ -1285,19 +1285,14 @@ function startGameFromRoom(room, code) {
   document.getElementById('matchScreen').classList.add('hidden');
   const members = room.members || {};
 
-  // Listen for member disconnects during game
+  // Use onChildRemoved — only fires when a member is actually deleted from Firebase
+  // This avoids false positives from onValue firing on unrelated updates
   const membersRef = ref(db, `rooms/${code}/members`);
-  G.listeners.gameMembers = onValue(membersRef, snap => {
+  G.listeners.gameMembers = onChildRemoved(membersRef, snap => {
     if (!G.gameState) return;
-    const current = snap.val() || {};
-    const gs = G.gameState;
-    for (const m of gs.team) {
-      if (m.isBot || m.isMe) continue;
-      // If a real teammate is no longer in the room, replace with bot
-      if (!current[m.name]) {
-        handleTeammateDisconnect(m.name);
-      }
-    }
+    const removedName = snap.key;
+    if (removedName === G.uid) return; // ignore self removal
+    handleTeammateDisconnect(removedName);
   });
 
   initGame(members, code);
@@ -1503,7 +1498,7 @@ function listenForAllocReady(gs) {
   });
 }
 
-// Called when a teammate disconnects mid-game — replace with bot
+// Called when a teammate disconnects mid-game — hand control to AI, preserve all accumulated stats
 function handleTeammateDisconnect(name) {
   const gs = G.gameState;
   if (!gs) return;
@@ -1511,34 +1506,40 @@ function handleTeammateDisconnect(name) {
   if (idx < 0) return;
   const m = gs.team[idx];
   if (m.isBot || m.isMe) return;
-  // Replace with bot of same rank
-  const rankIdx = RANKS.findIndex(r => r.key === m.rankKey);
-  const exp = rankIdx >= 0 ? RANKS[rankIdx].exp : 0;
-  const bs = botStats(0, exp); // same rank
-  const extra = rollMonsterStats(10);
+
+  // Keep ALL current stats (including all accumulated alloc from previous stages)
+  // Just mark as bot so AI controls it
   gs.team[idx] = {
-    name: `人機(${name})`, isBot: true, isMe: false,
-    hp: Math.min(m.hp, bs.hp + extra.hp), // keep current hp if lower
-    maxHp: bs.hp + extra.hp,
-    atk: bs.atk + extra.atk,
-    def: bs.def + extra.def,
-    rankKey: m.rankKey, rankName: m.rankName,
-    skills: {}, allocDone: true
+    ...m,
+    name: `人機(${name})`,
+    isBot: true,
+    isMe: false,
+    allocDone: true,
+    skills: {}  // no skills for replaced bot
   };
-  addLog(`<span class="red">${name} 已離線，由同等級人機接替</span>`);
+
+  addLog(`<span class="red">${name} 已離線，由同等級人機接替（屬性保留）</span>`);
   renderBattle();
-  // If we were waiting for their alloc, treat it as done
+
+  // If we were waiting for their alloc during attribute phase, write fake alloc so waiting is released
   if (gs.pendingAlloc) {
     const myMem = gs.team.find(t => t.isMe);
     if (myMem && myMem.allocDone) {
-      // Re-trigger alloc check
       const fakeAllocRef = ref(db, `rooms/${gs.roomId}/alloc/${name}/stage${gs.stage}`);
-      const rankData = RANKS[rankIdx >= 0 ? rankIdx : 0];
       set(fakeAllocRef, {
-        hp: rankData.hp + extra.hp, maxHp: rankData.hp + extra.hp,
-        atk: rankData.atk + extra.atk, def: rankData.def + extra.def,
+        hp: m.hp, maxHp: m.maxHp,
+        atk: m.atk, def: m.def,
         done: true, ts: Date.now()
       });
+    }
+  }
+
+  // If it was this bot's turn in battle, skip to next turn
+  if (gs.battleActive && !gs.waitingForPlayer) {
+    const t = gs.turnOrder[gs.currentTurn];
+    if (t && t.type === 'team' && gs.team[t.i] && gs.team[t.i].name === gs.team[idx].name) {
+      gs.currentTurn++;
+      processNextTurn();
     }
   }
 }
@@ -1851,9 +1852,9 @@ window.nextStage = () => {
 window.exitGame = async () => {
   document.getElementById('gameScreen').classList.add('hidden');
   document.getElementById('resultOverlay').classList.add('hidden');
+  // Stop all game listeners FIRST before any Firebase writes
   if (G.listeners.alloc) { off(ref(db, `rooms/${G.teamId}/alloc`)); G.listeners.alloc = null; }
   if (G.listeners.gameMembers) { off(ref(db, `rooms/${G.teamId}/members`)); G.listeners.gameMembers = null; }
-  // Remove self from room so teammates detect disconnect
   if (G.teamId) {
     try {
       await remove(ref(db, `rooms/${G.teamId}/members/${G.uid}`));
