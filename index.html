@@ -444,7 +444,7 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
 
     <!-- Alloc Panel -->
     <div class="alloc-panel" id="allocPanel">
-      <div class="alloc-title">分配屬性點（每點：+5血量 / +1攻擊 / +1防禦）</div>
+    <div class="alloc-title" id="allocTitle">分配屬性點（每點：+5血量 / +1攻擊 / +1防禦）</div>
       <div class="points-left">剩餘點數：<span id="allocPointsLeft">10</span></div>
       <div class="alloc-row">
         <div class="alloc-lbl green">❤ 血量</div>
@@ -767,38 +767,70 @@ window.switchTab = (tab) => {
 // ===== SKILLS TAB =====
 function renderSkillsTab() {
   const p = G.player;
-  const maxLv = getSkillMaxLevel(p.exp || 0);
-  let html = '';
+  const rankIdx = getRankIndex(p.exp || 0);
+  const maxLv = rankIdx + 1; // skill level cap = player rank index + 1
+  const rank = RANKS[rankIdx];
+  const nextRank = rankIdx < RANKS.length-1 ? RANKS[rankIdx+1] : null;
+  // Info banner
+  let bannerHtml = `<div class="card" style="margin-bottom:16px;display:flex;align-items:center;gap:16px;flex-wrap:wrap">
+    <div>
+      <div class="card-title" style="margin-bottom:4px">技能等級上限</div>
+      <div style="font-size:22px;font-weight:900;font-family:monospace;color:var(--accent)">Lv.${maxLv}</div>
+    </div>
+    <div style="flex:1;font-size:12px;color:var(--text2);line-height:2">
+      目前等級：<span style="color:${getRankColor(rank.key)};font-weight:700">${rank.name}</span>（第 ${rankIdx+1} 階）<br>
+      ${nextRank ? `升至 <span style="color:${getRankColor(nextRank.key)};font-weight:700">${nextRank.name}</span> 後，技能上限提升至 <span style="color:var(--accent)">Lv.${maxLv+1}</span>` : '<span style="color:var(--gold)">已達最高等級，技能上限已最高</span>'}
+    </div>
+  </div>`;
+  let skillsHtml = '';
   for (const sd of SKILLS_DEF) {
     const curLv = (p.skills || {})[sd.id] || 0;
-    const canLevelUp = curLv < maxLv;
-    const upgradeCost = skillUpgradeCost(sd.baseCost, curLv);
-    const canAfford = (p.gold || 0) >= upgradeCost;
-    html += `<div class="skill-card">
+    const atCap = curLv >= maxLv;
+    const upgradeCost = atCap ? null : skillUpgradeCost(sd.baseCost, curLv);
+    const canAfford = upgradeCost !== null && (p.gold||0) >= upgradeCost;
+    // Status tag
+    let statusTag = '';
+    if (atCap) statusTag = `<span style="background:#e8c84a22;color:var(--gold);border:1px solid var(--gold)44;border-radius:6px;padding:2px 8px;font-size:11px">已達等級上限</span>`;
+    else if (!canAfford) statusTag = `<span style="background:#e0555522;color:var(--red);border:1px solid var(--red)44;border-radius:6px;padding:2px 8px;font-size:11px">金幣不足</span>`;
+    else statusTag = `<span style="background:#4ec97a22;color:var(--green);border:1px solid var(--green)44;border-radius:6px;padding:2px 8px;font-size:11px">${curLv===0?'可購買':'可升級'}</span>`;
+    skillsHtml += `<div class="skill-card">
       <div class="skill-name">${sd.name}</div>
       <div class="skill-desc">${sd.desc}</div>
       <div class="skill-level">
         <div class="skill-lvl-badge">Lv.${curLv}</div>
         <div class="skill-cap">/ 上限 Lv.${maxLv}</div>
+        <div style="margin-left:auto">${statusTag}</div>
       </div>
-      <div class="skill-cost">升級費用：💰 ${canLevelUp ? upgradeCost.toLocaleString() : '已達上限'}</div>
-      <button class="btn ${canLevelUp && canAfford ? 'btn-gold' : 'btn-secondary'} btn-sm"
-        onclick="upgradeSkill('${sd.id}')"
-        ${!canLevelUp || !canAfford ? 'disabled' : ''}>
-        ${curLv === 0 ? '購買' : '升級'}
+      <div class="skill-cost" style="margin-bottom:10px">
+        ${atCap
+          ? `<span style="color:var(--text3)">升至下一等級需先提升玩家等級（${nextRank?nextRank.name:'已滿'}）</span>`
+          : `升級費用：💰 <strong>${upgradeCost.toLocaleString()}</strong>　擁有：💰 ${(p.gold||0).toLocaleString()}`
+        }
+      </div>
+      <button class="btn ${canAfford && !atCap ? 'btn-gold' : 'btn-secondary'} btn-sm" onclick="upgradeSkill('${sd.id}')">
+        ${curLv === 0 ? '💰 購買' : '⬆ 升級'}
       </button>
     </div>`;
   }
-  document.getElementById('skills-grid').innerHTML = html;
+  document.getElementById('skills-grid').innerHTML = bannerHtml + `<div class="skills-grid">${skillsHtml}</div>`;
 }
 
 window.upgradeSkill = async (sid) => {
   const p = G.player;
-  const maxLv = getSkillMaxLevel(p.exp || 0);
+  const rankIdx = getRankIndex(p.exp || 0);
+  const maxLv = rankIdx + 1;
   const curLv = (p.skills || {})[sid] || 0;
-  if (curLv >= maxLv) return notify('已達技能等級上限','err');
-  const cost = skillUpgradeCost(SKILLS_DEF.find(s=>s.id===sid).baseCost, curLv);
-  if ((p.gold||0) < cost) return notify('金幣不足','err');
+  const sd = SKILLS_DEF.find(s => s.id === sid);
+  if (curLv >= maxLv) {
+    const nextRank = rankIdx < RANKS.length-1 ? RANKS[rankIdx+1].name : null;
+    notify(nextRank ? `技能已達等級上限！升至${nextRank}後可繼續升級` : '技能已達最高等級上限', 'err');
+    return;
+  }
+  const cost = skillUpgradeCost(sd.baseCost, curLv);
+  if ((p.gold||0) < cost) {
+    notify(`金幣不足！需要 ${cost.toLocaleString()}，目前只有 ${(p.gold||0).toLocaleString()}`, 'err');
+    return;
+  }
   const newSkills = { ...(p.skills||{}), [sid]: curLv+1 };
   const newGold = (p.gold||0) - cost;
   await update(ref(db, `players/${G.uid}`), { skills: newSkills, gold: newGold });
@@ -889,21 +921,31 @@ window.removeFriend = async (name) => {
 
 // ===== LEADERBOARD =====
 window.loadLeaderboard = async () => {
-  const snap = await get(query(ref(db,'players'), orderByChild('exp'), limitToLast(20)));
-  const data = snap.val() || {};
-  const arr = Object.values(data).sort((a,b) => (b.exp||0) - (a.exp||0));
-  let html = '';
-  arr.slice(0,20).forEach((p,i) => {
-    const rank = getRank(p.exp||0);
-    const color = getRankColor(rank.key);
-    const badgeClass = i===0?'top1':i===1?'top2':i===2?'top3':'';
-    html += `<div class="lb-item">
-      <div class="lb-rank ${badgeClass}">${i+1}</div>
-      <div class="lb-name">${p.name}${p.name===G.uid?' (我)':''}</div>
-      <div class="lb-info"><span style="color:${color}">${rank.name}</span><br>${fmtBig(p.exp||0)} EXP<br>💰${(p.gold||0).toLocaleString()}</div>
-    </div>`;
-  });
-  document.getElementById('lbList').innerHTML = html;
+  document.getElementById('lbList').innerHTML = '<div style="text-align:center;color:var(--text2);padding:20px">載入中...</div>';
+  try {
+    const snap = await get(ref(db, 'players'));
+    const data = snap.val() || {};
+    const arr = Object.values(data).sort((a,b) => (b.exp||0) - (a.exp||0));
+    if (arr.length === 0) {
+      document.getElementById('lbList').innerHTML = '<div style="text-align:center;color:var(--text2);padding:20px">尚無玩家資料</div>';
+      return;
+    }
+    let html = '';
+    arr.slice(0,20).forEach((p,i) => {
+      const rank = getRank(p.exp||0);
+      const color = getRankColor(rank.key);
+      const badgeClass = i===0?'top1':i===1?'top2':i===2?'top3':'';
+      const isMe = p.name === G.uid;
+      html += `<div class="lb-item" style="${isMe?'border-color:var(--gold);background:var(--surface2)':''}">
+        <div class="lb-rank ${badgeClass}">${i+1}</div>
+        <div class="lb-name">${p.name}${isMe?' <span style="color:var(--gold);font-size:11px">（我）</span>':''}</div>
+        <div class="lb-info"><span style="color:${color};font-weight:700">${rank.name}</span><br><span style="font-family:monospace">${fmtBig(p.exp||0)}</span> EXP<br>💰 ${(p.gold||0).toLocaleString()}</div>
+      </div>`;
+    });
+    document.getElementById('lbList').innerHTML = html;
+  } catch(e) {
+    document.getElementById('lbList').innerHTML = `<div style="text-align:center;color:var(--red);padding:20px">載入失敗：${e.message}</div>`;
+  }
 };
 
 // ===== GLOBAL CHAT =====
@@ -1319,21 +1361,22 @@ function resetAllocUI(pts, myMem) {
   document.getElementById('alloc-hp').textContent = '0';
   document.getElementById('alloc-atk').textContent = '0';
   document.getElementById('alloc-def').textContent = '0';
+  if (myMem) {
+    document.getElementById('allocTitle').innerHTML =
+      `分配 <strong style="color:var(--accent)">${pts}</strong> 點屬性（每點：+5血量 / +1攻擊 / +1防禦）<br>
+       <span style="font-size:11px;color:var(--text2)">目前：❤ ${myMem.maxHp}血　⚔ ${myMem.atk}攻　🛡 ${myMem.def}防</span>`;
+  }
   updateAllocTotals(myMem);
 }
 
 function updateAllocTotals(myMem) {
   if (!myMem) return;
-  const base = myMem;
-  const ex = myMem.allocExtra || {hp:0,atk:0,def:0};
-  // accumulated from previous stages
-  const totalHp = myMem.maxHp + ex.hp*5;
-  const totalAtk = myMem.atk + ex.atk;
-  const totalDef = myMem.def + ex.def;
-  // show current + what will be added
-  document.getElementById('alloc-hp-total').textContent = `→ ${totalHp + parseInt(document.getElementById('alloc-hp').textContent)*5}`;
-  document.getElementById('alloc-atk-total').textContent = `→ ${totalAtk + parseInt(document.getElementById('alloc-atk').textContent)}`;
-  document.getElementById('alloc-def-total').textContent = `→ ${totalDef + parseInt(document.getElementById('alloc-def').textContent)}`;
+  const addHp = parseInt(document.getElementById('alloc-hp').textContent) || 0;
+  const addAtk = parseInt(document.getElementById('alloc-atk').textContent) || 0;
+  const addDef = parseInt(document.getElementById('alloc-def').textContent) || 0;
+  document.getElementById('alloc-hp-total').textContent = `→ ${myMem.maxHp + addHp * 5}`;
+  document.getElementById('alloc-atk-total').textContent = `→ ${myMem.atk + addAtk}`;
+  document.getElementById('alloc-def-total').textContent = `→ ${myMem.def + addDef}`;
 }
 
 window.allocAttr = (attr, delta) => {
