@@ -250,7 +250,35 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
 /* ===== RANK COLORS ===== */
 .rank-鐵{color:var(--iron)}.rank-銅{color:var(--bronze)}.rank-銀{color:var(--silver)}.rank-金{color:var(--yellow)}.rank-白金{color:var(--plat)}.rank-鑽{color:var(--diamond)}.rank-翡{color:var(--jade)}.rank-曜{color:var(--accent2)}.rank-隕{color:var(--meteor)}.rank-岩{color:var(--starrock)}
 
-/* ===== RESPONSIVE ===== */
+/* ===== BATTLE EFFECTS ===== */
+.fx-overlay{position:absolute;inset:0;pointer-events:none;overflow:visible;z-index:20;border-radius:10px}
+/* Slash lines */
+.slash-line{position:absolute;width:140%;height:3px;border-radius:2px;transform-origin:left center;animation:slashAnim 0.35s ease-out forwards}
+@keyframes slashAnim{
+  0%{opacity:0;transform:scaleX(0) rotate(var(--slash-angle));filter:brightness(3)}
+  15%{opacity:1;transform:scaleX(1.1) rotate(var(--slash-angle));filter:brightness(3)}
+  60%{opacity:.8;transform:scaleX(1) rotate(var(--slash-angle));filter:brightness(1.5)}
+  100%{opacity:0;transform:scaleX(.8) rotate(var(--slash-angle));filter:brightness(1)}
+}
+.slash-glow{position:absolute;inset:-4px;border-radius:10px;animation:slashGlow .4s ease-out forwards}
+@keyframes slashGlow{0%{box-shadow:inset 0 0 20px 4px var(--glow-color);opacity:1}100%{box-shadow:none;opacity:0}}
+/* Hit flash */
+.hit-flash{position:absolute;inset:0;border-radius:10px;animation:hitFlash .3s ease-out forwards;pointer-events:none}
+@keyframes hitFlash{0%{background:#e0555566}40%{background:#e0555522}100%{background:transparent}}
+/* Damage number */
+.fx-dmg{position:absolute;left:50%;transform:translateX(-50%);font-family:'Share Tech Mono',monospace;font-weight:900;pointer-events:none;animation:dmgRise .9s ease-out forwards;z-index:30;white-space:nowrap;text-shadow:0 2px 8px #000}
+@keyframes dmgRise{0%{opacity:1;top:40%;font-size:22px}60%{opacity:1;top:5%;font-size:26px}100%{opacity:0;top:-10%;font-size:20px}}
+/* Ghost death */
+.fx-ghost{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:42px;animation:ghostFloat 1.6s ease-out forwards;pointer-events:none;z-index:25}
+@keyframes ghostFloat{0%{opacity:0;transform:translateY(0) scale(.5)}30%{opacity:1;transform:translateY(-10px) scale(1.1)}80%{opacity:.7;transform:translateY(-30px) scale(1)}100%{opacity:0;transform:translateY(-55px) scale(.8)}}
+/* Explosion */
+.fx-explosion{position:absolute;inset:-10px;display:flex;align-items:center;justify-content:center;font-size:52px;animation:explode .7s cubic-bezier(.175,.885,.32,1.275) forwards;pointer-events:none;z-index:25}
+@keyframes explode{0%{opacity:0;transform:scale(0.2)}25%{opacity:1;transform:scale(1.4)}60%{opacity:1;transform:scale(1.1)}100%{opacity:0;transform:scale(1.6)}}
+/* Tombstone */
+.fx-tombstone{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:36px;animation:tombDrop .6s cubic-bezier(.175,.885,.32,1.275) forwards;pointer-events:none;z-index:25}
+@keyframes tombDrop{0%{opacity:0;transform:translateY(-30px) scale(.5)}50%{opacity:1;transform:translateY(4px) scale(1.15)}100%{opacity:1;transform:translateY(0) scale(1)}}
+
+
 @media(max-width:700px){
   .battle-area{grid-template-columns:1fr;grid-template-rows:auto auto auto}
   .vs-badge{transform:rotate(90deg)}
@@ -539,6 +567,9 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
   </div>
 </div>
 
+<!-- BATTLE EFFECTS CANVAS -->
+<canvas id="fxCanvas" style="position:fixed;inset:0;pointer-events:none;z-index:350;display:none"></canvas>
+
 <!-- Firebase -->
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
@@ -584,7 +615,7 @@ const STAGE_CONFIG = [
 const SKILLS_DEF = [
   {id:'反傷',name:'反傷',desc:'受到傷害時，將傷害的5%返還給攻擊者（最低1點）。每升1級+7%。',basePct:5,perLv:7,baseCost:1000},
   {id:'爆擊',name:'爆擊',desc:'每次攻擊有10%機率造成120%傷害。每升1級各+5%機率和+5%傷害。',baseChance:10,baseDmgPct:120,perLvChance:5,perLvDmg:5,baseCost:1000},
-  {id:'賭徒',name:'賭徒',desc:'每次攻擊有50%機率造成200%傷害，50%機率僅造成10%傷害（最低1點）。每升1級各加10%。',baseHighPct:200,baseLowPct:10,perLv:10,baseCost:1000}
+  {id:'二連斬',name:'二連斬',desc:'每次攻擊有5%機率再斬一刀（若同時擁有爆擊，兩刀都有機率爆擊）。每升1級+5%機率。',baseChance:5,perLv:5,baseCost:1000}
 ];
 
 // ===== STATE =====
@@ -1286,13 +1317,25 @@ function startGameFromRoom(room, code) {
   const members = room.members || {};
 
   // Use onChildRemoved — only fires when a member is actually deleted from Firebase
-  // This avoids false positives from onValue firing on unrelated updates
   const membersRef = ref(db, `rooms/${code}/members`);
   G.listeners.gameMembers = onChildRemoved(membersRef, snap => {
     if (!G.gameState) return;
     const removedName = snap.key;
-    if (removedName === G.uid) return; // ignore self removal
+    if (removedName === G.uid) return;
     handleTeammateDisconnect(removedName);
+  });
+
+  // Non-host listens for next stage signal from host
+  G.listeners.nextStage = onValue(ref(db, `rooms/${code}/nextStage`), snap => {
+    if (!snap.exists() || !G.gameState) return;
+    const stageNum = snap.val();
+    if (stageNum && stageNum !== G.gameState.stage && !G.gameState.isHost) {
+      document.getElementById('resultOverlay').classList.add('hidden');
+      // Re-listen to battle state for new stage
+      if (G.listeners.battle) { off(ref(db, `rooms/${code}/battle`)); G.listeners.battle = null; }
+      if (G.listeners.battleLog) { off(ref(db, `rooms/${code}/battleLog`)); G.listeners.battleLog = null; }
+      startStage(stageNum);
+    }
   });
 
   initGame(members, code);
@@ -1302,6 +1345,12 @@ function startGameFromRoom(room, code) {
 function initGame(members, roomId) {
   const rank = getRank(G.player.exp||0);
   const memVals = Object.values(members);
+
+  // Determine host: first real player in the members object is the host
+  const realMems = memVals.filter(m => !m.isBot);
+  const hostName = realMems.length > 0 ? realMems[0].name : G.uid;
+  const iAmHost = (hostName === G.uid);
+
   // Build player team: self + teammates
   const team = [];
   for (const m of memVals) {
@@ -1342,7 +1391,9 @@ function initGame(members, roomId) {
     roomId,
     pendingAlloc: true,
     log: [],
-    selectedEnemy: -1
+    selectedEnemy: -1,
+    isHost: iAmHost,
+    roundNum: 1
   };
   document.getElementById('gameScreen').classList.remove('hidden');
   startStage(1);
@@ -1548,183 +1599,351 @@ function startBattle() {
   gs.battleActive = true;
   gs.pendingAlloc = false;
   gs.waitingForPlayer = false;
+  gs.roundNum = 1;
   gs.log = [];
   document.getElementById('battleSection').classList.remove('hidden');
-  // Build turn order: all alive team members first (random), then enemies
   buildTurnOrder();
   renderBattle();
-  processNextTurn();
+  if (isHost()) {
+    writeBattleState();
+    hostProcessNextTurn();
+  } else {
+    listenBattleState();
+  }
 }
 
 function buildTurnOrder() {
   const gs = G.gameState;
-  // Build indices from the ORIGINAL arrays (not filtered), so indices stay correct
   const teamTurns = gs.team
     .map((m, i) => ({ type: 'team', i }))
     .filter(t => gs.team[t.i].hp > 0);
   const enemyTurns = gs.enemies
     .map((e, i) => ({ type: 'enemy', i }))
     .filter(t => gs.enemies[t.i].hp > 0);
-  // Shuffle each group independently, then team goes first (per spec: 玩家方先攻)
   const shuffle = arr => arr.sort(() => Math.random() - 0.5);
   gs.turnOrder = [...shuffle(teamTurns), ...shuffle(enemyTurns)];
   gs.currentTurn = 0;
   gs.waitingForPlayer = false;
 }
 
-function processNextTurn() {
-  const gs = G.gameState;
-  if (!gs.battleActive) return;
-  if (gs.waitingForPlayer) return; // already waiting, don't recurse
-
-  // Skip dead actors
-  while (gs.currentTurn < gs.turnOrder.length) {
-    const t = gs.turnOrder[gs.currentTurn];
-    const actor = t.type === 'team' ? gs.team[t.i] : gs.enemies[t.i];
-    if (actor && actor.hp > 0) break;
-    gs.currentTurn++;
-  }
-
-  // End of round — start a new one
-  if (gs.currentTurn >= gs.turnOrder.length) {
-    if (checkBattleEnd()) return;
-    buildTurnOrder();
-    renderBattle();
-    setTimeout(() => processNextTurn(), 300);
-    return;
-  }
-
-  const t = gs.turnOrder[gs.currentTurn];
-  const actor = t.type === 'team' ? gs.team[t.i] : gs.enemies[t.i];
-
-  if (!actor || actor.hp <= 0) {
-    gs.currentTurn++;
-    processNextTurn();
-    return;
-  }
-
-  renderBattle();
-
-  if (t.type === 'team' && actor.isMe) {
-    // Player's turn — pause and wait for click
-    gs.waitingForPlayer = true;
-    document.getElementById('battleHint').innerHTML =
-      '⚔️ <strong>輪到你！點擊右側任意敵人發起攻擊</strong>';
-    document.getElementById('turnIndicator').innerHTML =
-      `<span class="gold">★ 你的回合 ★</span>`;
-  } else {
-    // AI / enemy turn
-    gs.waitingForPlayer = false;
-    const label = t.type === 'team' ? `${actor.name}（隊友）` : `${actor.name}（敵方）`;
-    document.getElementById('battleHint').textContent = '';
-    document.getElementById('turnIndicator').textContent = `${label} 的回合`;
-    setTimeout(() => aiTakeTurn(t), 800);
-  }
-}
-
-function aiTakeTurn(t) {
-  const gs = G.gameState;
-  if (!gs.battleActive) return;
-  const actor = t.type === 'team' ? gs.team[t.i] : gs.enemies[t.i];
-  if (!actor || actor.hp <= 0) {
-    gs.currentTurn++;
-    processNextTurn();
-    return;
-  }
-  let targets;
-  if (t.type === 'team') {
-    targets = gs.enemies.filter(e => e.hp > 0);
-  } else {
-    targets = gs.team.filter(m => m.hp > 0);
-  }
-  if (targets.length === 0) {
-    gs.currentTurn++;
-    processNextTurn();
-    return;
-  }
-  const target = targets[Math.floor(Math.random() * targets.length)];
-  performAttack(actor, target);
-  gs.currentTurn++;
-  if (checkBattleEnd()) return;
-  renderBattle();
-  setTimeout(() => processNextTurn(), 700);
-}
+// Legacy wrappers (kept for solo/bot flow)
+function processNextTurn() { if (isHost()) hostProcessNextTurn(); }
+function checkBattleEnd() { return isHost() ? hostCheckBattleEnd() : false; }
 
 window.clickEnemy = (i) => {
   const gs = G.gameState;
   if (!gs || !gs.battleActive) return;
-  if (!gs.waitingForPlayer) return; // not player's turn
+  if (!gs.waitingForPlayer) return;
   const t = gs.turnOrder[gs.currentTurn];
   if (!t || t.type !== 'team') return;
   const actor = gs.team[t.i];
-  if (!actor || !actor.isMe || actor.hp <= 0) return;
+  if (!actor || actor.hp <= 0) return;
   const enemy = gs.enemies[i];
   if (!enemy || enemy.hp <= 0) return;
 
   gs.waitingForPlayer = false;
   gs.selectedEnemy = i;
-  performAttack(actor, enemy);
-  gs.currentTurn++;
   document.getElementById('battleHint').textContent = '';
-  if (checkBattleEnd()) return;
-  renderBattle();
-  setTimeout(() => processNextTurn(), 500);
+
+  if (isHost()) {
+    // Host acts directly
+    hostPerformAttack(actor, enemy, true);
+    gs.currentTurn++;
+    renderBattle();
+    writeBattleState();
+    if (!hostCheckBattleEnd()) setTimeout(() => hostProcessNextTurn(), 500);
+  } else {
+    // Non-host: send action request to Firebase for host to process
+    sendActionRequest(i);
+    document.getElementById('battleHint').textContent = '攻擊中...';
+    gs.waitingForPlayer = false;
+  }
 };
 
-function calcDamage(attacker, defender) {
+function calcSingleHit(attacker, defender) {
+  // Base damage
   let dmg = attacker.atk - defender.def;
-  if (attacker.atk <= defender.def) dmg = 1; // forced
+  if (dmg < 1) dmg = 1; // forced if atk <= def
   let isCrit = false;
-  let isGamble = false;
-  let gamblerHigh = false;
   const skills = attacker.skills || {};
-  // Gambler overrides base damage calc
-  const gamblerLv = skills['賭徒'] || 0;
-  if (gamblerLv > 0) {
-    const highPct = 200 + (gamblerLv-1)*10;
-    const lowPct = 10 + (gamblerLv-1)*10;
-    if (Math.random() < 0.5) {
-      // high
-      dmg = Math.round(attacker.atk * highPct/100);
+  const critLv = skills['爆擊'] || 0;
+  if (critLv > 0) {
+    const critChance = 10 + (critLv - 1) * 5;
+    const critMult  = 120 + (critLv - 1) * 5;
+    if (Math.random() * 100 < critChance) {
+      dmg = Math.round(dmg * critMult / 100);
       if (dmg < 1) dmg = 1;
-      gamblerHigh = true;
-    } else {
-      // low
-      dmg = Math.round(attacker.atk * lowPct/100);
-      if (dmg < 1) dmg = 1;
-    }
-    isGamble = true;
-    // still apply def reduction unless gamble
-    if (!isGamble) { dmg = Math.max(1, dmg - defender.def); }
-  }
-  if (!isGamble) {
-    // Crit
-    const critLv = skills['爆擊'] || 0;
-    if (critLv > 0) {
-      const critChance = 10 + (critLv-1)*5;
-      const critDmg = 120 + (critLv-1)*5;
-      if (Math.random()*100 < critChance) {
-        dmg = Math.round(dmg * critDmg/100);
-        isCrit = true;
-      }
+      isCrit = true;
     }
   }
-  if (dmg < 1 && attacker.atk <= defender.def) dmg = 1;
-  if (dmg < 1) dmg = Math.round(dmg) || 1;
-  return { dmg, isCrit, isGamble, gamblerHigh };
+  return { dmg, isCrit };
 }
 
-function performAttack(attacker, defender) {
-  const { dmg, isCrit, isGamble, gamblerHigh } = calcDamage(attacker, defender);
+function calcDamage(attacker, defender) {
+  const hit1 = calcSingleHit(attacker, defender);
+  let dmg = hit1.dmg;
+  let isCrit = hit1.isCrit;
+  let isDouble = false;
+  let dmg2 = 0;
+  let isCrit2 = false;
+
+  // 二連斬
+  const doubleLv = (attacker.skills || {})['二連斬'] || 0;
+  if (doubleLv > 0) {
+    const doubleChance = 5 + (doubleLv - 1) * 5;
+    if (Math.random() * 100 < doubleChance) {
+      isDouble = true;
+      const hit2 = calcSingleHit(attacker, defender);
+      dmg2 = hit2.dmg;
+      isCrit2 = hit2.isCrit;
+    }
+  }
+
+  return { dmg, isCrit, isDouble, dmg2, isCrit2 };
+}
+
+// ===== BATTLE SYNC ARCHITECTURE =====
+// The "host" (room leader / first real player) drives all battle logic.
+// Every action is written to Firebase: rooms/{roomId}/battle/
+// All clients (including host) listen to Firebase and render from it.
+// Non-host players' clicks are written as "action requests" to Firebase,
+// which the host processes and executes.
+
+function isHost() {
+  return G.gameState && G.gameState.isHost;
+}
+
+function writeBattleState() {
+  if (!isHost()) return;
+  const gs = G.gameState;
+  const state = {
+    stage: gs.stage,
+    team: gs.team.map(m => ({
+      name: m.name, isBot: m.isBot||false, isMe: false,
+      hp: m.hp, maxHp: m.maxHp, atk: m.atk, def: m.def,
+      rankKey: m.rankKey||'鐵', rankName: m.rankName||'黑鐵',
+      skills: m.skills||{}, allocDone: m.allocDone||false, dead: m.hp<=0
+    })),
+    enemies: gs.enemies.map(e => ({
+      name: e.name, hp: e.hp, maxHp: e.maxHp,
+      atk: e.atk, def: e.def, skills: e.skills||{}, dead: e.hp<=0
+    })),
+    currentTurnIdx: gs.currentTurn,
+    turnOrder: gs.turnOrder,
+    battleActive: gs.battleActive,
+    pendingAlloc: gs.pendingAlloc,
+    waitingFor: gs.waitingForPlayer ? gs.team.find(m=>m.isMe)?.name || null : null,
+    roundNum: gs.roundNum || 1,
+    ts: Date.now()
+  };
+  set(ref(db, `rooms/${gs.roomId}/battle`), state);
+}
+
+function writeBattleEvent(event) {
+  if (!isHost()) return;
+  const gs = G.gameState;
+  push(ref(db, `rooms/${gs.roomId}/battleLog`), { ...event, ts: Date.now() });
+}
+
+function listenBattleState() {
+  const gs = G.gameState;
+  if (isHost()) return; // host drives, doesn't listen to itself
+  const battleRef = ref(db, `rooms/${gs.roomId}/battle`);
+  G.listeners.battle = onValue(battleRef, snap => {
+    if (!snap.exists() || !G.gameState) return;
+    const state = snap.val();
+    applyBattleState(state);
+  });
+  // Also listen to battle log for effects
+  const logRef = query(ref(db, `rooms/${gs.roomId}/battleLog`), orderByChild('ts'), limitToLast(1));
+  G.listeners.battleLog = onChildAdded(logRef, snap => {
+    if (!G.gameState) return;
+    const ev = snap.val();
+    if (!ev) return;
+    // Trigger visual effects from log events
+    if (ev.type === 'attack') {
+      const gs = G.gameState;
+      const defIsEnemy = ev.defIsEnemy;
+      const defIdx = ev.defIdx;
+      const attIsEnemy = ev.attIsEnemy;
+      const attIdx = ev.attIdx;
+      setTimeout(() => {
+        const defFxEl = getFxEl(defIsEnemy, defIdx);
+        const defCard = getFxCard(defIsEnemy, defIdx);
+        if (ev.isSlash) {
+          fxSlash(defFxEl, ev.isCrit, false);
+          setTimeout(() => {
+            fxHitFlash(defFxEl);
+            fxParticles(defCard, ev.dmg, ev.isCrit);
+            fxDamageNumber(defFxEl, ev.dmg, ev.isCrit, false, false, false);
+            if (ev.dying && defIsEnemy) setTimeout(() => fxExplosion(defFxEl, defCard), 200);
+            if (ev.dying && !defIsEnemy) setTimeout(() => { fxGhost(defFxEl); setTimeout(() => fxTombstone(defFxEl), 800); }, 150);
+          }, 120);
+        } else {
+          fxHitFlash(defFxEl);
+          fxParticles(defCard, ev.dmg, ev.isCrit);
+          fxDamageNumber(defFxEl, ev.dmg, ev.isCrit, false, false, false);
+          if (ev.dying && defIsEnemy) setTimeout(() => fxExplosion(defFxEl, defCard), 200);
+          if (ev.dying && !defIsEnemy) setTimeout(() => { fxGhost(defFxEl); setTimeout(() => fxTombstone(defFxEl), 800); }, 150);
+        }
+      }, 80);
+    }
+    if (ev.type === 'actionRequest') {
+      // Non-host players' attack requests — only host processes
+      if (!isHost()) return;
+      processActionRequest(ev);
+    }
+  });
+}
+
+function applyBattleState(state) {
+  const gs = G.gameState;
+  if (!gs) return;
+  // Sync team HP/stats from Firebase (host is authoritative)
+  if (state.team) {
+    state.team.forEach((ft, i) => {
+      if (gs.team[i]) {
+        gs.team[i].hp = ft.hp;
+        gs.team[i].maxHp = ft.maxHp;
+        gs.team[i].atk = ft.atk;
+        gs.team[i].def = ft.def;
+      }
+    });
+  }
+  if (state.enemies) {
+    state.enemies.forEach((fe, i) => {
+      if (gs.enemies[i]) {
+        gs.enemies[i].hp = fe.hp;
+        gs.enemies[i].maxHp = fe.maxHp;
+      }
+    });
+  }
+  gs.battleActive = state.battleActive;
+  gs.turnOrder = state.turnOrder || gs.turnOrder;
+  gs.currentTurn = state.currentTurnIdx || 0;
+
+  // Update turn UI
+  const t = gs.turnOrder ? gs.turnOrder[gs.currentTurn] : null;
+  if (!t) { renderBattle(); return; }
+  const actor = t.type === 'team' ? gs.team[t.i] : gs.enemies[t.i];
+
+  renderBattle();
+
+  if (state.waitingFor === G.uid) {
+    // It's my turn (I'm not host, but it's my click turn)
+    gs.waitingForPlayer = true;
+    document.getElementById('battleHint').innerHTML = '⚔️ <strong>輪到你！點擊右側任意敵人發起攻擊</strong>';
+    document.getElementById('turnIndicator').innerHTML = `<span class="gold">★ 你的回合 ★</span>`;
+  } else if (state.waitingFor) {
+    gs.waitingForPlayer = false;
+    document.getElementById('battleHint').textContent = '';
+    document.getElementById('turnIndicator').textContent = `等待 ${state.waitingFor} 攻擊...`;
+  } else {
+    gs.waitingForPlayer = false;
+    if (actor) document.getElementById('turnIndicator').textContent = `${actor.name} 的回合`;
+  }
+
+  // Stage result
+  if (state.stageResult === 'win') setTimeout(() => showStageResult(true), 300);
+  if (state.stageResult === 'lose') setTimeout(() => showStageResult(false), 300);
+}
+
+// Non-host sends attack request to Firebase
+function sendActionRequest(enemyIdx) {
+  const gs = G.gameState;
+  push(ref(db, `rooms/${gs.roomId}/battleLog`), {
+    type: 'actionRequest',
+    from: G.uid,
+    enemyIdx,
+    ts: Date.now()
+  });
+}
+
+// Host processes a non-host player's attack request
+function processActionRequest(ev) {
+  const gs = G.gameState;
+  if (!gs || !gs.battleActive) return;
+  const t = gs.turnOrder[gs.currentTurn];
+  if (!t || t.type !== 'team') return;
+  const actor = gs.team[t.i];
+  if (!actor || actor.name !== ev.from) return; // not their turn
+  const enemy = gs.enemies[ev.enemyIdx];
+  if (!enemy || enemy.hp <= 0) return;
+  gs.waitingForPlayer = false;
+  hostPerformAttack(actor, enemy, true);
+  gs.currentTurn++;
+  if (!hostCheckBattleEnd()) {
+    writeBattleState();
+    setTimeout(() => hostProcessNextTurn(), 500);
+  }
+}
+
+// ===== HOST BATTLE LOGIC =====
+function hostPerformAttack(attacker, defender, isSlash) {
+  const { dmg, isCrit, isDouble, dmg2, isCrit2 } = calcDamage(attacker, defender);
+  const { isEnemy: defIsEnemy, idx: defIdx } = getTargetIndex(defender);
+  const { isEnemy: attIsEnemy, idx: attIdx } = getTargetIndex(attacker);
+
+  // Apply hit 1
   defender.hp = Math.max(0, defender.hp - dmg);
-  // Log
+  let defDying = defender.hp <= 0;
+
   let msg = `<span class="accent">${attacker.name}</span> 攻擊 <span class="red">${defender.name}</span>`;
   if (isCrit) msg += ` 💥<span class="gold">爆擊！</span>`;
-  if (isGamble) msg += gamblerHigh ? ` 🎰<span class="gold">賭徒大成功！</span>` : ` 🎰<span class="red">賭徒失敗...</span>`;
   msg += ` 造成 <span class="red">${dmg}</span> 點傷害`;
-  if (defender.hp <= 0) msg += ` 💀`;
+  if (defDying && !isDouble) msg += ` 💀`;
   addLog(msg);
-  // Thorns (反傷)
+
+  // Write attack event for all clients to render effects
+  writeBattleEvent({ type:'attack', attIsEnemy, attIdx, defIsEnemy, defIdx,
+    dmg, isCrit, isSlash: isSlash || attacker.isMe || !attIsEnemy,
+    dying: defDying && !isDouble });
+
+  // Apply hit 2 (二連斬)
+  if (isDouble && defender.hp > 0) {
+    setTimeout(() => {
+      defender.hp = Math.max(0, defender.hp - dmg2);
+      defDying = defender.hp <= 0;
+      let msg2 = `<span class="accent">${attacker.name}</span> ⚔️⚔️<span style="color:#a0c4ff">二連斬！</span>`;
+      if (isCrit2) msg2 += ` 💥<span class="gold">爆擊！</span>`;
+      msg2 += ` 再造成 <span class="red">${dmg2}</span> 點傷害`;
+      if (defDying) msg2 += ` 💀`;
+      addLog(msg2);
+      writeBattleEvent({ type:'attack', attIsEnemy, attIdx, defIsEnemy, defIdx,
+        dmg: dmg2, isCrit: isCrit2, isSlash: true, dying: defDying });
+      // Thorns on hit 2
+      applyThorns(defender, attacker, dmg2, defIsEnemy, defIdx, attIsEnemy, attIdx);
+      renderBattle();
+    }, 350);
+  } else {
+    // Thorns on hit 1 only
+    applyThorns(defender, attacker, dmg, defIsEnemy, defIdx, attIsEnemy, attIdx);
+  }
+
+  // Local effects for host
+  requestAnimationFrame(() => {
+    const defFxEl = getFxEl(defIsEnemy, defIdx);
+    const defCard = getFxCard(defIsEnemy, defIdx);
+    if (isSlash || (!attIsEnemy && !attacker.isBot)) {
+      fxSlash(defFxEl, isCrit, false);
+      setTimeout(() => {
+        fxHitFlash(defFxEl);
+        fxParticles(defCard, dmg, isCrit);
+        fxDamageNumber(defFxEl, dmg, isCrit, false, false, false);
+        if (defDying && !isDouble && defIsEnemy) setTimeout(() => fxExplosion(defFxEl, defCard), 200);
+        if (defDying && !isDouble && !defIsEnemy) setTimeout(() => { fxGhost(defFxEl); setTimeout(() => fxTombstone(defFxEl), 800); }, 150);
+      }, 120);
+    } else {
+      fxHitFlash(defFxEl);
+      fxParticles(defCard, dmg, isCrit);
+      fxDamageNumber(defFxEl, dmg, isCrit, false, false, false);
+      if (defDying && !isDouble && defIsEnemy) setTimeout(() => fxExplosion(defFxEl, defCard), 200);
+      if (defDying && !isDouble && !defIsEnemy) setTimeout(() => { fxGhost(defFxEl); setTimeout(() => fxTombstone(defFxEl), 800); }, 150);
+    }
+  });
+}
+
+function applyThorns(defender, attacker, dmg, defIsEnemy, defIdx, attIsEnemy, attIdx) {
   const thornLv = (defender.skills||{})['反傷'] || 0;
   if (thornLv > 0 && attacker.hp > 0) {
     const thornPct = 5 + (thornLv-1)*7;
@@ -1732,8 +1951,107 @@ function performAttack(attacker, defender) {
     if (thornDmg < 1) thornDmg = 1;
     attacker.hp = Math.max(0, attacker.hp - thornDmg);
     addLog(`<span class="cyan">${defender.name}</span> 反傷！${attacker.name} 受到 <span class="cyan">${thornDmg}</span> 點傷害`);
+    setTimeout(() => {
+      const attFxEl = getFxEl(attIsEnemy, attIdx);
+      const attCard = getFxCard(attIsEnemy, attIdx);
+      fxHitFlash(attFxEl);
+      fxDamageNumber(attFxEl, thornDmg, false, false, false, true);
+      fxParticles(attCard, thornDmg, false);
+      if (attacker.hp <= 0) {
+        if (attIsEnemy) setTimeout(() => fxExplosion(attFxEl, attCard), 200);
+        else setTimeout(() => { fxGhost(attFxEl); setTimeout(() => fxTombstone(attFxEl), 800); }, 150);
+      }
+    }, 280);
   }
-  showDmgPopup(attacker, defender, dmg, isCrit, 'normal');
+}
+
+function hostCheckBattleEnd() {
+  const gs = G.gameState;
+  const teamAlive = gs.team.some(m => m.hp > 0);
+  const enemiesAlive = gs.enemies.some(e => e.hp > 0);
+  if (!enemiesAlive) {
+    set(ref(db, `rooms/${gs.roomId}/battle/stageResult`), 'win');
+    setTimeout(() => showStageResult(true), 600);
+    return true;
+  }
+  if (!teamAlive) {
+    set(ref(db, `rooms/${gs.roomId}/battle/stageResult`), 'lose');
+    setTimeout(() => showStageResult(false), 600);
+    return true;
+  }
+  return false;
+}
+
+function hostProcessNextTurn() {
+  const gs = G.gameState;
+  if (!gs || !gs.battleActive) return;
+
+  // Skip dead
+  while (gs.currentTurn < gs.turnOrder.length) {
+    const t = gs.turnOrder[gs.currentTurn];
+    const actor = t.type === 'team' ? gs.team[t.i] : gs.enemies[t.i];
+    if (actor && actor.hp > 0) break;
+    gs.currentTurn++;
+  }
+
+  // New round
+  if (gs.currentTurn >= gs.turnOrder.length) {
+    if (hostCheckBattleEnd()) return;
+    buildTurnOrder();
+    gs.roundNum = (gs.roundNum||1) + 1;
+    renderBattle();
+    writeBattleState();
+    setTimeout(() => hostProcessNextTurn(), 300);
+    return;
+  }
+
+  const t = gs.turnOrder[gs.currentTurn];
+  const actor = t.type === 'team' ? gs.team[t.i] : gs.enemies[t.i];
+
+  if (!actor || actor.hp <= 0) {
+    gs.currentTurn++;
+    hostProcessNextTurn();
+    return;
+  }
+
+  renderBattle();
+
+  if (t.type === 'team' && !actor.isBot) {
+    // Real player's turn — tell everyone to wait for this player
+    gs.waitingForPlayer = true;
+    writeBattleState(); // broadcasts waitingFor = actor.name
+    if (actor.isMe) {
+      document.getElementById('battleHint').innerHTML = '⚔️ <strong>輪到你！點擊右側任意敵人發起攻擊</strong>';
+      document.getElementById('turnIndicator').innerHTML = `<span class="gold">★ 你的回合 ★</span>`;
+    } else {
+      document.getElementById('battleHint').textContent = '';
+      document.getElementById('turnIndicator').textContent = `等待 ${actor.name} 攻擊...`;
+    }
+  } else {
+    // AI / enemy turn
+    gs.waitingForPlayer = false;
+    const label = t.type === 'team' ? `${actor.name}（隊友）` : `${actor.name}（敵方）`;
+    document.getElementById('battleHint').textContent = '';
+    document.getElementById('turnIndicator').textContent = `${label} 的回合`;
+    writeBattleState();
+    setTimeout(() => {
+      let targets;
+      if (t.type === 'team') targets = gs.enemies.filter(e => e.hp > 0);
+      else targets = gs.team.filter(m => m.hp > 0);
+      if (!targets.length) { gs.currentTurn++; hostProcessNextTurn(); return; }
+      const target = targets[Math.floor(Math.random() * targets.length)];
+      hostPerformAttack(actor, target, false);
+      gs.currentTurn++;
+      renderBattle();
+      writeBattleState();
+      if (!hostCheckBattleEnd()) setTimeout(() => hostProcessNextTurn(), 700);
+    }, 800);
+  }
+}
+
+function performAttack(attacker, defender) {
+  // Unified entry point — always goes through host logic now
+  hostPerformAttack(attacker, defender, !attacker.isBot && !attacker.isMonster);
 }
 
 function addLog(msg) {
@@ -1760,9 +2078,180 @@ function checkBattleEnd() {
   return false;
 }
 
-function showDmgPopup(attacker, defender, dmg, isCrit) {
-  // Visual only — find defender's card and add popup
-  renderBattle();
+// ===== BATTLE EFFECTS ENGINE =====
+function getFxEl(isEnemy, idx) {
+  // After renderBattle, cards are rebuilt — get the overlay div
+  return document.getElementById(`fx-${isEnemy?'enemy':'team'}-${idx}`);
+}
+function getFxCard(isEnemy, idx) {
+  return document.getElementById(`fc-${isEnemy?'enemy':'team'}-${idx}`);
+}
+
+function fxSlash(fxEl, isCrit, isGamble) {
+  if (!fxEl) return;
+  // Multiple slash lines for dramatic effect
+  const count = isCrit ? 4 : isGamble ? 3 : 2;
+  const colors = isCrit
+    ? ['#ffe066','#ff9900','#fff','#ffcc00']
+    : isGamble
+    ? ['#cc44ff','#ff44cc','#fff']
+    : ['#4f8ef7','#a0c4ff','#fff'];
+  const baseAngle = -28;
+  for (let k = 0; k < count; k++) {
+    const line = document.createElement('div');
+    line.className = 'slash-line';
+    const angle = baseAngle + (k - Math.floor(count/2)) * 14;
+    const topPct = 20 + k * 18;
+    line.style.cssText = `
+      --slash-angle:${angle}deg;
+      top:${topPct}%;left:-20%;
+      background:linear-gradient(90deg,transparent,${colors[k%colors.length]},transparent);
+      box-shadow:0 0 8px 2px ${colors[k%colors.length]}99;
+      animation-delay:${k*40}ms;
+    `;
+    fxEl.appendChild(line);
+    setTimeout(() => line.remove(), 500 + k*40);
+  }
+  // Glow flash on card
+  const glow = document.createElement('div');
+  glow.className = 'slash-glow';
+  glow.style.setProperty('--glow-color', isCrit ? '#ffaa00' : '#4f8ef7');
+  fxEl.appendChild(glow);
+  setTimeout(() => glow.remove(), 450);
+}
+
+function fxHitFlash(fxEl) {
+  if (!fxEl) return;
+  const flash = document.createElement('div');
+  flash.className = 'hit-flash';
+  fxEl.appendChild(flash);
+  setTimeout(() => flash.remove(), 320);
+}
+
+function fxDamageNumber(fxEl, dmg, isCrit, _unused1, _unused2, isThorn) {
+  if (!fxEl) return;
+  const num = document.createElement('div');
+  num.className = 'fx-dmg';
+  let color = isThorn ? '#3ecfcf' : isCrit ? '#ffe066' : '#ff6666';
+  let prefix = isThorn ? '↩' : isCrit ? '💥' : '';
+  num.style.cssText = `color:${color};font-size:${isCrit?'26px':'20px'};top:35%`;
+  num.textContent = `${prefix}-${dmg}`;
+  fxEl.appendChild(num);
+  setTimeout(() => num.remove(), 950);
+}
+
+function fxParticles(card, dmg, isCrit) {
+  // CSS particle burst on the card element
+  if (!card) return;
+  const count = Math.min(6 + Math.floor(dmg / 5), 14);
+  for (let i = 0; i < count; i++) {
+    const p = document.createElement('div');
+    const angle = (360 / count) * i + Math.random() * 30;
+    const dist = 28 + Math.random() * 36;
+    const size = isCrit ? (4 + Math.random()*5) : (2 + Math.random()*4);
+    const colors = isCrit ? ['#ffe066','#ff9900','#fff','#ff4444'] : ['#ff6666','#ffaa66','#fff','#cc3333'];
+    const color = colors[Math.floor(Math.random()*colors.length)];
+    const dur = 400 + Math.random() * 300;
+    const rad = angle * Math.PI / 180;
+    const tx = Math.cos(rad) * dist;
+    const ty = Math.sin(rad) * dist;
+    p.style.cssText = `
+      position:absolute;
+      left:calc(50% - ${size/2}px);top:calc(40% - ${size/2}px);
+      width:${size}px;height:${size}px;border-radius:50%;
+      background:${color};pointer-events:none;z-index:28;
+      animation:none;transition:transform ${dur}ms ease-out,opacity ${dur}ms ease-out;
+      box-shadow:0 0 4px ${color};
+    `;
+    card.appendChild(p);
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        p.style.transform = `translate(${tx}px,${ty}px) scale(0)`;
+        p.style.opacity = '0';
+      });
+    });
+    setTimeout(() => p.remove(), dur + 50);
+  }
+}
+
+function fxExplosion(fxEl, card) {
+  if (!fxEl) return;
+  const expl = document.createElement('div');
+  expl.className = 'fx-explosion';
+  expl.textContent = '💥';
+  fxEl.appendChild(expl);
+  setTimeout(() => expl.remove(), 750);
+  // Extra particle ring
+  if (card) fxParticles(card, 30, true);
+  // Screen shake on card
+  if (card) {
+    card.style.animation = 'none';
+    card.style.transform = 'scale(1.08) translateX(-3px)';
+    setTimeout(() => { card.style.transform = 'scale(1.04) translateX(3px)'; }, 60);
+    setTimeout(() => { card.style.transform = 'scale(1)'; }, 120);
+    setTimeout(() => { card.style.transform = ''; }, 200);
+  }
+}
+
+function fxGhost(fxEl) {
+  if (!fxEl) return;
+  const ghost = document.createElement('div');
+  ghost.className = 'fx-ghost';
+  ghost.textContent = '👻';
+  fxEl.appendChild(ghost);
+  setTimeout(() => ghost.remove(), 1700);
+}
+
+function fxTombstone(fxEl) {
+  if (!fxEl) return;
+  const tomb = document.createElement('div');
+  tomb.className = 'fx-tombstone';
+  tomb.textContent = '🪦';
+  fxEl.appendChild(tomb);
+  // Tombstone stays visible (card is dead/greyed)
+  setTimeout(() => tomb.remove(), 2500);
+}
+
+function getTargetIndex(target) {
+  const gs = G.gameState;
+  let idx = gs.enemies.indexOf(target);
+  if (idx >= 0) return { isEnemy: true, idx };
+  idx = gs.team.indexOf(target);
+  return { isEnemy: false, idx };
+}
+
+function showAttackEffects(attacker, defender, dmg, isCrit, isGamble, gamblerHigh, isDying) {
+  const gs = G.gameState;
+  const { isEnemy: defIsEnemy, idx: defIdx } = getTargetIndex(defender);
+  const { isEnemy: attIsEnemy, idx: attIdx } = getTargetIndex(attacker);
+  const defFxEl  = getFxEl(defIsEnemy, defIdx);
+  const defCard  = getFxCard(defIsEnemy, defIdx);
+  const attFxEl  = getFxEl(attIsEnemy, attIdx);
+
+  const isPlayerAttacking = !attacker.isBot && attacker.isMe;
+  const isAnyAttacking = !defender.isMonster; // attacker is enemy hitting player
+
+  if (defIsEnemy) {
+    // Player (or bot ally) attacking enemy — show slash
+    fxSlash(defFxEl, isCrit, isGamble);
+    setTimeout(() => {
+      fxHitFlash(defFxEl);
+      fxParticles(defCard, dmg, isCrit);
+      fxDamageNumber(defFxEl, dmg, isCrit, isGamble, gamblerHigh, false);
+      if (isDying) setTimeout(() => fxExplosion(defFxEl, defCard), 200);
+    }, 120);
+  } else {
+    // Enemy attacking player — no slash, just hit + particles
+    setTimeout(() => {
+      fxHitFlash(defFxEl);
+      fxParticles(defCard, dmg, isCrit);
+      fxDamageNumber(defFxEl, dmg, isCrit, false, false, false);
+      if (isDying) setTimeout(() => {
+        fxGhost(defFxEl);
+        setTimeout(() => fxTombstone(defFxEl), 800);
+      }, 150);
+    }, 80);
+  }
 }
 
 function renderBattle() {
@@ -1779,7 +2268,8 @@ function renderBattle() {
     const hpPct = m.maxHp > 0 ? (m.hp/m.maxHp*100) : 0;
     const hpClass = hpPct > 60 ? 'high' : hpPct > 30 ? 'mid' : 'low';
     const rankColor = getRankColor(m.rankKey || '鐵');
-    pPanel.innerHTML += `<div class="fighter-card ${m.hp>0?'alive':'dead'} ${isActive?'active-turn':''}">
+    pPanel.innerHTML += `<div class="fighter-card ${m.hp>0?'alive':'dead'} ${isActive?'active-turn':''}" id="fc-team-${i}" style="position:relative">
+      <div class="fx-overlay" id="fx-team-${i}"></div>
       <div class="fighter-name">
         <span>${m.isMe?'★ ':''}<span style="color:${rankColor}">${m.name}</span></span>
         <span style="font-size:10px;color:var(--text3)">${m.rankName||''}</span>
@@ -1797,7 +2287,8 @@ function renderBattle() {
     const isSelected = gs.selectedEnemy === i;
     const hpPct = e.maxHp > 0 ? (e.hp/e.maxHp*100) : 0;
     const hpClass = hpPct > 60 ? 'high' : hpPct > 30 ? 'mid' : 'low';
-    ePanel.innerHTML += `<div class="fighter-card enemy ${e.hp>0?'alive':'dead'} ${isActive?'active-turn':''} ${isSelected?'target-selected':''}" onclick="clickEnemy(${i})">
+    ePanel.innerHTML += `<div class="fighter-card enemy ${e.hp>0?'alive':'dead'} ${isActive?'active-turn':''} ${isSelected?'target-selected':''}" id="fc-enemy-${i}" style="position:relative" onclick="clickEnemy(${i})">
+      <div class="fx-overlay" id="fx-enemy-${i}"></div>
       <div class="fighter-name">
         <span>👾 ${e.name}</span>
         ${e.hp>0?'<span style="font-size:10px;color:var(--text3)">點擊攻擊</span>':'<span style="font-size:10px;color:var(--red)">已擊敗</span>'}
@@ -1845,7 +2336,14 @@ window.nextStage = () => {
   const gs = G.gameState;
   document.getElementById('resultOverlay').classList.add('hidden');
   if (gs.stage < STAGE_CONFIG.length) {
-    startStage(gs.stage+1);
+    if (isHost()) {
+      // Host clears battle state and signals next stage
+      remove(ref(db, `rooms/${gs.roomId}/battle`));
+      remove(ref(db, `rooms/${gs.roomId}/battleLog`));
+      remove(ref(db, `rooms/${gs.roomId}/alloc`));
+      set(ref(db, `rooms/${gs.roomId}/nextStage`), gs.stage + 1);
+    }
+    startStage(gs.stage + 1);
   }
 };
 
@@ -1853,8 +2351,11 @@ window.exitGame = async () => {
   document.getElementById('gameScreen').classList.add('hidden');
   document.getElementById('resultOverlay').classList.add('hidden');
   // Stop all game listeners FIRST before any Firebase writes
-  if (G.listeners.alloc) { off(ref(db, `rooms/${G.teamId}/alloc`)); G.listeners.alloc = null; }
-  if (G.listeners.gameMembers) { off(ref(db, `rooms/${G.teamId}/members`)); G.listeners.gameMembers = null; }
+  if (G.listeners.alloc)      { off(ref(db, `rooms/${G.teamId}/alloc`));      G.listeners.alloc = null; }
+  if (G.listeners.gameMembers){ off(ref(db, `rooms/${G.teamId}/members`));     G.listeners.gameMembers = null; }
+  if (G.listeners.battle)     { off(ref(db, `rooms/${G.teamId}/battle`));      G.listeners.battle = null; }
+  if (G.listeners.battleLog)  { off(ref(db, `rooms/${G.teamId}/battleLog`));   G.listeners.battleLog = null; }
+  if (G.listeners.nextStage)  { off(ref(db, `rooms/${G.teamId}/nextStage`));   G.listeners.nextStage = null; }
   if (G.teamId) {
     try {
       await remove(ref(db, `rooms/${G.teamId}/members/${G.uid}`));
