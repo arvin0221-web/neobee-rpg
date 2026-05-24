@@ -1104,6 +1104,16 @@ window.doJoinTeam = async () => {
   if (!code) { document.getElementById('joinTeamMsg').textContent = '請輸入代碼'; return; }
   const snap = await get(ref(db, `rooms/${code}`));
   if (!snap.exists()) { document.getElementById('joinTeamMsg').textContent = '找不到此小隊'; return; }
+  const room = snap.val();
+  if (room.status === 'starting' || room.status === 'ingame') {
+    document.getElementById('joinTeamMsg').textContent = '此小隊已開始遊戲，無法加入';
+    return;
+  }
+  const memberCount = Object.values(room.members || {}).filter(m => !m.isBot).length;
+  if (memberCount >= 3) {
+    document.getElementById('joinTeamMsg').textContent = '小隊已滿員';
+    return;
+  }
   closeModal('joinTeamModal');
   G.teamId = code;
   await joinRoom(code);
@@ -1336,22 +1346,36 @@ function startGameFromRoom(room, code) {
   document.getElementById('matchScreen').classList.add('hidden');
   const members = room.members || {};
 
-  // Use onChildRemoved — only fires when a member is actually deleted from Firebase
-  const membersRef = ref(db, `rooms/${code}/members`);
-  G.listeners.gameMembers = onChildRemoved(membersRef, snap => {
+  // Mark room as ingame immediately so no one else can join
+  // Then after a short delay, delete the room entry entirely so the code is freed
+  if (room.status !== 'ingame') {
+    update(ref(db, `rooms/${code}`), { status: 'ingame' }).then(() => {
+      // Delete the room's members node (keeps battle/alloc subnodes for game sync)
+      // The room entry itself can stay for battle sync, but members are cleared
+      remove(ref(db, `rooms/${code}/members`));
+    });
+  }
+
+  // Use onChildRemoved on a separate presence node instead of members
+  // (members node is deleted above, so we use a different approach for disconnect detection)
+  // Write each real player's presence and watch for removal
+  const presenceRef = ref(db, `rooms/${code}/presence`);
+  const myPresenceRef = ref(db, `rooms/${code}/presence/${G.uid}`);
+  set(myPresenceRef, { name: G.uid, ts: Date.now() });
+
+  G.listeners.gameMembers = onChildRemoved(presenceRef, snap => {
     if (!G.gameState) return;
     const removedName = snap.key;
     if (removedName === G.uid) return;
     handleTeammateDisconnect(removedName);
   });
 
-  // Non-host listens for next stage signal from host
+  // Listen for next stage signal from host
   G.listeners.nextStage = onValue(ref(db, `rooms/${code}/nextStage`), snap => {
     if (!snap.exists() || !G.gameState) return;
     const stageNum = snap.val();
     if (stageNum && stageNum !== G.gameState.stage && !G.gameState.isHost) {
       document.getElementById('resultOverlay').classList.add('hidden');
-      // Re-listen to battle state for new stage
       if (G.listeners.battle) { off(ref(db, `rooms/${code}/battle`)); G.listeners.battle = null; }
       if (G.listeners.battleLog) { off(ref(db, `rooms/${code}/battleLog`)); G.listeners.battleLog = null; }
       startStage(stageNum);
@@ -2490,18 +2514,21 @@ window.nextStage = () => {
 window.exitGame = async () => {
   document.getElementById('gameScreen').classList.add('hidden');
   document.getElementById('resultOverlay').classList.add('hidden');
-  // Stop all game listeners FIRST before any Firebase writes
-  if (G.listeners.alloc)      { off(ref(db, `rooms/${G.teamId}/alloc`));      G.listeners.alloc = null; }
-  if (G.listeners.gameMembers){ off(ref(db, `rooms/${G.teamId}/members`));     G.listeners.gameMembers = null; }
-  if (G.listeners.battle)     { off(ref(db, `rooms/${G.teamId}/battle`));      G.listeners.battle = null; }
-  if (G.listeners.battleLog)  { off(ref(db, `rooms/${G.teamId}/battleLog`));   G.listeners.battleLog = null; }
-  if (G.listeners.nextStage)  { off(ref(db, `rooms/${G.teamId}/nextStage`));   G.listeners.nextStage = null; }
-  if (G.teamId) {
+  const tid = G.teamId;
+  // Stop all listeners FIRST
+  if (tid) {
+    try { if (G.listeners.alloc)       off(ref(db, `rooms/${tid}/alloc`));      } catch(e){} G.listeners.alloc = null;
+    try { if (G.listeners.gameMembers) off(ref(db, `rooms/${tid}/presence`));   } catch(e){} G.listeners.gameMembers = null;
+    try { if (G.listeners.battle)      off(ref(db, `rooms/${tid}/battle`));     } catch(e){} G.listeners.battle = null;
+    try { if (G.listeners.battleLog)   off(ref(db, `rooms/${tid}/battleLog`));  } catch(e){} G.listeners.battleLog = null;
+    try { if (G.listeners.nextStage)   off(ref(db, `rooms/${tid}/nextStage`));  } catch(e){} G.listeners.nextStage = null;
+  }
+  if (tid) {
     try {
-      await remove(ref(db, `rooms/${G.teamId}/members/${G.uid}`));
-      const snap = await get(ref(db, `rooms/${G.teamId}/members`));
-      if (!snap.exists() || Object.keys(snap.val()||{}).length === 0) {
-        await remove(ref(db, `rooms/${G.teamId}`));
+      await remove(ref(db, `rooms/${tid}/presence/${G.uid}`));
+      const presSnap = await get(ref(db, `rooms/${tid}/presence`));
+      if (!presSnap.exists() || Object.keys(presSnap.val()||{}).length === 0) {
+        await remove(ref(db, `rooms/${tid}`));
       }
     } catch(e){}
     G.teamId = null;
@@ -2517,17 +2544,19 @@ function cleanupListeners() {
   if (G.matchTimer) clearTimeout(G.matchTimer);
   if (G.matchCountdown) clearInterval(G.matchCountdown);
   if (G.matchRef) remove(G.matchRef);
-  for (const key of Object.keys(G.listeners)) {
-    // off() requires the ref; simplified cleanup
-  }
   G.listeners = {};
 }
 
 window.addEventListener('beforeunload', () => {
   if (G.matchRef) remove(G.matchRef);
   if (G.teamId && G.uid) {
-    // Remove from room members — other clients will detect and replace with bot
-    remove(ref(db, `rooms/${G.teamId}/members/${G.uid}`));
+    // During game: remove presence so teammates detect disconnect
+    // During lobby: remove from members
+    if (G.gameState) {
+      remove(ref(db, `rooms/${G.teamId}/presence/${G.uid}`));
+    } else {
+      remove(ref(db, `rooms/${G.teamId}/members/${G.uid}`));
+    }
   }
 });
 </script>
