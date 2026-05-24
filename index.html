@@ -279,7 +279,26 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
 @keyframes tombDrop{0%{opacity:0;transform:translateY(-30px) scale(.5)}50%{opacity:1;transform:translateY(4px) scale(1.15)}100%{opacity:1;transform:translateY(0) scale(1)}}
 
 
-/* ===== TEAM CHAT PANEL ===== */
+/* ===== JOB SELECTION ===== */
+.job-select-panel{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:20px;margin-bottom:20px}
+.job-card.job-taken{pointer-events:none!important;filter:grayscale(.5)}
+.job-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;margin-bottom:16px}
+.job-card{background:var(--bg3);border:2px solid var(--border);border-radius:10px;padding:12px 10px;cursor:pointer;text-align:center;transition:.2s}
+.job-card:hover{border-color:var(--border2);background:var(--surface)}
+.job-card.selected{background:var(--surface2)}
+.job-icon{font-size:28px;margin-bottom:6px}
+.job-name{font-size:13px;font-weight:700;margin-bottom:4px}
+.job-passive{font-size:10px;color:var(--text2);line-height:1.4;margin-bottom:4px}
+.job-active-lbl{font-size:10px;color:var(--gold);line-height:1.4}
+/* Active skill buttons in battle */
+.active-skill-bar{display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin-bottom:10px}
+.active-skill-btn{padding:8px 16px;border-radius:8px;border:2px solid var(--border2);background:var(--surface);color:var(--text);font-size:13px;cursor:pointer;font-family:inherit;font-weight:700;transition:.2s;display:flex;align-items:center;gap:6px}
+.active-skill-btn:hover:not(:disabled){background:var(--surface2);border-color:var(--accent)}
+.active-skill-btn:disabled{opacity:.35;cursor:not-allowed}
+.active-skill-btn.targeting{border-color:var(--gold);background:var(--bg3);animation:pulse .7s infinite alternate}
+.skill-uses{font-size:10px;color:var(--text2);margin-left:2px}
+
+
 .team-chat-panel{background:var(--bg3);border:1px solid var(--border);border-radius:10px;display:flex;flex-direction:column;overflow:hidden}
 .team-chat-header{padding:8px 12px;background:var(--surface);border-bottom:1px solid var(--border);font-size:12px;color:var(--text2);letter-spacing:1px;display:flex;align-items:center;justify-content:space-between;cursor:pointer;user-select:none}
 .team-chat-header:hover{background:var(--surface2)}
@@ -488,6 +507,15 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
       <div style="font-size:12px;color:var(--text2);margin-top:4px" id="gameStageSub">分配屬性點數</div>
     </div>
 
+    <!-- Job Selection Panel (stage 1 only) -->
+    <div class="job-select-panel" id="jobSelectPanel" style="display:none">
+      <div class="alloc-title">選擇職業</div>
+      <div class="job-grid" id="jobGrid"></div>
+      <div style="text-align:center">
+        <button class="btn btn-primary" onclick="confirmJob()" id="confirmJobBtn" disabled>確認職業</button>
+      </div>
+    </div>
+
     <!-- Alloc Panel -->
     <div class="alloc-panel" id="allocPanel">
     <div class="alloc-title" id="allocTitle">分配屬性點（每點：+5血量 / +1攻擊 / +1防禦）</div>
@@ -524,6 +552,7 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
 
     <!-- Battle Area -->
     <div id="battleSection" class="hidden">
+      <div class="active-skill-bar" id="activeSkillBar"></div>
       <div class="turn-indicator" id="turnIndicator">等待中...</div>
       <div class="battle-area">
         <div class="team-panel" id="playerTeamPanel">
@@ -625,16 +654,16 @@ const db = getDatabase(app);
 
 // ===== CONSTANTS =====
 const RANKS = [
-  {name:'黑鐵',key:'鐵',exp:0,hp:5,atk:0,def:0},
-  {name:'青銅',key:'銅',exp:1000,hp:6,atk:1,def:0},
-  {name:'白銀',key:'銀',exp:10000,hp:7,atk:1,def:1},
-  {name:'黃金',key:'金',exp:100000,hp:9,atk:2,def:2},
-  {name:'白金',key:'白金',exp:1000000,hp:12,atk:3,def:3},
-  {name:'鑽石',key:'鑽',exp:10000000,hp:16,atk:4,def:4},
-  {name:'翡翠',key:'翡',exp:100000000,hp:21,atk:5,def:5},
-  {name:'曜石',key:'曜',exp:1000000000,hp:27,atk:6,def:6},
-  {name:'隕鐵',key:'隕',exp:10000000000,hp:34,atk:7,def:7},
-  {name:'星岩',key:'岩',exp:100000000000,hp:40,atk:10,def:10}
+  {name:'黑鐵',key:'鐵',exp:0,              hp:5,  atk:0,  def:0},
+  {name:'青銅',key:'銅',exp:1000,            hp:10, atk:0,  def:0},
+  {name:'白銀',key:'銀',exp:10000,           hp:15, atk:1,  def:1},
+  {name:'黃金',key:'金',exp:100000,          hp:25, atk:2,  def:2},
+  {name:'白金',key:'白金',exp:1000000,       hp:45, atk:3,  def:3},
+  {name:'鑽石',key:'鑽',exp:10000000,        hp:65, atk:5,  def:5},
+  {name:'翡翠',key:'翡',exp:100000000,       hp:95, atk:7,  def:7},
+  {name:'曜石',key:'曜',exp:1000000000,      hp:125,atk:10, def:10},
+  {name:'隕鐵',key:'隕',exp:10000000000,     hp:165,atk:13, def:13},
+  {name:'星岩',key:'岩',exp:100000000000,    hp:205,atk:17, def:17}
 ];
 const STAGE_CONFIG = [
   {stage:1,playerPts:10,monsterPts:10,exp:100,gold:100},
@@ -653,6 +682,39 @@ const SKILLS_DEF = [
   {id:'致命一擊',name:'致命一擊',desc:'每次攻擊有1%機率讓對手瞬間喪命（特效炸裂）。每升1級+1%機率。',                             baseCost:1000,  maxLvOverride:null, costMult:10},
   {id:'絕對防禦',name:'絕對防禦',desc:'每次受到攻擊有5%機率完全免疫傷害。每升1級+5%機率。',                                       baseCost:1000,  maxLvOverride:null, costMult:10},
   {id:'蠻力',   name:'蠻力',   desc:'每擁有15HP，攻擊+1（動態計算）。每升1級，每15HP獲得的攻擊加成+1。',                          baseCost:10000, maxLvOverride:null, costMult:10},
+];
+
+const JOBS_DEF = [
+  {
+    id:'盾戰士', name:'盾戰士', icon:'🛡', color:'#4f8ef7',
+    desc:'被動：每關前5回合，所有敵人傷害集中打在盾戰士身上。',
+    activeDesc:'全隊回血：每人恢復各自已損失血量的30%。',
+    activeName:'守護之盾', activeCost:0, activeMax:99
+  },
+  {
+    id:'刺客', name:'刺客', icon:'🗡', color:'#a855f7',
+    desc:'被動：每次攻擊無視對手30%防禦。',
+    activeDesc:'無視敵人100%防禦進行攻擊。每關限用2次。',
+    activeName:'必殺', activeCost:0, activeMax:2
+  },
+  {
+    id:'爆炎法師', name:'爆炎法師', icon:'🔥', color:'#ef4444',
+    desc:'被動：無。',
+    activeDesc:'攻擊所有敵人；若有敵人當場死亡，再爆炸一次攻擊剩餘敵人。每關限用2次。',
+    activeName:'爆炎', activeCost:0, activeMax:2
+  },
+  {
+    id:'精靈術師', name:'精靈術師', icon:'✨', color:'#10b981',
+    desc:'被動：無。',
+    activeDesc:'指定一名敵人，使其4個回合無法攻擊。每關限用1次。',
+    activeName:'封印', activeCost:0, activeMax:1
+  },
+  {
+    id:'冰霜法師', name:'冰霜法師', icon:'❄', color:'#38bdf8',
+    desc:'被動：無。',
+    activeDesc:'使所有敵人本回合無法攻擊，並各扣除已損失血量30%的傷害。每關限用1次。',
+    activeName:'冰封', activeCost:0, activeMax:1
+  }
 ];
 
 // ===== STATE =====
@@ -1627,6 +1689,335 @@ async function initGame(members, roomId) {
   startStage(1);
 }
 
+// ===== JOB SYSTEM =====
+function renderJobGrid(takenJobs) {
+  // takenJobs: {jobId: playerName, ...}
+  const grid = document.getElementById('jobGrid');
+  if (!grid) return;
+  grid.innerHTML = JOBS_DEF.map(j => {
+    const takenBy = takenJobs[j.id];
+    const isTaken = takenBy && takenBy !== G.uid;
+    const isMyChoice = G._selectedJob === j.id;
+    const borderColor = isTaken ? '#ffffff22' : isMyChoice ? j.color : j.color+'22';
+    const opacity = isTaken ? '0.4' : '1';
+    const takenLabel = isTaken ? `<div style="font-size:10px;color:var(--red);margin-top:4px">已被 ${takenBy} 選擇</div>` : '';
+    return `<div class="job-card ${isMyChoice?'selected':''} ${isTaken?'job-taken':''}"
+      id="jobcard-${j.id}"
+      onclick="selectJob('${j.id}')"
+      style="border-color:${borderColor};opacity:${opacity};${isTaken?'cursor:not-allowed':''}">
+      <div class="job-icon">${j.icon}</div>
+      <div class="job-name" style="color:${j.color}">${j.name}</div>
+      <div class="job-passive">${j.desc}</div>
+      <div class="job-active-lbl">⚡ ${j.activeName}${j.activeMax<99?' ×'+j.activeMax:''}<br>${j.activeDesc}</div>
+      ${takenLabel}
+    </div>`;
+  }).join('');
+}
+
+function showJobSelect() {
+  const gs = G.gameState;
+  const panel = document.getElementById('jobSelectPanel');
+  panel.style.display = 'block';
+  document.getElementById('confirmJobBtn').disabled = true;
+  G._selectedJob = null;
+  renderJobGrid({});
+
+  // Solo or no room — no need to listen
+  const realTeammates = gs.team.filter(m => !m.isMe && !m.isBot);
+  if (!gs.roomId || realTeammates.length === 0) return;
+
+  // Listen for taken jobs in real-time
+  const jobsRef = ref(db, `rooms/${gs.roomId}/jobs`);
+  if (G.listeners.jobSelect) { try { off(jobsRef); } catch(e){} }
+  G.listeners.jobSelect = onValue(jobsRef, snap => {
+    const taken = snap.exists() ? snap.val() : {};
+    // Invert: {uid: jobId} → {jobId: uid's display name}
+    const takenJobs = {};
+    Object.entries(taken).forEach(([uid, jobId]) => {
+      if (uid !== G.uid) takenJobs[jobId] = uid;
+    });
+    renderJobGrid(takenJobs);
+    // If my current selection was taken by someone else, deselect it
+    if (G._selectedJob && takenJobs[G._selectedJob]) {
+      G._selectedJob = null;
+      document.getElementById('confirmJobBtn').disabled = true;
+      notify('你選擇的職業已被隊友選走，請重新選擇', 'err');
+    }
+  });
+}
+
+window.selectJob = (jobId) => {
+  // Check if taken by teammate
+  const gs = G.gameState;
+  if (gs.roomId) {
+    // Read current taken state from DOM (already rendered)
+    const card = document.getElementById(`jobcard-${jobId}`);
+    if (card && card.classList.contains('job-taken')) {
+      const job = JOBS_DEF.find(j => j.id === jobId);
+      notify(`${job?.name || jobId} 已被隊友選擇！`, 'err');
+      return;
+    }
+  }
+  // Deselect all, select this one
+  document.querySelectorAll('.job-card').forEach(c => {
+    const jid = c.id.replace('jobcard-', '');
+    const job = JOBS_DEF.find(j => j.id === jid);
+    if (job && !c.classList.contains('job-taken')) {
+      c.style.borderColor = job.color + '22';
+      c.classList.remove('selected');
+    }
+  });
+  const selCard = document.getElementById(`jobcard-${jobId}`);
+  const selJob  = JOBS_DEF.find(j => j.id === jobId);
+  if (selCard && selJob && !selCard.classList.contains('job-taken')) {
+    selCard.style.borderColor = selJob.color;
+    selCard.classList.add('selected');
+    G._selectedJob = jobId;
+    document.getElementById('confirmJobBtn').disabled = false;
+  }
+};
+
+window.confirmJob = () => {
+  if (!G._selectedJob) return;
+  const gs = G.gameState;
+  const myMem = gs.team.find(m => m.isMe);
+  if (myMem) {
+    myMem.job       = G._selectedJob;
+    myMem.activeUsed = 0;
+    myMem.activeMax  = JOBS_DEF.find(j => j.id === G._selectedJob).activeMax;
+  }
+  // Stop listening to job select
+  if (gs.roomId && G.listeners.jobSelect) {
+    try { off(ref(db, `rooms/${gs.roomId}/jobs`)); } catch(e){}
+    G.listeners.jobSelect = null;
+  }
+  document.getElementById('jobSelectPanel').style.display = 'none';
+  document.getElementById('allocPanel').classList.remove('hidden');
+  const cfg = STAGE_CONFIG[0];
+  resetAllocUI(cfg.playerPts, myMem);
+  // Write job to Firebase so host and teammates see it
+  if (gs.roomId) {
+    set(ref(db, `rooms/${gs.roomId}/jobs/${G.uid}`), G._selectedJob);
+  }
+};
+
+function buildActiveSkillBar() {
+  const gs = G.gameState;
+  const bar = document.getElementById('activeSkillBar');
+  if (!bar) return;
+  const myMem = gs.team.find(m => m.isMe);
+  if (!myMem || !myMem.job) { bar.innerHTML = ''; return; }
+  const job = JOBS_DEF.find(j => j.id === myMem.job);
+  if (!job) { bar.innerHTML = ''; return; }
+  const used = myMem.activeUsed || 0;
+  const max  = myMem.activeMax  ?? job.activeMax;
+  const remaining = max >= 99 ? '∞' : `${max - used}`;
+  const disabled = (max < 99 && used >= max) ? 'disabled' : '';
+  bar.innerHTML = `<button class="active-skill-btn" id="activeSkillBtn" ${disabled} onclick="useActiveSkill()">
+    ${job.icon} ${job.activeName} <span class="skill-uses">[剩餘 ${remaining}]</span>
+  </button>`;
+}
+
+window.useActiveSkill = () => {
+  const gs = G.gameState;
+  if (!gs || !gs.battleActive) return;
+  const myMem = gs.team.find(m => m.isMe);
+  if (!myMem || !myMem.job) return;
+  const job = JOBS_DEF.find(j => j.id === myMem.job);
+  const used = myMem.activeUsed || 0;
+  if (job.activeMax < 99 && used >= job.activeMax) { notify('本關次數已用盡', 'err'); return; }
+
+  if (job.id === '精靈術師') {
+    // Need to pick target — enter targeting mode
+    gs._targetingSkill = '精靈術師';
+    document.getElementById('activeSkillBtn').classList.add('targeting');
+    document.getElementById('battleHint').innerHTML = '✨ <strong>選擇要封印的敵人（點擊敵方卡片）</strong>';
+    return;
+  }
+
+  // Execute skill immediately (or send request if non-host)
+  if (isHost()) {
+    executeActiveSkill(myMem, null);
+  } else {
+    sendSkillRequest(myMem.job, null);
+  }
+};
+
+// Called when clicking enemy while targeting skill active
+function handleSkillTargetClick(enemyIdx) {
+  const gs = G.gameState;
+  if (!gs._targetingSkill) return false;
+  const jobId = gs._targetingSkill;
+  gs._targetingSkill = null;
+  document.getElementById('activeSkillBtn')?.classList.remove('targeting');
+  document.getElementById('battleHint').textContent = '';
+  const myMem = gs.team.find(m => m.isMe);
+  if (isHost()) {
+    executeActiveSkill(myMem, enemyIdx);
+  } else {
+    sendSkillRequest(jobId, enemyIdx);
+  }
+  return true;
+}
+
+function sendSkillRequest(jobId, targetIdx) {
+  const gs = G.gameState;
+  push(ref(db, `rooms/${gs.roomId}/actions`), {
+    type: 'skillRequest',
+    from: G.uid,
+    jobId,
+    targetIdx: targetIdx ?? -1,
+    ts: Date.now()
+  });
+}
+
+// Host executes active skill
+function executeActiveSkill(actor, targetIdx) {
+  const gs = G.gameState;
+  const job = JOBS_DEF.find(j => j.id === actor.job);
+  if (!job) return;
+  actor.activeUsed = (actor.activeUsed || 0) + 1;
+
+  if (actor.job === '盾戰士') {
+    // Heal all: restore 30% of lost HP
+    gs.team.forEach(m => {
+      if (m.hp <= 0) return;
+      const lost = m.maxHp - m.hp;
+      const heal = Math.round(lost * 0.3);
+      if (heal > 0) {
+        m.hp = Math.min(m.maxHp, m.hp + heal);
+        addLog(`💚 ${m.name} 恢復 <span class="green">${heal}</span> HP`);
+      }
+    });
+    addLog(`🛡 <span style="color:#4f8ef7">${actor.name}</span> 使用守護之盾！全隊回血！`);
+  }
+
+  else if (actor.job === '刺客') {
+    // Ignore 100% def, pick random alive enemy
+    const targets = gs.enemies.filter(e => e.hp > 0);
+    if (!targets.length) return;
+    const target = targets[Math.floor(Math.random() * targets.length)];
+    const { isEnemy: defIsEnemy, idx: defIdx } = getTargetIndex(target);
+    // Calc damage ignoring all defense
+    const effAtk = getEffectiveAtk(actor);
+    let dmg = effAtk; // ignore 100% def
+    if (dmg < 1) dmg = 1;
+    const wouldDie = target.hp - dmg <= 0;
+    const savedByPhoenix = wouldDie && checkPhoenix(target, gs);
+    if (!savedByPhoenix) target.hp = Math.max(0, target.hp - dmg);
+    addLog(`🗡 <span style="color:#a855f7">${actor.name}</span> 必殺！無視全部防禦，對 ${target.name} 造成 <span class="red">${dmg}</span> 傷害${target.hp<=0?' 💀':''}`);
+    writeBattleEvent({ type:'attack', attIsEnemy:false, attIdx:gs.team.indexOf(actor), defIsEnemy, defIdx, dmg, isCrit:false, isSlash:true, slashColor:'red', dying: target.hp<=0 && !savedByPhoenix });
+    requestAnimationFrame(() => {
+      const fxEl = getFxEl(defIsEnemy, defIdx);
+      const card  = getFxCard(defIsEnemy, defIdx);
+      fxSlash(fxEl, false, false, 'red');
+      setTimeout(() => { fxHitFlash(fxEl); fxParticles(card, dmg, false, 'red'); fxDamageNumber(fxEl, dmg, false, false, false, false); if(target.hp<=0&&!savedByPhoenix) setTimeout(()=>fxExplosion(fxEl,card),200); }, 120);
+    });
+  }
+
+  else if (actor.job === '爆炎法師') {
+    addLog(`🔥 <span style="color:#ef4444">${actor.name}</span> 爆炎！攻擊所有敵人！`);
+    let anyDied = false;
+    const aliveEnemies = gs.enemies.filter(e => e.hp > 0);
+    aliveEnemies.forEach(target => {
+      const { isEnemy: defIsEnemy, idx: defIdx } = getTargetIndex(target);
+      const effAtk = getEffectiveAtk(actor);
+      let dmg = Math.max(1, effAtk - target.def);
+      const wouldDie = target.hp - dmg <= 0;
+      const saved = wouldDie && checkPhoenix(target, gs);
+      if (!saved) target.hp = Math.max(0, target.hp - dmg);
+      if (target.hp <= 0 && !saved) anyDied = true;
+      addLog(`💥 ${target.name} 受到 <span class="red">${dmg}</span> 傷害${target.hp<=0?' 💀':''}`);
+      writeBattleEvent({ type:'attack', attIsEnemy:false, attIdx:gs.team.indexOf(actor), defIsEnemy, defIdx, dmg, isCrit:false, isSlash:false, slashColor:'red', dying: target.hp<=0&&!saved });
+      requestAnimationFrame(() => { const fxEl=getFxEl(defIsEnemy,defIdx); const card=getFxCard(defIsEnemy,defIdx); fxHitFlash(fxEl); fxParticles(card,dmg,false,'red'); fxDamageNumber(fxEl,dmg,false,false,false,false); if(target.hp<=0&&!saved)setTimeout(()=>fxExplosion(fxEl,card),200); });
+    });
+    // Chain explosion if any died
+    if (anyDied) {
+      setTimeout(() => {
+        const stillAlive = gs.enemies.filter(e => e.hp > 0);
+        if (stillAlive.length) {
+          addLog(`💥 爆炎連鎖！再次攻擊剩餘敵人！`);
+          stillAlive.forEach(target => {
+            const { isEnemy: defIsEnemy, idx: defIdx } = getTargetIndex(target);
+            const effAtk = getEffectiveAtk(actor);
+            let dmg = Math.max(1, effAtk - target.def);
+            const saved = target.hp - dmg <= 0 && checkPhoenix(target, gs);
+            if (!saved) target.hp = Math.max(0, target.hp - dmg);
+            addLog(`💥 ${target.name} 再受到 <span class="red">${dmg}</span> 傷害${target.hp<=0?' 💀':''}`);
+            writeBattleEvent({ type:'attack', attIsEnemy:false, attIdx:gs.team.indexOf(actor), defIsEnemy, defIdx, dmg, isCrit:false, isSlash:false, dying: target.hp<=0&&!saved });
+            requestAnimationFrame(()=>{ const fxEl=getFxEl(defIsEnemy,defIdx); const card=getFxCard(defIsEnemy,defIdx); fxHitFlash(fxEl); fxParticles(card,dmg,true); if(target.hp<=0&&!saved)setTimeout(()=>fxExplosion(fxEl,card),100); });
+          });
+        }
+        renderBattle(); writeBattleState();
+        if (!hostCheckBattleEnd()) setTimeout(()=>hostProcessNextTurn(), 600);
+      }, 600);
+      renderBattle(); writeBattleState();
+      return; // wait for chain
+    }
+  }
+
+  else if (actor.job === '精靈術師') {
+    const target = gs.enemies[targetIdx];
+    if (!target || target.hp <= 0) return;
+    gs._silenced = gs._silenced || {};
+    gs._silenced[targetIdx] = (gs._silenced[targetIdx] || 0) + 4;
+    addLog(`✨ <span style="color:#10b981">${actor.name}</span> 封印 ${target.name}！4個回合無法攻擊！`);
+    requestAnimationFrame(() => {
+      const fxEl = getFxEl(true, targetIdx);
+      const card  = getFxCard(true, targetIdx);
+      fxBlock(fxEl, card);
+    });
+  }
+
+  else if (actor.job === '冰霜法師') {
+    gs._frozenRounds = 1; // all enemies skip next turn
+    addLog(`❄ <span style="color:#38bdf8">${actor.name}</span> 冰封！所有敵人本回合無法攻擊，並受到已損失血量30%傷害！`);
+    gs.enemies.forEach((target, i) => {
+      if (target.hp <= 0) return;
+      const lost = target.maxHp - target.hp;
+      const dmg = Math.max(1, Math.round(lost * 0.3));
+      target.hp = Math.max(0, target.hp - dmg);
+      addLog(`❄ ${target.name} 受到冰霜傷害 <span class="cyan">${dmg}</span>${target.hp<=0?' 💀':''}`);
+      writeBattleEvent({ type:'attack', attIsEnemy:false, attIdx:gs.team.indexOf(actor), defIsEnemy:true, defIdx:i, dmg, isCrit:false, isSlash:false, dying: target.hp<=0 });
+      requestAnimationFrame(() => { const fxEl=getFxEl(true,i); const card=getFxCard(true,i); fxHitFlash(fxEl); fxDamageNumber(fxEl,dmg,false,false,false,true); if(target.hp<=0)setTimeout(()=>fxExplosion(fxEl,card),200); });
+    });
+  }
+
+  renderBattle();
+  buildActiveSkillBar();
+  writeBattleState();
+  if (actor.job !== '爆炎法師') {
+    if (!hostCheckBattleEnd()) {
+      // Active skill doesn't consume the turn — continue current turn
+      if (gs.waitingForPlayer && actor.isMe) {
+        document.getElementById('battleHint').innerHTML = '⚔️ <strong>輪到你！點擊右側任意敵人發起攻擊</strong>';
+      }
+    }
+  }
+}
+
+function processSkillRequest(ev) {
+  const gs = G.gameState;
+  if (!gs || !isHost()) return;
+  const actor = gs.team.find(m => m.name === ev.from);
+  if (!actor) return;
+  executeActiveSkill(actor, ev.targetIdx >= 0 ? ev.targetIdx : null);
+}
+
+function resetJobState(gs) {
+  // Reset per-stage job state
+  gs.team.forEach(m => {
+    m.activeUsed = 0;
+  });
+  gs._silenced = {};
+  gs._frozenRounds = 0;
+  gs._shieldTurns = 0; // counts turns for 盾戰士 passive
+}
+
+function getShieldTankIdx(gs) {
+  return gs.team.findIndex(m => m.job === '盾戰士' && m.hp > 0);
+}
+
 function startStage(stage) {
   const gs = G.gameState;
   gs.stage = stage;
@@ -1635,7 +2026,6 @@ function startStage(stage) {
   // Restore team HP to max
   for (const m of gs.team) {
     m.hp = m.maxHp;
-    // For stage 2+, bots need their allocDone reset so they receive the new pts
     if (stage > 1 && m.isBot) m.allocDone = false;
     if (stage > 1 && !m.isMe && !m.isBot) m.allocDone = false;
   }
@@ -1649,19 +2039,29 @@ function startStage(stage) {
   gs.pendingAlloc = true;
   gs.log = [];
   gs._phoenixCount = {};
+  resetJobState(gs);
+
   document.getElementById('gameStageText').textContent = `第 ${stage} 關`;
-  document.getElementById('gameStageSub').textContent = '分配屬性點數';
-  document.getElementById('allocPanel').classList.remove('hidden');
+  document.getElementById('gameStageSub').textContent = stage === 1 ? '選擇職業' : '分配屬性點數';
+  document.getElementById('allocPanel').classList.add('hidden');
   document.getElementById('battleSection').classList.add('hidden');
   document.getElementById('resultOverlay').classList.add('hidden');
-  // Alloc panel setup
+  document.getElementById('jobSelectPanel').style.display = 'none';
+
   const pts = cfg.playerPts;
   const myMem = gs.team.find(m => m.isMe);
   if (myMem) {
     myMem.allocExtra = {hp:0,atk:0,def:0};
     myMem.allocDone = false;
   }
-  resetAllocUI(pts, myMem);
+
+  if (stage === 1) {
+    // Show job selection first, then alloc
+    showJobSelect();
+  } else {
+    document.getElementById('allocPanel').classList.remove('hidden');
+    resetAllocUI(pts, myMem);
+  }
 }
 
 function resetAllocUI(pts, myMem) {
@@ -1769,12 +2169,28 @@ function listenForAllocReady(gs) {
       }
       m.allocDone = true;
     }
-    document.getElementById('allocWaitMsg').classList.add('hidden');
-    document.getElementById('confirmAllocBtn').disabled = false;
-    document.getElementById('confirmAllocBtn').textContent = '確認屬性，開始戰鬥';
-    document.getElementById('allocPanel').classList.add('hidden');
-    document.getElementById('gameStageSub').textContent = '戰鬥中';
-    startBattle();
+    // Load all teammate jobs from Firebase (host needs them for passive calculations)
+    const finishAlloc = async () => {
+      if (gs.roomId && isHost()) {
+        const jobsSnap = await get(ref(db, `rooms/${gs.roomId}/jobs`));
+        const jobsData = jobsSnap.exists() ? jobsSnap.val() : {};
+        gs.team.forEach(m => {
+          if (m.isBot) return;
+          if (jobsData[m.name]) {
+            m.job        = jobsData[m.name];
+            m.activeUsed = 0;
+            m.activeMax  = JOBS_DEF.find(j => j.id === m.job)?.activeMax ?? 0;
+          }
+        });
+      }
+      document.getElementById('allocWaitMsg').classList.add('hidden');
+      document.getElementById('confirmAllocBtn').disabled = false;
+      document.getElementById('confirmAllocBtn').textContent = '確認屬性，開始戰鬥';
+      document.getElementById('allocPanel').classList.add('hidden');
+      document.getElementById('gameStageSub').textContent = '戰鬥中';
+      startBattle();
+    };
+    finishAlloc();
   });
 }
 
@@ -1866,7 +2282,11 @@ function startBattle() {
   gs.waitingForPlayer = false;
   gs.roundNum = 1;
   gs.log = [];
+  gs._silenced = gs._silenced || {};
+  gs._frozenRounds = gs._frozenRounds || 0;
+  gs._shieldTurns = 0;
   document.getElementById('battleSection').classList.remove('hidden');
+  buildActiveSkillBar();
   buildTurnOrder();
   renderBattle();
   if (isHost()) {
@@ -1880,6 +2300,8 @@ function startBattle() {
 
 function buildTurnOrder() {
   const gs = G.gameState;
+  // Decrement freeze at start of each new round
+  if ((gs._frozenRounds || 0) > 0) gs._frozenRounds--;
   const teamTurns = gs.team
     .map((m, i) => ({ type: 'team', i }))
     .filter(t => gs.team[t.i].hp > 0);
@@ -1899,30 +2321,34 @@ function checkBattleEnd() { return isHost() ? hostCheckBattleEnd() : false; }
 window.clickEnemy = (i) => {
   const gs = G.gameState;
   if (!gs || !gs.battleActive) return;
+  const enemy = gs.enemies[i];
+  if (!enemy || enemy.hp <= 0) return;
+
+  // Skill targeting mode takes priority
+  if (gs._targetingSkill) {
+    handleSkillTargetClick(i);
+    return;
+  }
+
   if (!gs.waitingForPlayer) return;
   const t = gs.turnOrder[gs.currentTurn];
   if (!t || t.type !== 'team') return;
   const actor = gs.team[t.i];
   if (!actor || actor.hp <= 0) return;
-  const enemy = gs.enemies[i];
-  if (!enemy || enemy.hp <= 0) return;
 
   gs.waitingForPlayer = false;
   gs.selectedEnemy = i;
   document.getElementById('battleHint').textContent = '';
 
   if (isHost()) {
-    // Host acts directly
     hostPerformAttack(actor, enemy, true);
     gs.currentTurn++;
     renderBattle();
     writeBattleState();
     if (!hostCheckBattleEnd()) setTimeout(() => hostProcessNextTurn(), 500);
   } else {
-    // Non-host: send action request to Firebase for host to process
     sendActionRequest(i);
     document.getElementById('battleHint').textContent = '攻擊中...';
-    gs.waitingForPlayer = false;
   }
 };
 
@@ -1938,7 +2364,10 @@ function getEffectiveAtk(fighter) {
 
 function calcSingleHit(attacker, defender) {
   const effAtk = getEffectiveAtk(attacker);
-  let dmg = effAtk - defender.def;
+  // 刺客 passive: ignore 30% of defense
+  const assassinPassive = attacker.job === '刺客';
+  const effDef = assassinPassive ? Math.round(defender.def * 0.7) : defender.def;
+  let dmg = effAtk - effDef;
   if (dmg < 1) dmg = 1;
   let isCrit = false;
 
@@ -2059,7 +2488,8 @@ function writeBattleState() {
       name: m.name, isBot: m.isBot||false,
       hp: m.hp, maxHp: m.maxHp, atk: m.atk, def: m.def,
       rankKey: m.rankKey||'鐵', rankName: m.rankName||'黑鐵',
-      skills: m.skills||{}, allocDone: m.allocDone||false, dead: m.hp<=0
+      skills: m.skills||{}, allocDone: m.allocDone||false, dead: m.hp<=0,
+      job: m.job||null, activeUsed: m.activeUsed||0, activeMax: m.activeMax||0
     })),
     enemies: gs.enemies.map(e => ({
       name: e.name, hp: e.hp, maxHp: e.maxHp,
@@ -2163,12 +2593,15 @@ function applyBattleState(state) {
   if (state.team) {
     state.team.forEach((ft, i) => {
       if (!gs.team[i]) return;
-      gs.team[i].hp     = ft.hp;
-      gs.team[i].maxHp  = ft.maxHp;
-      gs.team[i].atk    = ft.atk;
-      gs.team[i].def    = ft.def;
-      gs.team[i].dead   = ft.dead;
+      gs.team[i].hp        = ft.hp;
+      gs.team[i].maxHp     = ft.maxHp;
+      gs.team[i].atk       = ft.atk;
+      gs.team[i].def       = ft.def;
+      gs.team[i].dead      = ft.dead;
+      gs.team[i].job       = ft.job || gs.team[i].job;
+      gs.team[i].activeUsed = ft.activeUsed ?? gs.team[i].activeUsed;
     });
+    buildActiveSkillBar();
   }
   // Sync full enemy stats from host
   if (state.enemies) {
@@ -2242,10 +2675,10 @@ function listenForActions() {
   G.listeners.actions = onChildAdded(actionsRef, snap => {
     if (!G.gameState || !G.gameState.battleActive) return;
     const ev = snap.val();
-    if (!ev || ev.type !== 'actionRequest') return;
-    // Remove processed action
+    if (!ev) return;
     remove(snap.ref);
-    processActionRequest(ev);
+    if (ev.type === 'actionRequest') processActionRequest(ev);
+    else if (ev.type === 'skillRequest') processSkillRequest(ev);
   });
 }
 
@@ -2271,6 +2704,23 @@ function processActionRequest(ev) {
 // ===== HOST BATTLE LOGIC =====
 function hostPerformAttack(attacker, defender, isSlash) {
   const gs = G.gameState;
+
+  // 盾戰士 passive: first 5 team turns, redirect enemy attacks to tank
+  if (attacker.isMonster || (attacker.isBot && !gs.team.includes(attacker))) {
+    // attacker is enemy
+  } else {
+    // attacker is team — no redirect needed
+  }
+  // If enemy is attacking a team member, check if 盾戰士 taunt is active
+  const defIsTeam = gs.team.includes(defender);
+  if (defIsTeam && (attacker.isMonster || attacker.isBot && gs.enemies.includes(attacker))) {
+    const tankIdx = getShieldTankIdx(gs);
+    const shieldActive = tankIdx >= 0 && (gs._shieldTurns || 0) <= 5;
+    if (shieldActive && gs.team[tankIdx] !== defender) {
+      defender = gs.team[tankIdx];
+      addLog(`🛡 盾戰士為隊友擋下攻擊！`);
+    }
+  }
   const { isEnemy: defIsEnemy, idx: defIdx } = getTargetIndex(defender);
   const { isEnemy: attIsEnemy, idx: attIdx } = getTargetIndex(attacker);
 
@@ -2457,6 +2907,30 @@ function hostProcessNextTurn() {
     gs.currentTurn++;
     hostProcessNextTurn();
     return;
+  }
+
+  // Track 盾戰士 shield passive turn counter (counts team turns)
+  if (t.type === 'team') gs._shieldTurns = (gs._shieldTurns || 0) + 1;
+
+  // 精靈術師 silence check — skip silenced enemy turn
+  if (t.type === 'enemy') {
+    const silenced = (gs._silenced || {})[t.i] || 0;
+    if (silenced > 0) {
+      gs._silenced[t.i] = silenced - 1;
+      addLog(`✨ ${actor.name} 被封印，無法行動！（剩餘 ${silenced-1} 回合）`);
+      gs.currentTurn++;
+      renderBattle(); writeBattleState();
+      setTimeout(() => hostProcessNextTurn(), 500);
+      return;
+    }
+    // 冰霜法師 freeze — skip all enemy turns this round
+    if ((gs._frozenRounds || 0) > 0) {
+      addLog(`❄ ${actor.name} 被冰封，無法行動！`);
+      gs.currentTurn++;
+      renderBattle(); writeBattleState();
+      setTimeout(() => hostProcessNextTurn(), 400);
+      return;
+    }
   }
 
   renderBattle();
@@ -2743,7 +3217,7 @@ function renderBattle() {
     pPanel.innerHTML += `<div class="fighter-card ${m.hp>0?'alive':'dead'} ${isActive?'active-turn':''}" id="fc-team-${i}" style="position:relative">
       <div class="fx-overlay" id="fx-team-${i}"></div>
       <div class="fighter-name">
-        <span>${m.isMe?'★ ':''}<span style="color:${rankColor}">${m.name}</span></span>
+        <span>${m.isMe?'★ ':''}<span style="color:${rankColor}">${m.name}</span>${m.job ? ` <span title="${m.job}">${JOBS_DEF.find(j=>j.id===m.job)?.icon||''}</span>` : ''}</span>
         <span style="font-size:10px;color:var(--text3)">${m.rankName||''}</span>
       </div>
       <div class="hp-bar"><div class="hp-fill ${hpClass}" style="width:${hpPct}%"></div></div>
@@ -2834,6 +3308,7 @@ window.exitGame = async () => {
     try { if (G.listeners.actions)     off(ref(db, `rooms/${tid}/actions`));    } catch(e){} G.listeners.actions = null;
     try { if (G.listeners.hostChange)  off(ref(db, `rooms/${tid}/host`));       } catch(e){} G.listeners.hostChange = null;
     try { if (G.listeners.teamChat)    off(ref(db, `rooms/${tid}/chat`));       } catch(e){} G.listeners.teamChat = null;
+    try { if (G.listeners.jobSelect)   off(ref(db, `rooms/${tid}/jobs`));       } catch(e){} G.listeners.jobSelect = null;
   }
   if (tid) {
     try {
@@ -2899,6 +3374,9 @@ window.readyUp           = readyUp;
 window.leaveRoom         = leaveRoom;
 window.startMatchmaking  = startMatchmaking;
 window.cancelMatchmaking = cancelMatchmaking;
+window.confirmJob        = confirmJob;
+window.selectJob         = selectJob;
+window.useActiveSkill    = useActiveSkill;
 window.inviteFriend       = inviteFriend;
 window.doLogin           = doLogin;
 window.doRegister        = doRegister;
