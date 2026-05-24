@@ -279,6 +279,19 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
 @keyframes tombDrop{0%{opacity:0;transform:translateY(-30px) scale(.5)}50%{opacity:1;transform:translateY(4px) scale(1.15)}100%{opacity:1;transform:translateY(0) scale(1)}}
 
 
+/* ===== TEAM CHAT PANEL ===== */
+.team-chat-panel{background:var(--bg3);border:1px solid var(--border);border-radius:10px;display:flex;flex-direction:column;overflow:hidden}
+.team-chat-header{padding:8px 12px;background:var(--surface);border-bottom:1px solid var(--border);font-size:12px;color:var(--text2);letter-spacing:1px;display:flex;align-items:center;justify-content:space-between;cursor:pointer;user-select:none}
+.team-chat-header:hover{background:var(--surface2)}
+.team-chat-body{display:flex;flex-direction:column}
+.team-chat-msgs{overflow-y:auto;padding:8px;display:flex;flex-direction:column;gap:4px;min-height:80px;max-height:150px}
+.team-chat-input-row{display:flex;gap:6px;padding:6px 8px;background:var(--surface);border-top:1px solid var(--border);flex-shrink:0}
+.team-chat-input{flex:1;padding:6px 10px;background:var(--bg3);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:12px;outline:none;font-family:inherit}
+.team-chat-input:focus{border-color:var(--accent)}
+.game-chat-panel{position:fixed;bottom:16px;right:16px;width:280px;z-index:320;border-radius:12px;overflow:hidden;box-shadow:0 4px 24px #00000088;border:1px solid var(--border2);background:var(--bg3)}
+.game-chat-panel.collapsed .team-chat-body{display:none}
+@media(max-width:700px){.game-chat-panel{width:calc(100vw - 32px)}}
+
 @media(max-width:700px){
   .battle-area{grid-template-columns:1fr;grid-template-rows:auto auto auto}
   .vs-badge{transform:rotate(90deg)}
@@ -354,7 +367,6 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
       <div class="nav-tab" onclick="switchTab('friends')">👥 好友</div>
       <div class="nav-tab" onclick="switchTab('leaderboard')">🏆 排行榜</div>
       <div class="nav-tab" onclick="switchTab('globalChat')">💬 全服聊天</div>
-      <div class="nav-tab" onclick="switchTab('teamChat')">🔗 小隊聊天</div>
     </div>
     <div class="tab-content">
 
@@ -436,14 +448,7 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
         </div>
       </div>
 
-      <!-- TEAM CHAT -->
-      <div id="tab-teamChat" class="hidden">
-        <div id="teamChatContent">
-          <div style="text-align:center;color:var(--text2);font-size:13px;padding:40px">尚未加入小隊</div>
-        </div>
-      </div>
-
-    </div>
+    </div><!-- end tab-content -->
   </div>
 </div>
 
@@ -458,6 +463,19 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
     <div class="spinner" id="matchSpinner"></div>
     <div style="margin-top:16px;display:flex;flex-direction:column;gap:10px" id="matchBtns">
       <button class="btn btn-danger" onclick="cancelMatchmaking()">取消匹配</button>
+    </div>
+    <!-- Lobby Team Chat -->
+    <div id="lobbyChatWrap" class="hidden" style="margin-top:20px;width:100%;max-width:420px">
+      <div class="team-chat-panel">
+        <div class="team-chat-header">🔗 小隊聊天</div>
+        <div class="team-chat-body">
+          <div id="lobbyChatMsgs" class="team-chat-msgs"></div>
+          <div class="team-chat-input-row">
+            <input class="team-chat-input" id="lobbyChatInput" placeholder="輸入訊息..." onkeydown="if(event.key==='Enter'){sendTeamChat('lobby')}">
+            <button class="btn btn-primary btn-sm" onclick="sendTeamChat('lobby')">發送</button>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 </div>
@@ -567,6 +585,20 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
   </div>
 </div>
 
+<!-- IN-GAME TEAM CHAT (floating panel) -->
+<div id="gameChatPanel" class="game-chat-panel hidden">
+  <div class="team-chat-header" onclick="toggleGameChat()">
+    🔗 小隊聊天 <span id="gameChatToggleIcon">▲</span>
+  </div>
+  <div class="team-chat-body">
+    <div id="gameChatMsgs" class="team-chat-msgs"></div>
+    <div class="team-chat-input-row">
+      <input class="team-chat-input" id="gameChatInput" placeholder="輸入訊息..." onkeydown="if(event.key==='Enter'){sendTeamChat('game')}">
+      <button class="btn btn-primary btn-sm" onclick="sendTeamChat('game')">發送</button>
+    </div>
+  </div>
+</div>
+
 <!-- BATTLE EFFECTS CANVAS -->
 <canvas id="fxCanvas" style="position:fixed;inset:0;pointer-events:none;z-index:350;display:none"></canvas>
 
@@ -606,11 +638,11 @@ const RANKS = [
 ];
 const STAGE_CONFIG = [
   {stage:1,playerPts:10,monsterPts:10,exp:100,gold:100},
-  {stage:2,playerPts:5,monsterPts:16,exp:250,gold:250},
-  {stage:3,playerPts:5,monsterPts:22,exp:500,gold:500},
-  {stage:4,playerPts:10,monsterPts:35,exp:1500,gold:1500},
-  {stage:5,playerPts:10,monsterPts:50,exp:5000,gold:5000},
-  {stage:6,playerPts:10,monsterPts:70,exp:10000,gold:10000}
+  {stage:2,playerPts:5,monsterPts:16,exp:250,gold:300},
+  {stage:3,playerPts:5,monsterPts:22,exp:500,gold:650},
+  {stage:4,playerPts:10,monsterPts:35,exp:1500,gold:2500},
+  {stage:5,playerPts:10,monsterPts:50,exp:5000,gold:9000},
+  {stage:6,playerPts:10,monsterPts:70,exp:10000,gold:20000}
 ];
 const SKILLS_DEF = [
   {id:'反傷',   name:'反傷',   desc:'受到傷害時，將傷害的5%返還給攻擊者（最低1點）。每升1級+7%。',                                  baseCost:1000,  maxLvOverride:null, costMult:15},
@@ -802,7 +834,7 @@ function updateUI() {
 window.switchTab = (tab) => {
   document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
   document.querySelectorAll('.tab-content > div').forEach(d => d.classList.add('hidden'));
-  const tabs = ['home','play','skills','friends','leaderboard','globalChat','teamChat'];
+  const tabs = ['home','play','skills','friends','leaderboard','globalChat'];
   const idx = tabs.indexOf(tab);
   if (idx >= 0) document.querySelectorAll('.nav-tab')[idx].classList.add('active');
   document.getElementById(`tab-${tab}`).classList.remove('hidden');
@@ -810,7 +842,6 @@ window.switchTab = (tab) => {
   if (tab === 'skills') renderSkillsTab();
   if (tab === 'leaderboard') loadLeaderboard();
   if (tab === 'friends') renderFriends();
-  if (tab === 'teamChat') renderTeamChat();
 };
 
 // ===== SKILLS TAB =====
@@ -1034,42 +1065,69 @@ window.sendGlobalChat = async () => {
   await push(ref(db,'globalChat'), { name: G.uid, text, rankKey: rank.key, ts: Date.now() });
 };
 
-// ===== TEAM CHAT =====
-window.renderTeamChat = () => {
-  if (!G.teamId) {
-    document.getElementById('teamChatContent').innerHTML = '<div style="text-align:center;color:var(--text2);font-size:13px;padding:40px">尚未加入小隊<br><br><button class="btn btn-secondary" onclick="switchTab(\'play\')">前往組隊</button></div>';
-    return;
-  }
-  document.getElementById('teamChatContent').innerHTML = `
-    <div style="margin-bottom:8px;font-size:12px;color:var(--text2)">小隊代碼：<span style="color:var(--gold);font-family:monospace;font-size:16px">${G.teamId}</span></div>
-    <div class="chat-layout">
-      <div id="teamChatMessages" class="chat-messages"></div>
-      <div class="chat-input-row">
-        <input class="chat-input" id="teamChatInput" placeholder="小隊聊天..." onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendTeamChat()}">
-        <button class="btn btn-primary chat-send-btn" onclick="sendTeamChat()">發送</button>
-      </div>
-    </div>`;
-  setupTeamChatListener();
-};
-
+// ===== TEAM CHAT (unified for lobby + game) =====
 function setupTeamChatListener() {
-  if (G.listeners.teamChat) { off(ref(db, `rooms/${G.teamId}/chat`)); }
+  if (!G.teamId) return;
+  if (G.listeners.teamChat) { try { off(ref(db, `rooms/${G.teamId}/chat`)); } catch(e){} }
   const chatRef = query(ref(db, `rooms/${G.teamId}/chat`), orderByChild('ts'), limitToLast(80));
   G.listeners.teamChat = onChildAdded(chatRef, snap => {
     const msg = snap.val();
-    appendChatMsg('teamChatMessages', msg.name, msg.text, msg.rankKey, msg.name === G.uid);
+    if (!msg) return;
+    const color = getRankColor(msg.rankKey || '鐵');
+    const isOwn = msg.name === G.uid;
+    const html = `<div class="chat-msg ${isOwn?'own':'other'}" style="font-size:12px;padding:4px 8px">
+      <div class="chat-msg-user" style="font-size:10px"><span style="color:${color}">${msg.name}</span></div>
+      <div>${msg.text.replace(/</g,'&lt;')}</div>
+    </div>`;
+    // Append to whichever chat panel is visible
+    ['lobbyChatMsgs','gameChatMsgs'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) { el.innerHTML += html; el.scrollTop = el.scrollHeight; }
+    });
   });
 }
 
-window.sendTeamChat = async () => {
+window.sendTeamChat = async (source) => {
   if (!G.teamId) return;
-  const input = document.getElementById('teamChatInput');
+  const inputId = source === 'game' ? 'gameChatInput' : 'lobbyChatInput';
+  const input = document.getElementById(inputId);
+  if (!input) return;
   const text = input.value.trim();
   if (!text) return;
   input.value = '';
   const rank = getRank(G.player.exp||0);
   await push(ref(db, `rooms/${G.teamId}/chat`), { name: G.uid, text, rankKey: rank.key, ts: Date.now() });
 };
+
+window.toggleGameChat = () => {
+  const panel = document.getElementById('gameChatPanel');
+  const icon  = document.getElementById('gameChatToggleIcon');
+  panel.classList.toggle('collapsed');
+  icon.textContent = panel.classList.contains('collapsed') ? '▼' : '▲';
+};
+
+function showLobbyChat() {
+  document.getElementById('lobbyChatMsgs').innerHTML = '';
+  document.getElementById('lobbyChatWrap').classList.remove('hidden');
+  setupTeamChatListener();
+}
+
+function hideLobbyChat() {
+  document.getElementById('lobbyChatWrap').classList.add('hidden');
+}
+
+function showGameChat() {
+  document.getElementById('gameChatMsgs').innerHTML = '';
+  document.getElementById('gameChatPanel').classList.remove('hidden');
+  document.getElementById('gameChatPanel').classList.remove('collapsed');
+  document.getElementById('gameChatToggleIcon').textContent = '▲';
+  // Listener already set up from lobby, just ensure it's running
+  if (!G.listeners.teamChat) setupTeamChatListener();
+}
+
+function hideGameChat() {
+  document.getElementById('gameChatPanel').classList.add('hidden');
+}
 
 // ===== PLAY / MATCHMAKING =====
 window.showCreateTeam = () => {
@@ -1150,6 +1208,7 @@ function showRoomWaiting(code) {
     <button class="btn btn-primary" onclick="readyUp()" id="readyBtn">準備</button>
     <button class="btn btn-danger" onclick="leaveRoom()">離開小隊</button>`;
   renderMatchTeam();
+  showLobbyChat();
 }
 
 function listenToRoom(code) {
@@ -1210,6 +1269,8 @@ window.readyUp = async () => {
 };
 
 window.leaveRoom = async () => {
+  hideLobbyChat();
+  if (G.listeners.teamChat) { try { off(ref(db, `rooms/${G.teamId}/chat`)); } catch(e){} G.listeners.teamChat = null; }
   if (G.teamId) {
     if (G.listeners.room) { off(ref(db, `rooms/${G.teamId}`)); G.listeners.room = null; }
     try {
@@ -1343,6 +1404,7 @@ window.cancelMatchmaking = async () => {
 // ===== GAME START FROM ROOM =====
 async function startGameFromRoom(room, code) {
   if (G.listeners.room) { off(ref(db, `rooms/${code}`)); G.listeners.room = null; }
+  hideLobbyChat();
   document.getElementById('matchScreen').classList.add('hidden');
   const members = room.members || {};
 
@@ -1382,7 +1444,26 @@ async function startGameFromRoom(room, code) {
     }
   });
 
+  // Listen for host transfers
+  G.listeners.hostChange = onValue(ref(db, `rooms/${code}/host`), snap => {
+    if (!snap.exists() || !G.gameState) return;
+    const newHost = snap.val();
+    if (newHost === G.uid && !G.gameState.isHost) {
+      // I've been promoted to host
+      G.gameState.isHost = true;
+      G.gameState.hostName = G.uid;
+      if (G.listeners.battle)    { off(ref(db, `rooms/${code}/battle`));    G.listeners.battle = null; }
+      if (G.listeners.battleLog) { off(ref(db, `rooms/${code}/battleLog`)); G.listeners.battleLog = null; }
+      listenForActions();
+      if (G.gameState.battleActive) {
+        writeBattleState();
+        hostProcessNextTurn();
+      }
+    }
+  });
+
   await initGame(members, code);
+  showGameChat();
 }
 
 // ===== GAME ENGINE =====
@@ -1447,8 +1528,13 @@ async function initGame(members, roomId) {
     log: [],
     selectedEnemy: -1,
     isHost: iAmHost,
+    hostName,
     roundNum: 1
   };
+  // Write current host to Firebase so others can detect host transfers
+  if (iAmHost) {
+    set(ref(db, `rooms/${roomId}/host`), hostName);
+  }
   document.getElementById('gameScreen').classList.remove('hidden');
   startStage(1);
 }
@@ -1613,39 +1699,75 @@ function handleTeammateDisconnect(name) {
   const m = gs.team[idx];
   if (m.isBot || m.isMe) return;
 
-  // Keep ALL current stats (including all accumulated alloc from previous stages)
-  // Just mark as bot so AI controls it
+  // Replace with bot, preserving all stats
   gs.team[idx] = {
     ...m,
     name: `人機(${name})`,
     isBot: true,
     isMe: false,
     allocDone: true,
-    skills: {}  // no skills for replaced bot
+    skills: {}
   };
 
   addLog(`<span class="red">${name} 已離線，由同等級人機接替（屬性保留）</span>`);
   renderBattle();
 
-  // If we were waiting for their alloc during attribute phase, write fake alloc so waiting is released
+  // If disconnected player was the host, transfer host to me
+  const wasHost = (name === gs.hostName);
+  if (wasHost) {
+    gs.isHost = true;
+    gs.hostName = G.uid;
+    // Write new host to Firebase so others know
+    set(ref(db, `rooms/${gs.roomId}/host`), G.uid);
+    // Stop listening as non-host, start driving as host
+    if (G.listeners.battle)    { off(ref(db, `rooms/${gs.roomId}/battle`));    G.listeners.battle = null; }
+    if (G.listeners.battleLog) { off(ref(db, `rooms/${gs.roomId}/battleLog`)); G.listeners.battleLog = null; }
+    listenForActions();
+    addLog(`<span class="cyan">已接管戰鬥控制權</span>`);
+    // Resume battle from current state
+    if (gs.battleActive) {
+      if (gs.waitingForPlayer) {
+        // Was waiting for the disconnected host (who was also a player) — skip their turn
+        const t = gs.turnOrder[gs.currentTurn];
+        if (t && t.type === 'team' && gs.team[t.i] && gs.team[t.i].name === gs.team[idx].name) {
+          gs.waitingForPlayer = false;
+          gs.currentTurn++;
+        }
+      }
+      writeBattleState();
+      hostProcessNextTurn();
+    } else if (gs.pendingAlloc) {
+      // Still in alloc phase — check if we can start
+      const myMem = gs.team.find(t => t.isMe);
+      if (myMem && myMem.allocDone) {
+        // Write fake alloc for disconnected player to unblock
+        const fakeAllocRef = ref(db, `rooms/${gs.roomId}/alloc/${name}/stage${gs.stage}`);
+        set(fakeAllocRef, { hp: m.hp, maxHp: m.maxHp, atk: m.atk, def: m.def, done: true, ts: Date.now() });
+      }
+    }
+    return;
+  }
+
+  // Non-host disconnect — only host handles game logic
+  if (!isHost()) return;
+
+  // If waiting for their alloc during attribute phase
   if (gs.pendingAlloc) {
     const myMem = gs.team.find(t => t.isMe);
     if (myMem && myMem.allocDone) {
       const fakeAllocRef = ref(db, `rooms/${gs.roomId}/alloc/${name}/stage${gs.stage}`);
-      set(fakeAllocRef, {
-        hp: m.hp, maxHp: m.maxHp,
-        atk: m.atk, def: m.def,
-        done: true, ts: Date.now()
-      });
+      set(fakeAllocRef, { hp: m.hp, maxHp: m.maxHp, atk: m.atk, def: m.def, done: true, ts: Date.now() });
     }
   }
 
-  // If it was this bot's turn in battle, skip to next turn
-  if (gs.battleActive && !gs.waitingForPlayer) {
+  // If it was their turn in battle
+  if (gs.battleActive && gs.waitingForPlayer) {
     const t = gs.turnOrder[gs.currentTurn];
     if (t && t.type === 'team' && gs.team[t.i] && gs.team[t.i].name === gs.team[idx].name) {
+      gs.waitingForPlayer = false;
       gs.currentTurn++;
-      processNextTurn();
+      writeBattleState();
+      hostProcessNextTurn();
     }
   }
 }
@@ -1872,6 +1994,24 @@ function writeBattleEvent(event) {
   push(ref(db, `rooms/${gs.roomId}/battleLog`), { ...event, ts: Date.now() });
 }
 
+function addLog(msg) {
+  const el = document.getElementById('battleLog');
+  if (el) {
+    const div = document.createElement('div');
+    div.className = 'log-entry';
+    div.innerHTML = msg;
+    el.appendChild(div);
+    el.scrollTop = el.scrollHeight;
+  }
+  // Host broadcasts log to Firebase so non-host clients see it too
+  if (isHost() && G.gameState) {
+    push(ref(db, `rooms/${G.gameState.roomId}/battleLog`), {
+      type: 'log', msg, ts: Date.now()
+    });
+  }
+}
+
+
 function listenBattleState() {
   const gs = G.gameState;
   if (isHost()) return; // host drives, doesn't listen to itself
@@ -1888,6 +2028,16 @@ function listenBattleState() {
     const ev = snap.val();
     if (!ev) return;
     // Trigger visual effects from log events
+    if (ev.type === 'log') {
+      const el = document.getElementById('battleLog');
+      if (el) {
+        const div = document.createElement('div');
+        div.className = 'log-entry';
+        div.innerHTML = ev.msg;
+        el.appendChild(div);
+        el.scrollTop = el.scrollHeight;
+      }
+    }
     if (ev.type === 'attack') {
       setTimeout(() => {
         const defFxEl = getFxEl(ev.defIsEnemy, ev.defIdx);
@@ -2261,15 +2411,6 @@ function performAttack(attacker, defender) {
   hostPerformAttack(attacker, defender, !attacker.isBot && !attacker.isMonster);
 }
 
-function addLog(msg) {
-  const el = document.getElementById('battleLog');
-  const div = document.createElement('div');
-  div.className = 'log-entry';
-  div.innerHTML = msg;
-  el.appendChild(div);
-  el.scrollTop = el.scrollHeight;
-}
-
 
 
 // ===== BATTLE EFFECTS ENGINE =====
@@ -2593,6 +2734,7 @@ window.nextStage = () => {
 window.exitGame = async () => {
   document.getElementById('gameScreen').classList.add('hidden');
   document.getElementById('resultOverlay').classList.add('hidden');
+  hideGameChat();
   const tid = G.teamId;
   // Stop all listeners FIRST
   if (tid) {
@@ -2602,6 +2744,8 @@ window.exitGame = async () => {
     try { if (G.listeners.battleLog)   off(ref(db, `rooms/${tid}/battleLog`));  } catch(e){} G.listeners.battleLog = null;
     try { if (G.listeners.nextStage)   off(ref(db, `rooms/${tid}/nextStage`));  } catch(e){} G.listeners.nextStage = null;
     try { if (G.listeners.actions)     off(ref(db, `rooms/${tid}/actions`));    } catch(e){} G.listeners.actions = null;
+    try { if (G.listeners.hostChange)  off(ref(db, `rooms/${tid}/host`));       } catch(e){} G.listeners.hostChange = null;
+    try { if (G.listeners.teamChat)    off(ref(db, `rooms/${tid}/chat`));       } catch(e){} G.listeners.teamChat = null;
   }
   if (tid) {
     try {
@@ -2653,7 +2797,6 @@ window.declineFriend     = declineFriend;
 window.removeFriend      = removeFriend;
 window.renderFriends     = renderFriends;
 window.sendGlobalChat    = sendGlobalChat;
-window.sendTeamChat      = sendTeamChat;
 window.showCreateTeam    = showCreateTeam;
 window.showJoinTeam      = showJoinTeam;
 window.doCreateTeam      = doCreateTeam;
