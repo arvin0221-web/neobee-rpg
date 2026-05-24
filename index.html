@@ -613,9 +613,14 @@ const STAGE_CONFIG = [
   {stage:6,playerPts:10,monsterPts:70,exp:10000,gold:10000}
 ];
 const SKILLS_DEF = [
-  {id:'反傷',name:'反傷',desc:'受到傷害時，將傷害的5%返還給攻擊者（最低1點）。每升1級+7%。',basePct:5,perLv:7,baseCost:1000},
-  {id:'爆擊',name:'爆擊',desc:'每次攻擊有10%機率造成120%傷害。每升1級各+5%機率和+5%傷害。',baseChance:10,baseDmgPct:120,perLvChance:5,perLvDmg:5,baseCost:1000},
-  {id:'二連斬',name:'二連斬',desc:'每次攻擊有5%機率再斬一刀（若同時擁有爆擊，兩刀都有機率爆擊）。每升1級+5%機率。',baseChance:5,perLv:5,baseCost:1000}
+  {id:'反傷',   name:'反傷',   desc:'受到傷害時，將傷害的5%返還給攻擊者（最低1點）。每升1級+7%。',                                  baseCost:1000,  maxLvOverride:null, costMult:15},
+  {id:'爆擊',   name:'爆擊',   desc:'每次攻擊有10%機率造成120%傷害。每升1級各+5%機率和+5%傷害。',                                  baseCost:1000,  maxLvOverride:null, costMult:15},
+  {id:'二連斬', name:'二連斬', desc:'每次攻擊有5%機率再斬一刀（兩刀皆可觸發爆擊）。每升1級+5%機率。',                              baseCost:1000,  maxLvOverride:null, costMult:15},
+  {id:'不死鳥', name:'不死鳥', desc:'遭遇致命攻擊時，留下1HP繼續戰鬥。一關可觸發1次（2級:2次 / 3級:3次）。滿級3級。',             baseCost:10000, maxLvOverride:3,    costMult:null, fixedCosts:[10000,1000000,100000000]},
+  {id:'暴徒',   name:'暴徒',   desc:'血量低於20%時傷害+50%，攻擊特效變為紅色斬擊。每升1級額外+15%傷害加成。',                      baseCost:1000,  maxLvOverride:null, costMult:10},
+  {id:'致命一擊',name:'致命一擊',desc:'每次攻擊有1%機率讓對手瞬間喪命（特效炸裂）。每升1級+1%機率。',                             baseCost:1000,  maxLvOverride:null, costMult:10},
+  {id:'絕對防禦',name:'絕對防禦',desc:'每次受到攻擊有5%機率完全免疫傷害。每升1級+5%機率。',                                       baseCost:1000,  maxLvOverride:null, costMult:10},
+  {id:'蠻力',   name:'蠻力',   desc:'每擁有15HP，攻擊+1（動態計算）。每升1級，每15HP獲得的攻擊加成+1。',                          baseCost:10000, maxLvOverride:null, costMult:10},
 ];
 
 // ===== STATE =====
@@ -648,12 +653,20 @@ function getRankColor(key) {
   const map = {'鐵':'#9e9e9e','銅':'#cd7f32','銀':'#c0c0c0','金':'#ffd700','白金':'#a8d8ea','鑽':'#b9f2ff','翡':'#00a86b','曜':'#7b5ea7','隕':'#ff6b35','岩':'#f9ca24'};
   return map[key] || '#fff';
 }
-function skillUpgradeCost(baseCost, level) {
-  // level=current level. cost to go from level to level+1
-  if (level === 0) return baseCost;
-  return Math.round(baseCost * Math.pow(15, level));
+function skillUpgradeCost(sd, level) {
+  // level = current level, returns cost to go from level → level+1
+  if (sd.fixedCosts) return sd.fixedCosts[level] ?? Infinity;
+  const mult = sd.costMult ?? 15;
+  if (level === 0) return sd.baseCost;
+  return Math.round(sd.baseCost * Math.pow(mult, level));
 }
-function getSkillMaxLevel(exp) { return getRankIndex(exp) + 1; }
+function getSkillMaxLevel(exp, sd) {
+  const rankCap = getRankIndex(exp) + 1;
+  if (sd && sd.maxLvOverride !== null && sd.maxLvOverride !== undefined) {
+    return Math.min(sd.maxLvOverride, rankCap);
+  }
+  return rankCap;
+}
 function rollMonsterStats(pts) {
   // Each point randomly becomes: +5 hp, or +1 atk, or +1 def
   let hpPts = 0, atk = 0, def = 0;
@@ -804,42 +817,45 @@ window.switchTab = (tab) => {
 function renderSkillsTab() {
   const p = G.player;
   const rankIdx = getRankIndex(p.exp || 0);
-  const maxLv = rankIdx + 1; // skill level cap = player rank index + 1
   const rank = RANKS[rankIdx];
   const nextRank = rankIdx < RANKS.length-1 ? RANKS[rankIdx+1] : null;
-  // Info banner
+  const globalMaxLv = rankIdx + 1;
+
   let bannerHtml = `<div class="card" style="margin-bottom:16px;display:flex;align-items:center;gap:16px;flex-wrap:wrap">
     <div>
       <div class="card-title" style="margin-bottom:4px">技能等級上限</div>
-      <div style="font-size:22px;font-weight:900;font-family:monospace;color:var(--accent)">Lv.${maxLv}</div>
+      <div style="font-size:22px;font-weight:900;font-family:monospace;color:var(--accent)">Lv.${globalMaxLv}</div>
     </div>
     <div style="flex:1;font-size:12px;color:var(--text2);line-height:2">
       目前等級：<span style="color:${getRankColor(rank.key)};font-weight:700">${rank.name}</span>（第 ${rankIdx+1} 階）<br>
-      ${nextRank ? `升至 <span style="color:${getRankColor(nextRank.key)};font-weight:700">${nextRank.name}</span> 後，技能上限提升至 <span style="color:var(--accent)">Lv.${maxLv+1}</span>` : '<span style="color:var(--gold)">已達最高等級，技能上限已最高</span>'}
+      ${nextRank ? `升至 <span style="color:${getRankColor(nextRank.key)};font-weight:700">${nextRank.name}</span> 後，技能上限提升至 <span style="color:var(--accent)">Lv.${globalMaxLv+1}</span>` : '<span style="color:var(--gold)">已達最高等級</span>'}
     </div>
   </div>`;
+
   let skillsHtml = '';
   for (const sd of SKILLS_DEF) {
     const curLv = (p.skills || {})[sd.id] || 0;
+    const maxLv = getSkillMaxLevel(p.exp||0, sd);
     const atCap = curLv >= maxLv;
-    const upgradeCost = atCap ? null : skillUpgradeCost(sd.baseCost, curLv);
+    const upgradeCost = atCap ? null : skillUpgradeCost(sd, curLv);
     const canAfford = upgradeCost !== null && (p.gold||0) >= upgradeCost;
-    // Status tag
+
     let statusTag = '';
-    if (atCap) statusTag = `<span style="background:#e8c84a22;color:var(--gold);border:1px solid var(--gold)44;border-radius:6px;padding:2px 8px;font-size:11px">已達等級上限</span>`;
-    else if (!canAfford) statusTag = `<span style="background:#e0555522;color:var(--red);border:1px solid var(--red)44;border-radius:6px;padding:2px 8px;font-size:11px">金幣不足</span>`;
-    else statusTag = `<span style="background:#4ec97a22;color:var(--green);border:1px solid var(--green)44;border-radius:6px;padding:2px 8px;font-size:11px">${curLv===0?'可購買':'可升級'}</span>`;
+    if (atCap) statusTag = `<span style="background:#e8c84a22;color:var(--gold);border:1px solid #e8c84a44;border-radius:6px;padding:2px 8px;font-size:11px">${sd.maxLvOverride ? '已達技能滿級' : '已達等級上限'}</span>`;
+    else if (!canAfford) statusTag = `<span style="background:#e0555522;color:var(--red);border:1px solid #e0555544;border-radius:6px;padding:2px 8px;font-size:11px">金幣不足</span>`;
+    else statusTag = `<span style="background:#4ec97a22;color:var(--green);border:1px solid #4ec97a44;border-radius:6px;padding:2px 8px;font-size:11px">${curLv===0?'可購買':'可升級'}</span>`;
+
     skillsHtml += `<div class="skill-card">
       <div class="skill-name">${sd.name}</div>
       <div class="skill-desc">${sd.desc}</div>
       <div class="skill-level">
         <div class="skill-lvl-badge">Lv.${curLv}</div>
-        <div class="skill-cap">/ 上限 Lv.${maxLv}</div>
+        <div class="skill-cap">/ 上限 Lv.${maxLv}${sd.maxLvOverride?'（技能滿級）':''}</div>
         <div style="margin-left:auto">${statusTag}</div>
       </div>
       <div class="skill-cost" style="margin-bottom:10px">
         ${atCap
-          ? `<span style="color:var(--text3)">升至下一等級需先提升玩家等級（${nextRank?nextRank.name:'已滿'}）</span>`
+          ? `<span style="color:var(--text3)">${sd.maxLvOverride ? '此技能已達滿級' : `升至下一等級（${nextRank?nextRank.name:'已滿'}）後可繼續升級`}</span>`
           : `升級費用：💰 <strong>${upgradeCost.toLocaleString()}</strong>　擁有：💰 ${(p.gold||0).toLocaleString()}`
         }
       </div>
@@ -853,16 +869,20 @@ function renderSkillsTab() {
 
 window.upgradeSkill = async (sid) => {
   const p = G.player;
-  const rankIdx = getRankIndex(p.exp || 0);
-  const maxLv = rankIdx + 1;
-  const curLv = (p.skills || {})[sid] || 0;
   const sd = SKILLS_DEF.find(s => s.id === sid);
+  if (!sd) return;
+  const rankIdx = getRankIndex(p.exp || 0);
+  const nextRank = rankIdx < RANKS.length-1 ? RANKS[rankIdx+1] : null;
+  const maxLv = getSkillMaxLevel(p.exp||0, sd);
+  const curLv = (p.skills || {})[sid] || 0;
   if (curLv >= maxLv) {
-    const nextRank = rankIdx < RANKS.length-1 ? RANKS[rankIdx+1].name : null;
-    notify(nextRank ? `技能已達等級上限！升至${nextRank}後可繼續升級` : '技能已達最高等級上限', 'err');
+    if (sd.maxLvOverride !== null && sd.maxLvOverride !== undefined && curLv >= sd.maxLvOverride) {
+      notify('此技能已達滿級！', 'err'); return;
+    }
+    notify(nextRank ? `技能已達等級上限！升至${nextRank.name}後可繼續升級` : '技能已達最高等級上限', 'err');
     return;
   }
-  const cost = skillUpgradeCost(sd.baseCost, curLv);
+  const cost = skillUpgradeCost(sd, curLv);
   if ((p.gold||0) < cost) {
     notify(`金幣不足！需要 ${cost.toLocaleString()}，目前只有 ${(p.gold||0).toLocaleString()}`, 'err');
     return;
@@ -1420,6 +1440,7 @@ function startStage(stage) {
   gs.battleActive = false;
   gs.pendingAlloc = true;
   gs.log = [];
+  gs._phoenixCount = {};
   document.getElementById('gameStageText').textContent = `第 ${stage} 關`;
   document.getElementById('gameStageSub').textContent = '分配屬性點數';
   document.getElementById('allocPanel').classList.remove('hidden');
@@ -1660,13 +1681,34 @@ window.clickEnemy = (i) => {
   }
 };
 
+function getEffectiveAtk(fighter) {
+  // 蠻力: each 15 HP gives +(lv) bonus ATK
+  const bruteLv = (fighter.skills||{})['蠻力'] || 0;
+  let atk = fighter.atk;
+  if (bruteLv > 0) {
+    atk += Math.floor(fighter.hp / 15) * bruteLv;
+  }
+  return atk;
+}
+
 function calcSingleHit(attacker, defender) {
-  // Base damage
-  let dmg = attacker.atk - defender.def;
-  if (dmg < 1) dmg = 1; // forced if atk <= def
+  const effAtk = getEffectiveAtk(attacker);
+  let dmg = effAtk - defender.def;
+  if (dmg < 1) dmg = 1;
   let isCrit = false;
-  const skills = attacker.skills || {};
-  const critLv = skills['爆擊'] || 0;
+
+  // 暴徒: HP < 20% → damage bonus
+  const brutishLv = (attacker.skills||{})['暴徒'] || 0;
+  if (brutishLv > 0 && attacker.maxHp > 0) {
+    const hpPct = attacker.hp / attacker.maxHp;
+    if (hpPct < 0.2) {
+      const bonus = 50 + (brutishLv - 1) * 15;
+      dmg = Math.round(dmg * (1 + bonus / 100));
+    }
+  }
+
+  // 爆擊
+  const critLv = (attacker.skills||{})['爆擊'] || 0;
   if (critLv > 0) {
     const critChance = 10 + (critLv - 1) * 5;
     const critMult  = 120 + (critLv - 1) * 5;
@@ -1676,6 +1718,8 @@ function calcSingleHit(attacker, defender) {
       isCrit = true;
     }
   }
+
+  if (dmg < 1) dmg = 1;
   return { dmg, isCrit };
 }
 
@@ -1688,7 +1732,7 @@ function calcDamage(attacker, defender) {
   let isCrit2 = false;
 
   // 二連斬
-  const doubleLv = (attacker.skills || {})['二連斬'] || 0;
+  const doubleLv = (attacker.skills||{})['二連斬'] || 0;
   if (doubleLv > 0) {
     const doubleChance = 5 + (doubleLv - 1) * 5;
     if (Math.random() * 100 < doubleChance) {
@@ -1700,6 +1744,43 @@ function calcDamage(attacker, defender) {
   }
 
   return { dmg, isCrit, isDouble, dmg2, isCrit2 };
+}
+
+// Returns true if 絕對防禦 blocked the hit
+function checkAbsoluteDefense(defender) {
+  const lv = (defender.skills||{})['絕對防禦'] || 0;
+  if (lv <= 0) return false;
+  const chance = 5 + (lv - 1) * 5;
+  return Math.random() * 100 < chance;
+}
+
+// Returns true if 不死鳥 saved the defender (sets hp to 1)
+function checkPhoenix(defender, gs) {
+  const lv = (defender.skills||{})['不死鳥'] || 0;
+  if (lv <= 0) return false;
+  const maxTriggers = lv; // lv1=1, lv2=2, lv3=3
+  const key = `phoenix_${gs.stage}_${defender.name}`;
+  gs._phoenixCount = gs._phoenixCount || {};
+  const used = gs._phoenixCount[key] || 0;
+  if (used >= maxTriggers) return false;
+  gs._phoenixCount[key] = used + 1;
+  defender.hp = 1;
+  return true;
+}
+
+// 致命一擊 instant kill check
+function checkInstantKill(attacker, defender) {
+  const lv = (attacker.skills||{})['致命一擊'] || 0;
+  if (lv <= 0) return false;
+  const chance = 1 + (lv - 1) * 1;
+  return Math.random() * 100 < chance;
+}
+
+// 暴徒 check for red slash color
+function isBrutishActive(attacker) {
+  const lv = (attacker.skills||{})['暴徒'] || 0;
+  if (lv <= 0) return false;
+  return attacker.maxHp > 0 && (attacker.hp / attacker.maxHp) < 0.2;
 }
 
 // ===== BATTLE SYNC ARCHITECTURE =====
@@ -1762,29 +1843,28 @@ function listenBattleState() {
     if (!ev) return;
     // Trigger visual effects from log events
     if (ev.type === 'attack') {
-      const gs = G.gameState;
-      const defIsEnemy = ev.defIsEnemy;
-      const defIdx = ev.defIdx;
-      const attIsEnemy = ev.attIsEnemy;
-      const attIdx = ev.attIdx;
       setTimeout(() => {
-        const defFxEl = getFxEl(defIsEnemy, defIdx);
-        const defCard = getFxCard(defIsEnemy, defIdx);
-        if (ev.isSlash) {
-          fxSlash(defFxEl, ev.isCrit, false);
+        const defFxEl = getFxEl(ev.defIsEnemy, ev.defIdx);
+        const defCard = getFxCard(ev.defIsEnemy, ev.defIdx);
+        if (ev.blocked) {
+          fxBlock(defFxEl, defCard);
+        } else if (ev.isInstantKill) {
+          fxInstantKill(defFxEl, defCard, ev.defIsEnemy);
+        } else if (ev.isSlash) {
+          fxSlash(defFxEl, ev.isCrit, false, ev.slashColor);
           setTimeout(() => {
             fxHitFlash(defFxEl);
-            fxParticles(defCard, ev.dmg, ev.isCrit);
+            fxParticles(defCard, ev.dmg, ev.isCrit, ev.slashColor);
             fxDamageNumber(defFxEl, ev.dmg, ev.isCrit, false, false, false);
-            if (ev.dying && defIsEnemy) setTimeout(() => fxExplosion(defFxEl, defCard), 200);
-            if (ev.dying && !defIsEnemy) setTimeout(() => { fxGhost(defFxEl); setTimeout(() => fxTombstone(defFxEl), 800); }, 150);
+            if (ev.dying && ev.defIsEnemy) setTimeout(() => fxExplosion(defFxEl, defCard), 200);
+            if (ev.dying && !ev.defIsEnemy) setTimeout(() => { fxGhost(defFxEl); setTimeout(() => fxTombstone(defFxEl), 800); }, 150);
           }, 120);
         } else {
           fxHitFlash(defFxEl);
           fxParticles(defCard, ev.dmg, ev.isCrit);
           fxDamageNumber(defFxEl, ev.dmg, ev.isCrit, false, false, false);
-          if (ev.dying && defIsEnemy) setTimeout(() => fxExplosion(defFxEl, defCard), 200);
-          if (ev.dying && !defIsEnemy) setTimeout(() => { fxGhost(defFxEl); setTimeout(() => fxTombstone(defFxEl), 800); }, 150);
+          if (ev.dying && ev.defIsEnemy) setTimeout(() => fxExplosion(defFxEl, defCard), 200);
+          if (ev.dying && !ev.defIsEnemy) setTimeout(() => { fxGhost(defFxEl); setTimeout(() => fxTombstone(defFxEl), 800); }, 150);
         }
       }, 80);
     }
@@ -1880,43 +1960,93 @@ function processActionRequest(ev) {
 
 // ===== HOST BATTLE LOGIC =====
 function hostPerformAttack(attacker, defender, isSlash) {
-  const { dmg, isCrit, isDouble, dmg2, isCrit2 } = calcDamage(attacker, defender);
+  const gs = G.gameState;
   const { isEnemy: defIsEnemy, idx: defIdx } = getTargetIndex(defender);
   const { isEnemy: attIsEnemy, idx: attIdx } = getTargetIndex(attacker);
 
+  // 絕對防禦 check
+  if (checkAbsoluteDefense(defender)) {
+    addLog(`🛡 <span class="cyan">${defender.name}</span> 絕對防禦！完全免疫此次攻擊！`);
+    writeBattleEvent({ type:'attack', attIsEnemy, attIdx, defIsEnemy, defIdx,
+      dmg:0, isCrit:false, isSlash:false, dying:false, blocked:true });
+    requestAnimationFrame(() => {
+      const defFxEl = getFxEl(defIsEnemy, defIdx);
+      const defCard = getFxCard(defIsEnemy, defIdx);
+      fxBlock(defFxEl, defCard);
+    });
+    return;
+  }
+
+  // 致命一擊 check
+  if (checkInstantKill(attacker, defender)) {
+    // Check if 不死鳥 saves
+    const savedByPhoenix = defender.hp > 0 && checkPhoenix(defender, gs);
+    if (!savedByPhoenix) {
+      const prevHp = defender.hp;
+      defender.hp = 0;
+      addLog(`☠️ <span class="gold">${attacker.name}</span> 致命一擊！<span class="red">${defender.name}</span> 瞬間喪命！`);
+      writeBattleEvent({ type:'attack', attIsEnemy, attIdx, defIsEnemy, defIdx,
+        dmg: prevHp, isCrit:false, isSlash:true, dying:true, isInstantKill:true });
+      requestAnimationFrame(() => {
+        const defFxEl = getFxEl(defIsEnemy, defIdx);
+        const defCard = getFxCard(defIsEnemy, defIdx);
+        fxInstantKill(defFxEl, defCard, defIsEnemy);
+      });
+      return;
+    } else {
+      addLog(`☠️ <span class="gold">${attacker.name}</span> 致命一擊！但 🔥<span style="color:#ff9900">${defender.name} 不死鳥</span>以1HP存活！`);
+      renderBattle();
+      return;
+    }
+  }
+
+  const { dmg, isCrit, isDouble, dmg2, isCrit2 } = calcDamage(attacker, defender);
+  const brutish = isBrutishActive(attacker);
+  const slashColor = brutish ? 'red' : (isCrit ? 'gold' : 'blue');
+
   // Apply hit 1
-  defender.hp = Math.max(0, defender.hp - dmg);
+  const wouldDie = defender.hp - dmg <= 0;
+  let savedByPhoenix = false;
+  if (wouldDie) {
+    savedByPhoenix = checkPhoenix(defender, gs);
+  }
+  if (!savedByPhoenix) {
+    defender.hp = Math.max(0, defender.hp - dmg);
+  }
   let defDying = defender.hp <= 0;
 
   let msg = `<span class="accent">${attacker.name}</span> 攻擊 <span class="red">${defender.name}</span>`;
+  if (brutish) msg += ` 🔥<span style="color:#ff6666">暴徒之力！</span>`;
   if (isCrit) msg += ` 💥<span class="gold">爆擊！</span>`;
   msg += ` 造成 <span class="red">${dmg}</span> 點傷害`;
-  if (defDying && !isDouble) msg += ` 💀`;
+  if (savedByPhoenix) msg += ` 🔥<span style="color:#ff9900">不死鳥！以1HP存活！</span>`;
+  else if (defDying && !isDouble) msg += ` 💀`;
   addLog(msg);
 
-  // Write attack event for all clients to render effects
   writeBattleEvent({ type:'attack', attIsEnemy, attIdx, defIsEnemy, defIdx,
-    dmg, isCrit, isSlash: isSlash || attacker.isMe || !attIsEnemy,
-    dying: defDying && !isDouble });
+    dmg, isCrit, isSlash: isSlash || (!attIsEnemy && !attacker.isBot), slashColor,
+    dying: defDying && !isDouble && !savedByPhoenix });
 
   // Apply hit 2 (二連斬)
   if (isDouble && defender.hp > 0) {
     setTimeout(() => {
-      defender.hp = Math.max(0, defender.hp - dmg2);
-      defDying = defender.hp <= 0;
+      const wouldDie2 = defender.hp - dmg2 <= 0;
+      let saved2 = false;
+      if (wouldDie2) saved2 = checkPhoenix(defender, gs);
+      if (!saved2) defender.hp = Math.max(0, defender.hp - dmg2);
+      const dying2 = defender.hp <= 0;
       let msg2 = `<span class="accent">${attacker.name}</span> ⚔️⚔️<span style="color:#a0c4ff">二連斬！</span>`;
       if (isCrit2) msg2 += ` 💥<span class="gold">爆擊！</span>`;
       msg2 += ` 再造成 <span class="red">${dmg2}</span> 點傷害`;
-      if (defDying) msg2 += ` 💀`;
+      if (saved2) msg2 += ` 🔥<span style="color:#ff9900">不死鳥！以1HP存活！</span>`;
+      else if (dying2) msg2 += ` 💀`;
       addLog(msg2);
       writeBattleEvent({ type:'attack', attIsEnemy, attIdx, defIsEnemy, defIdx,
-        dmg: dmg2, isCrit: isCrit2, isSlash: true, dying: defDying });
-      // Thorns on hit 2
+        dmg: dmg2, isCrit: isCrit2, isSlash: true, slashColor, dying: dying2 && !saved2 });
       applyThorns(defender, attacker, dmg2, defIsEnemy, defIdx, attIsEnemy, attIdx);
       renderBattle();
     }, 350);
   } else {
-    // Thorns on hit 1 only
     applyThorns(defender, attacker, dmg, defIsEnemy, defIdx, attIsEnemy, attIdx);
   }
 
@@ -1924,21 +2054,26 @@ function hostPerformAttack(attacker, defender, isSlash) {
   requestAnimationFrame(() => {
     const defFxEl = getFxEl(defIsEnemy, defIdx);
     const defCard = getFxCard(defIsEnemy, defIdx);
-    if (isSlash || (!attIsEnemy && !attacker.isBot)) {
-      fxSlash(defFxEl, isCrit, false);
+    const doSlash = isSlash || (!attIsEnemy && !attacker.isBot);
+    if (doSlash) {
+      fxSlash(defFxEl, isCrit, false, slashColor);
       setTimeout(() => {
         fxHitFlash(defFxEl);
-        fxParticles(defCard, dmg, isCrit);
+        fxParticles(defCard, dmg, isCrit, slashColor);
         fxDamageNumber(defFxEl, dmg, isCrit, false, false, false);
-        if (defDying && !isDouble && defIsEnemy) setTimeout(() => fxExplosion(defFxEl, defCard), 200);
-        if (defDying && !isDouble && !defIsEnemy) setTimeout(() => { fxGhost(defFxEl); setTimeout(() => fxTombstone(defFxEl), 800); }, 150);
+        if (defDying && !isDouble && !savedByPhoenix) {
+          if (defIsEnemy) setTimeout(() => fxExplosion(defFxEl, defCard), 200);
+          else setTimeout(() => { fxGhost(defFxEl); setTimeout(() => fxTombstone(defFxEl), 800); }, 150);
+        }
       }, 120);
     } else {
       fxHitFlash(defFxEl);
       fxParticles(defCard, dmg, isCrit);
       fxDamageNumber(defFxEl, dmg, isCrit, false, false, false);
-      if (defDying && !isDouble && defIsEnemy) setTimeout(() => fxExplosion(defFxEl, defCard), 200);
-      if (defDying && !isDouble && !defIsEnemy) setTimeout(() => { fxGhost(defFxEl); setTimeout(() => fxTombstone(defFxEl), 800); }, 150);
+      if (defDying && !isDouble && !savedByPhoenix) {
+        if (defIsEnemy) setTimeout(() => fxExplosion(defFxEl, defCard), 200);
+        else setTimeout(() => { fxGhost(defFxEl); setTimeout(() => fxTombstone(defFxEl), 800); }, 150);
+      }
     }
   });
 }
@@ -2063,20 +2198,7 @@ function addLog(msg) {
   el.scrollTop = el.scrollHeight;
 }
 
-function checkBattleEnd() {
-  const gs = G.gameState;
-  const teamAlive = gs.team.some(m => m.hp > 0);
-  const enemiesAlive = gs.enemies.some(e => e.hp > 0);
-  if (!enemiesAlive) {
-    setTimeout(() => showStageResult(true), 600);
-    return true;
-  }
-  if (!teamAlive) {
-    setTimeout(() => showStageResult(false), 600);
-    return true;
-  }
-  return false;
-}
+
 
 // ===== BATTLE EFFECTS ENGINE =====
 function getFxEl(isEnemy, idx) {
@@ -2087,15 +2209,17 @@ function getFxCard(isEnemy, idx) {
   return document.getElementById(`fc-${isEnemy?'enemy':'team'}-${idx}`);
 }
 
-function fxSlash(fxEl, isCrit, isGamble) {
+function fxSlash(fxEl, isCrit, _unused, slashColor) {
   if (!fxEl) return;
-  // Multiple slash lines for dramatic effect
-  const count = isCrit ? 4 : isGamble ? 3 : 2;
-  const colors = isCrit
-    ? ['#ffe066','#ff9900','#fff','#ffcc00']
-    : isGamble
-    ? ['#cc44ff','#ff44cc','#fff']
-    : ['#4f8ef7','#a0c4ff','#fff'];
+  const count = isCrit ? 4 : 2;
+  let colors;
+  if (slashColor === 'red') {
+    colors = ['#ff3333','#ff8800','#fff','#cc0000'];
+  } else if (isCrit) {
+    colors = ['#ffe066','#ff9900','#fff','#ffcc00'];
+  } else {
+    colors = ['#4f8ef7','#a0c4ff','#fff'];
+  }
   const baseAngle = -28;
   for (let k = 0; k < count; k++) {
     const line = document.createElement('div');
@@ -2112,12 +2236,58 @@ function fxSlash(fxEl, isCrit, isGamble) {
     fxEl.appendChild(line);
     setTimeout(() => line.remove(), 500 + k*40);
   }
-  // Glow flash on card
   const glow = document.createElement('div');
   glow.className = 'slash-glow';
-  glow.style.setProperty('--glow-color', isCrit ? '#ffaa00' : '#4f8ef7');
+  glow.style.setProperty('--glow-color', slashColor === 'red' ? '#ff3333' : isCrit ? '#ffaa00' : '#4f8ef7');
   fxEl.appendChild(glow);
   setTimeout(() => glow.remove(), 450);
+}
+
+function fxBlock(fxEl, card) {
+  if (!fxEl) return;
+  const shield = document.createElement('div');
+  shield.style.cssText = `position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:40px;animation:popIn .3s ease forwards;pointer-events:none;z-index:28`;
+  shield.textContent = '🛡';
+  fxEl.appendChild(shield);
+  setTimeout(() => shield.remove(), 700);
+  if (card) {
+    card.style.boxShadow = '0 0 20px 6px #3ecfcfaa';
+    setTimeout(() => { card.style.boxShadow = ''; }, 500);
+  }
+}
+
+function fxInstantKill(fxEl, card, isEnemy) {
+  if (!fxEl) return;
+  // Epic multi-layered instant kill effect
+  for (let i = 0; i < 6; i++) {
+    const line = document.createElement('div');
+    line.className = 'slash-line';
+    const angle = -45 + i * 15;
+    line.style.cssText = `
+      --slash-angle:${angle}deg;
+      top:${10 + i*13}%;left:-20%;width:160%;
+      background:linear-gradient(90deg,transparent,#fff,#ffe066,#fff,transparent);
+      box-shadow:0 0 16px 4px #ffe06699;
+      animation-delay:${i*30}ms;height:4px;
+    `;
+    fxEl.appendChild(line);
+    setTimeout(() => line.remove(), 700);
+  }
+  const skull = document.createElement('div');
+  skull.style.cssText = `position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:52px;animation:explode .5s ease forwards;pointer-events:none;z-index:30`;
+  skull.textContent = '💀';
+  fxEl.appendChild(skull);
+  setTimeout(() => skull.remove(), 900);
+  if (card) {
+    card.style.animation = 'none';
+    let t = 0;
+    const shake = setInterval(() => {
+      card.style.transform = `translateX(${(Math.random()-0.5)*12}px) translateY(${(Math.random()-0.5)*6}px)`;
+      if (++t > 6) { clearInterval(shake); card.style.transform = ''; }
+    }, 50);
+  }
+  if (isEnemy) setTimeout(() => fxExplosion(fxEl, card), 300);
+  else setTimeout(() => { fxGhost(fxEl); setTimeout(() => fxTombstone(fxEl), 800); }, 300);
 }
 
 function fxHitFlash(fxEl) {
@@ -2140,8 +2310,7 @@ function fxDamageNumber(fxEl, dmg, isCrit, _unused1, _unused2, isThorn) {
   setTimeout(() => num.remove(), 950);
 }
 
-function fxParticles(card, dmg, isCrit) {
-  // CSS particle burst on the card element
+function fxParticles(card, dmg, isCrit, slashColor) {
   if (!card) return;
   const count = Math.min(6 + Math.floor(dmg / 5), 14);
   for (let i = 0; i < count; i++) {
@@ -2149,7 +2318,10 @@ function fxParticles(card, dmg, isCrit) {
     const angle = (360 / count) * i + Math.random() * 30;
     const dist = 28 + Math.random() * 36;
     const size = isCrit ? (4 + Math.random()*5) : (2 + Math.random()*4);
-    const colors = isCrit ? ['#ffe066','#ff9900','#fff','#ff4444'] : ['#ff6666','#ffaa66','#fff','#cc3333'];
+    let colors;
+    if (slashColor === 'red') colors = ['#ff3333','#ff8800','#fff','#ff0000'];
+    else if (isCrit) colors = ['#ffe066','#ff9900','#fff','#ff4444'];
+    else colors = ['#ff6666','#ffaa66','#fff','#cc3333'];
     const color = colors[Math.floor(Math.random()*colors.length)];
     const dur = 400 + Math.random() * 300;
     const rad = angle * Math.PI / 180;
@@ -2160,7 +2332,7 @@ function fxParticles(card, dmg, isCrit) {
       left:calc(50% - ${size/2}px);top:calc(40% - ${size/2}px);
       width:${size}px;height:${size}px;border-radius:50%;
       background:${color};pointer-events:none;z-index:28;
-      animation:none;transition:transform ${dur}ms ease-out,opacity ${dur}ms ease-out;
+      transition:transform ${dur}ms ease-out,opacity ${dur}ms ease-out;
       box-shadow:0 0 4px ${color};
     `;
     card.appendChild(p);
@@ -2220,39 +2392,7 @@ function getTargetIndex(target) {
   return { isEnemy: false, idx };
 }
 
-function showAttackEffects(attacker, defender, dmg, isCrit, isGamble, gamblerHigh, isDying) {
-  const gs = G.gameState;
-  const { isEnemy: defIsEnemy, idx: defIdx } = getTargetIndex(defender);
-  const { isEnemy: attIsEnemy, idx: attIdx } = getTargetIndex(attacker);
-  const defFxEl  = getFxEl(defIsEnemy, defIdx);
-  const defCard  = getFxCard(defIsEnemy, defIdx);
-  const attFxEl  = getFxEl(attIsEnemy, attIdx);
-
-  const isPlayerAttacking = !attacker.isBot && attacker.isMe;
-  const isAnyAttacking = !defender.isMonster; // attacker is enemy hitting player
-
-  if (defIsEnemy) {
-    // Player (or bot ally) attacking enemy — show slash
-    fxSlash(defFxEl, isCrit, isGamble);
-    setTimeout(() => {
-      fxHitFlash(defFxEl);
-      fxParticles(defCard, dmg, isCrit);
-      fxDamageNumber(defFxEl, dmg, isCrit, isGamble, gamblerHigh, false);
-      if (isDying) setTimeout(() => fxExplosion(defFxEl, defCard), 200);
-    }, 120);
-  } else {
-    // Enemy attacking player — no slash, just hit + particles
-    setTimeout(() => {
-      fxHitFlash(defFxEl);
-      fxParticles(defCard, dmg, isCrit);
-      fxDamageNumber(defFxEl, dmg, isCrit, false, false, false);
-      if (isDying) setTimeout(() => {
-        fxGhost(defFxEl);
-        setTimeout(() => fxTombstone(defFxEl), 800);
-      }, 150);
-    }, 80);
-  }
-}
+// (showAttackEffects removed — effects now handled directly in hostPerformAttack and listenBattleState)
 
 function renderBattle() {
   const gs = G.gameState;
