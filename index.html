@@ -1399,15 +1399,16 @@ function initGame(members, roomId) {
   const team = [];
   for (const m of memVals) {
     if (m.isBot) {
-      // Bot: rank base stats + 10 pts randomly allocated
-      const botOffset = [0,1,-1][Math.floor(Math.random()*3)];
-      const bs = botStats(botOffset, G.player.exp||0);
-      const extra = rollMonsterStats(10); // random 10 pts allocation
+      // Bot rank is already decided in readyUp (stored as m.rankKey/m.rankName)
+      // Use that rank's base stats directly, then add random 10 pts on top
+      const botRankIdx = RANKS.findIndex(r => r.key === m.rankKey);
+      const botRank = botRankIdx >= 0 ? RANKS[botRankIdx] : RANKS[0];
+      const extra = rollMonsterStats(10);
       team.push({ name: m.name, isBot:true, isMe:false,
-        hp: bs.hp + extra.hp, maxHp: bs.hp + extra.hp,
-        atk: bs.atk + extra.atk,
-        def: bs.def + extra.def,
-        rankKey: m.rankKey || bs.rankKey, rankName: m.rankName || bs.rankName,
+        hp: botRank.hp + extra.hp, maxHp: botRank.hp + extra.hp,
+        atk: botRank.atk + extra.atk,
+        def: botRank.def + extra.def,
+        rankKey: botRank.key, rankName: botRank.name,
         skills:{}, allocDone:true });
     } else if (m.name === G.uid) {
       team.push({ name: G.uid, isBot:false, isMe:true,
@@ -1821,10 +1822,21 @@ function isHost() {
 function writeBattleState() {
   if (!isHost()) return;
   const gs = G.gameState;
+
+  // Find who we're waiting for — must be the ACTUAL current actor, not "isMe"
+  let waitingFor = null;
+  if (gs.waitingForPlayer && gs.turnOrder && gs.currentTurn < gs.turnOrder.length) {
+    const t = gs.turnOrder[gs.currentTurn];
+    if (t && t.type === 'team') {
+      const actor = gs.team[t.i];
+      if (actor && !actor.isBot) waitingFor = actor.name;
+    }
+  }
+
   const state = {
     stage: gs.stage,
     team: gs.team.map(m => ({
-      name: m.name, isBot: m.isBot||false, isMe: false,
+      name: m.name, isBot: m.isBot||false,
       hp: m.hp, maxHp: m.maxHp, atk: m.atk, def: m.def,
       rankKey: m.rankKey||'鐵', rankName: m.rankName||'黑鐵',
       skills: m.skills||{}, allocDone: m.allocDone||false, dead: m.hp<=0
@@ -1837,7 +1849,7 @@ function writeBattleState() {
     turnOrder: gs.turnOrder,
     battleActive: gs.battleActive,
     pendingAlloc: gs.pendingAlloc,
-    waitingFor: gs.waitingForPlayer ? gs.team.find(m=>m.isMe)?.name || null : null,
+    waitingFor,
     roundNum: gs.roundNum || 1,
     ts: Date.now()
   };
@@ -1903,38 +1915,53 @@ function listenBattleState() {
 function applyBattleState(state) {
   const gs = G.gameState;
   if (!gs) return;
-  // Sync team HP/stats from Firebase (host is authoritative)
+
+  // Sync full team stats from host
   if (state.team) {
     state.team.forEach((ft, i) => {
-      if (gs.team[i]) {
-        gs.team[i].hp = ft.hp;
-        gs.team[i].maxHp = ft.maxHp;
-        gs.team[i].atk = ft.atk;
-        gs.team[i].def = ft.def;
-      }
+      if (!gs.team[i]) return;
+      gs.team[i].hp     = ft.hp;
+      gs.team[i].maxHp  = ft.maxHp;
+      gs.team[i].atk    = ft.atk;
+      gs.team[i].def    = ft.def;
+      gs.team[i].dead   = ft.dead;
     });
   }
+  // Sync full enemy stats from host
   if (state.enemies) {
-    state.enemies.forEach((fe, i) => {
-      if (gs.enemies[i]) {
-        gs.enemies[i].hp = fe.hp;
+    // If enemies list changed size (new stage), rebuild
+    if (state.enemies.length !== gs.enemies.length) {
+      gs.enemies = state.enemies.map(e => ({ ...e }));
+    } else {
+      state.enemies.forEach((fe, i) => {
+        if (!gs.enemies[i]) return;
+        gs.enemies[i].hp    = fe.hp;
         gs.enemies[i].maxHp = fe.maxHp;
-      }
-    });
+        gs.enemies[i].atk   = fe.atk;
+        gs.enemies[i].def   = fe.def;
+        gs.enemies[i].dead  = fe.dead;
+      });
+    }
   }
-  gs.battleActive = state.battleActive;
-  gs.turnOrder = state.turnOrder || gs.turnOrder;
-  gs.currentTurn = state.currentTurnIdx || 0;
 
-  // Update turn UI
-  const t = gs.turnOrder ? gs.turnOrder[gs.currentTurn] : null;
-  if (!t) { renderBattle(); return; }
-  const actor = t.type === 'team' ? gs.team[t.i] : gs.enemies[t.i];
+  gs.battleActive   = state.battleActive;
+  gs.turnOrder      = state.turnOrder  || gs.turnOrder;
+  gs.currentTurn    = state.currentTurnIdx ?? 0;
+  gs.roundNum       = state.roundNum   || 1;
+
+  // Make sure battle section is visible for non-host
+  if (state.battleActive) {
+    document.getElementById('allocPanel').classList.add('hidden');
+    document.getElementById('battleSection').classList.remove('hidden');
+  }
 
   renderBattle();
 
+  // Update turn UI
+  const t = gs.turnOrder ? gs.turnOrder[gs.currentTurn] : null;
+  const actor = t ? (t.type === 'team' ? gs.team[t.i] : gs.enemies[t.i]) : null;
+
   if (state.waitingFor === G.uid) {
-    // It's my turn (I'm not host, but it's my click turn)
     gs.waitingForPlayer = true;
     document.getElementById('battleHint').innerHTML = '⚔️ <strong>輪到你！點擊右側任意敵人發起攻擊</strong>';
     document.getElementById('turnIndicator').innerHTML = `<span class="gold">★ 你的回合 ★</span>`;
@@ -1944,11 +1971,12 @@ function applyBattleState(state) {
     document.getElementById('turnIndicator').textContent = `等待 ${state.waitingFor} 攻擊...`;
   } else {
     gs.waitingForPlayer = false;
+    document.getElementById('battleHint').textContent = '';
     if (actor) document.getElementById('turnIndicator').textContent = `${actor.name} 的回合`;
   }
 
   // Stage result
-  if (state.stageResult === 'win') setTimeout(() => showStageResult(true), 300);
+  if (state.stageResult === 'win')  setTimeout(() => showStageResult(true),  300);
   if (state.stageResult === 'lose') setTimeout(() => showStageResult(false), 300);
 }
 
@@ -2178,7 +2206,7 @@ function hostProcessNextTurn() {
   if (t.type === 'team' && !actor.isBot) {
     // Real player's turn — tell everyone to wait for this player
     gs.waitingForPlayer = true;
-    writeBattleState(); // broadcasts waitingFor = actor.name
+    writeBattleState(); // broadcasts waitingFor = actor.name (fixed in writeBattleState)
     if (actor.isMe) {
       document.getElementById('battleHint').innerHTML = '⚔️ <strong>輪到你！點擊右側任意敵人發起攻擊</strong>';
       document.getElementById('turnIndicator').innerHTML = `<span class="gold">★ 你的回合 ★</span>`;
@@ -2371,22 +2399,53 @@ function fxParticles(card, dmg, isCrit, slashColor) {
 }
 
 function fxExplosion(fxEl, card) {
-  if (!fxEl) return;
-  const expl = document.createElement('div');
-  expl.className = 'fx-explosion';
-  expl.textContent = '💥';
-  fxEl.appendChild(expl);
-  setTimeout(() => expl.remove(), 750);
-  // Extra particle ring
-  if (card) fxParticles(card, 30, true);
-  // Screen shake on card
-  if (card) {
-    card.style.animation = 'none';
-    card.style.transform = 'scale(1.08) translateX(-3px)';
-    setTimeout(() => { card.style.transform = 'scale(1.04) translateX(3px)'; }, 60);
-    setTimeout(() => { card.style.transform = 'scale(1)'; }, 120);
-    setTimeout(() => { card.style.transform = ''; }, 200);
+  if (!card) return;
+  const colors = ['#ff4400','#ff8800','#ffcc00','#fff','#ff2200','#ffaa00'];
+  const count = 22;
+  for (let i = 0; i < count; i++) {
+    const p = document.createElement('div');
+    const angle = (360 / count) * i + Math.random() * 10;
+    const dist = 40 + Math.random() * 55;
+    const size = 4 + Math.random() * 7;
+    const color = colors[Math.floor(Math.random() * colors.length)];
+    const dur = 500 + Math.random() * 350;
+    const rad = angle * Math.PI / 180;
+    const tx = Math.cos(rad) * dist;
+    const ty = Math.sin(rad) * dist;
+    p.style.cssText = `
+      position:absolute;left:calc(50% - ${size/2}px);top:calc(45% - ${size/2}px);
+      width:${size}px;height:${size}px;border-radius:50%;
+      background:${color};pointer-events:none;z-index:30;
+      transition:transform ${dur}ms ease-out,opacity ${dur}ms ease-out;
+      box-shadow:0 0 6px 2px ${color}aa;
+    `;
+    card.appendChild(p);
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      p.style.transform = `translate(${tx}px,${ty}px) scale(0.1)`;
+      p.style.opacity = '0';
+    }));
+    setTimeout(() => p.remove(), dur + 60);
   }
+  // Shockwave ring
+  const ring = document.createElement('div');
+  ring.style.cssText = `
+    position:absolute;left:10%;top:10%;width:80%;height:80%;
+    border-radius:50%;border:3px solid #ff8800;pointer-events:none;z-index:29;
+    transition:transform .5s ease-out,opacity .5s ease-out;
+    box-shadow:0 0 12px #ff880088;
+  `;
+  card.appendChild(ring);
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    ring.style.transform = 'scale(3.5)';
+    ring.style.opacity = '0';
+  }));
+  setTimeout(() => ring.remove(), 560);
+  // Card shake
+  let shakeT = 0;
+  const shake = setInterval(() => {
+    card.style.transform = `translateX(${(Math.random()-0.5)*10}px)`;
+    if (++shakeT > 5) { clearInterval(shake); card.style.transform = ''; }
+  }, 55);
 }
 
 function fxGhost(fxEl) {
