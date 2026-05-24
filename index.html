@@ -1268,7 +1268,7 @@ window.startMatchmaking = async () => {
   await set(myPoolRef, { name: G.uid, rankKey: rank.key, rankName: rank.name, ts: Date.now() });
   G.matchRef = myPoolRef;
   // Poll for match
-  G.matchTimer = setTimeout(async () => { await formBotMatch(); }, 15000);
+  G.matchTimer = setTimeout(async () => { await formBotMatch(); }, 10000);
   // Listen for a room assignment
   const assignRef = ref(db, `matchAssign/${G.uid}`);
   G.listeners.matchAssign = onValue(assignRef, async snap => {
@@ -1341,7 +1341,7 @@ window.cancelMatchmaking = async () => {
 };
 
 // ===== GAME START FROM ROOM =====
-function startGameFromRoom(room, code) {
+async function startGameFromRoom(room, code) {
   if (G.listeners.room) { off(ref(db, `rooms/${code}`)); G.listeners.room = null; }
   document.getElementById('matchScreen').classList.add('hidden');
   const members = room.members || {};
@@ -1382,11 +1382,11 @@ function startGameFromRoom(room, code) {
     }
   });
 
-  initGame(members, code);
+  await initGame(members, code);
 }
 
 // ===== GAME ENGINE =====
-function initGame(members, roomId) {
+async function initGame(members, roomId) {
   const rank = getRank(G.player.exp||0);
   const memVals = Object.values(members);
 
@@ -1394,6 +1394,15 @@ function initGame(members, roomId) {
   const realMems = memVals.filter(m => !m.isBot);
   const hostName = realMems.length > 0 ? realMems[0].name : G.uid;
   const iAmHost = (hostName === G.uid);
+
+  // Pre-load skills for all real players from Firebase
+  const playerSkillsMap = {};
+  await Promise.all(realMems.map(async m => {
+    try {
+      const snap = await get(ref(db, `players/${m.name}/skills`));
+      playerSkillsMap[m.name] = snap.exists() ? (snap.val() || {}) : {};
+    } catch(e) { playerSkillsMap[m.name] = {}; }
+  }));
 
   // Build player team: self + teammates
   const team = [];
@@ -1417,13 +1426,13 @@ function initGame(members, roomId) {
         skills: G.player.skills||{}, allocDone:false,
         allocExtra:{hp:0,atk:0,def:0} });
     } else {
-      // Other real player: use their rank base stats; they also allocate pts on their own client
+      // Other real player — use their rank and pre-loaded skills
       const theirRankIdx = RANKS.findIndex(r => r.key === m.rankKey);
       const theirRank = theirRankIdx >= 0 ? RANKS[theirRankIdx] : RANKS[0];
       team.push({ name: m.name, isBot:false, isMe:false,
         hp: theirRank.hp, maxHp: theirRank.hp, atk: theirRank.atk, def: theirRank.def,
         rankKey: m.rankKey, rankName: m.rankName,
-        skills:{}, allocDone:false });
+        skills: playerSkillsMap[m.name] || {}, allocDone:false });
     }
   }
   G.gameState = {
@@ -1651,6 +1660,7 @@ function startBattle() {
   buildTurnOrder();
   renderBattle();
   if (isHost()) {
+    listenForActions();
     writeBattleState();
     hostProcessNextTurn();
   } else {
@@ -1904,11 +1914,6 @@ function listenBattleState() {
         }
       }, 80);
     }
-    if (ev.type === 'actionRequest') {
-      // Non-host players' attack requests — only host processes
-      if (!isHost()) return;
-      processActionRequest(ev);
-    }
   });
 }
 
@@ -1980,14 +1985,29 @@ function applyBattleState(state) {
   if (state.stageResult === 'lose') setTimeout(() => showStageResult(false), 300);
 }
 
-// Non-host sends attack request to Firebase
+// Non-host sends attack request via dedicated actions node (not battleLog)
 function sendActionRequest(enemyIdx) {
   const gs = G.gameState;
-  push(ref(db, `rooms/${gs.roomId}/battleLog`), {
+  push(ref(db, `rooms/${gs.roomId}/actions`), {
     type: 'actionRequest',
     from: G.uid,
     enemyIdx,
     ts: Date.now()
+  });
+}
+
+// Host listens for action requests from non-host players
+function listenForActions() {
+  const gs = G.gameState;
+  if (!isHost()) return;
+  const actionsRef = ref(db, `rooms/${gs.roomId}/actions`);
+  G.listeners.actions = onChildAdded(actionsRef, snap => {
+    if (!G.gameState || !G.gameState.battleActive) return;
+    const ev = snap.val();
+    if (!ev || ev.type !== 'actionRequest') return;
+    // Remove processed action
+    remove(snap.ref);
+    processActionRequest(ev);
   });
 }
 
@@ -2581,6 +2601,7 @@ window.exitGame = async () => {
     try { if (G.listeners.battle)      off(ref(db, `rooms/${tid}/battle`));     } catch(e){} G.listeners.battle = null;
     try { if (G.listeners.battleLog)   off(ref(db, `rooms/${tid}/battleLog`));  } catch(e){} G.listeners.battleLog = null;
     try { if (G.listeners.nextStage)   off(ref(db, `rooms/${tid}/nextStage`));  } catch(e){} G.listeners.nextStage = null;
+    try { if (G.listeners.actions)     off(ref(db, `rooms/${tid}/actions`));    } catch(e){} G.listeners.actions = null;
   }
   if (tid) {
     try {
