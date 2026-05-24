@@ -776,6 +776,7 @@ window.doLogin = async () => {
 };
 
 window.doLogout = () => {
+  remove(ref(db, `online/${G.uid}`));
   cleanupListeners();
   G.uid = null; G.player = null;
   document.getElementById('mainScreen').classList.add('hidden');
@@ -789,6 +790,8 @@ function enterMain() {
   document.getElementById('authScreen').classList.remove('active');
   document.getElementById('mainScreen').classList.remove('hidden');
   document.getElementById('mainScreen').classList.add('active');
+  // Write online presence
+  set(ref(db, `online/${G.uid}`), { name: G.uid, ts: Date.now() });
   updateUI();
   setupGlobalChat();
   setupFriendListeners();
@@ -841,7 +844,17 @@ window.switchTab = (tab) => {
   G.currentTab = tab;
   if (tab === 'skills') renderSkillsTab();
   if (tab === 'leaderboard') loadLeaderboard();
-  if (tab === 'friends') renderFriends();
+  if (tab === 'friends') {
+    renderFriends();
+    // Clear any previous interval
+    if (G._friendsRefreshInterval) clearInterval(G._friendsRefreshInterval);
+    G._friendsRefreshInterval = setInterval(() => {
+      if (G.currentTab === 'friends') renderFriends();
+      else clearInterval(G._friendsRefreshInterval);
+    }, 15000);
+  } else {
+    if (G._friendsRefreshInterval) { clearInterval(G._friendsRefreshInterval); G._friendsRefreshInterval = null; }
+  }
 };
 
 // ===== SKILLS TAB =====
@@ -948,23 +961,98 @@ function setupFriendListeners() {
     }
     document.getElementById('friendReqList').innerHTML = html;
   });
+
+  // Listen for team invites
+  const inviteRef = ref(db, `teamInvites/${G.uid}`);
+  G.listeners.teamInvites = onChildAdded(inviteRef, async snap => {
+    const invite = snap.val();
+    if (!invite) return;
+    const inviteKey = snap.key;
+    // Remove invite immediately so it doesn't fire again on reconnect
+    remove(ref(db, `teamInvites/${G.uid}/${inviteKey}`));
+    // Show invite notification
+    showTeamInviteNotif(invite.from, invite.roomId);
+  });
 }
+
+function showTeamInviteNotif(from, roomId) {
+  // Create a persistent invite toast
+  const el = document.createElement('div');
+  el.style.cssText = `position:fixed;top:20px;right:20px;z-index:1001;background:var(--surface);border:1px solid var(--accent);border-radius:12px;padding:16px 20px;max-width:300px;box-shadow:0 4px 24px #00000099;animation:slideIn .3s ease`;
+  el.innerHTML = `
+    <div style="font-size:13px;font-weight:700;margin-bottom:8px">🔗 組隊邀請</div>
+    <div style="font-size:12px;color:var(--text2);margin-bottom:12px"><span style="color:var(--accent)">${from}</span> 邀請你加入小隊</div>
+    <div style="display:flex;gap:8px">
+      <button class="btn btn-primary btn-sm" id="acceptInvite_${roomId}">接受</button>
+      <button class="btn btn-secondary btn-sm" id="declineInvite_${roomId}">拒絕</button>
+    </div>`;
+  document.body.appendChild(el);
+  const remove_ = () => { try { el.remove(); } catch(e){} };
+  document.getElementById(`acceptInvite_${roomId}`).onclick = async () => {
+    remove_();
+    // Check room still exists and is waiting
+    const snap = await get(ref(db, `rooms/${roomId}`));
+    if (!snap.exists()) { notify('小隊已解散或已開始遊戲', 'err'); return; }
+    const room = snap.val();
+    if (room.status !== 'waiting') { notify('小隊已開始遊戲，無法加入', 'err'); return; }
+    closeModal('createTeamModal');
+    closeModal('joinTeamModal');
+    G.teamId = roomId;
+    await joinRoom(roomId);
+    notify(`已加入 ${from} 的小隊！`, 'ok');
+  };
+  document.getElementById(`declineInvite_${roomId}`).onclick = remove_;
+  // Auto-dismiss after 30 seconds
+  setTimeout(remove_, 30000);
+}
+
+window.inviteFriend = async (toName) => {
+  if (!G.teamId) { notify('請先建立小隊', 'err'); return; }
+  if (G.gameState) { notify('遊戲進行中無法邀請', 'err'); return; }
+  await set(ref(db, `teamInvites/${toName}/${G.uid}`), {
+    from: G.uid,
+    roomId: G.teamId,
+    ts: Date.now()
+  });
+  notify(`已向 ${toName} 發送組隊邀請`, 'ok');
+};
 
 window.renderFriends = async () => {
   const friends = G.player.friends || {};
   const keys = Object.keys(friends);
+  if (keys.length === 0) {
+    document.getElementById('friendsList').innerHTML = '<div style="color:var(--text2);font-size:13px;text-align:center;padding:20px">尚無好友</div>';
+    return;
+  }
+  // Fetch online status and player info in parallel
+  const [onlineSnap, ...playerSnaps] = await Promise.all([
+    get(ref(db, 'online')),
+    ...keys.map(k => get(ref(db, `players/${k}`)))
+  ]);
+  const online = onlineSnap.exists() ? onlineSnap.val() : {};
   let html = '';
-  for (const k of keys) {
-    const snap = await get(ref(db, `players/${k}`));
-    if (!snap.exists()) continue;
+  keys.forEach((k, i) => {
+    const snap = playerSnaps[i];
+    if (!snap.exists()) return;
     const fp = snap.val();
     const rank = getRank(fp.exp||0);
     const color = getRankColor(rank.key);
+    const isOnline = !!online[k];
+    const canInvite = isOnline && G.teamId && !G.gameState;
     html += `<div class="friend-item">
-      <div><div class="friend-name">${k}</div><div class="friend-rank" style="color:${color}">${rank.name}</div></div>
-      <button class="btn btn-secondary btn-sm" onclick="removeFriend('${k}')">移除</button>
+      <div style="display:flex;align-items:center;gap:8px">
+        <div style="width:8px;height:8px;border-radius:50%;background:${isOnline?'var(--green)':'var(--text3)'};flex-shrink:0" title="${isOnline?'在線':'離線'}"></div>
+        <div>
+          <div class="friend-name">${k} <span style="font-size:10px;color:${isOnline?'var(--green)':'var(--text3)'}">${isOnline?'在線':'離線'}</span></div>
+          <div class="friend-rank" style="color:${color}">${rank.name}</div>
+        </div>
+      </div>
+      <div style="display:flex;gap:6px;align-items:center">
+        ${canInvite ? `<button class="btn btn-primary btn-sm" onclick="inviteFriend('${k}')">邀請組隊</button>` : ''}
+        <button class="btn btn-secondary btn-sm" onclick="removeFriend('${k}')">移除</button>
+      </div>
     </div>`;
-  }
+  });
   document.getElementById('friendsList').innerHTML = html || '<div style="color:var(--text2);font-size:13px;text-align:center;padding:20px">尚無好友</div>';
 };
 
@@ -2768,10 +2856,16 @@ function cleanupListeners() {
   if (G.matchTimer) clearTimeout(G.matchTimer);
   if (G.matchCountdown) clearInterval(G.matchCountdown);
   if (G.matchRef) remove(G.matchRef);
+  if (G.uid) {
+    try { if (G.listeners.friendReq)   off(ref(db, `friendRequests/${G.uid}`)); } catch(e){}
+    try { if (G.listeners.teamInvites) off(ref(db, `teamInvites/${G.uid}`));    } catch(e){}
+    try { if (G.listeners.globalChat)  off(ref(db, 'globalChat'));              } catch(e){}
+  }
   G.listeners = {};
 }
 
 window.addEventListener('beforeunload', () => {
+  if (G.uid) remove(ref(db, `online/${G.uid}`));
   if (G.matchRef) remove(G.matchRef);
   if (G.teamId && G.uid) {
     if (G.gameState) {
@@ -2805,6 +2899,7 @@ window.readyUp           = readyUp;
 window.leaveRoom         = leaveRoom;
 window.startMatchmaking  = startMatchmaking;
 window.cancelMatchmaking = cancelMatchmaking;
+window.inviteFriend       = inviteFriend;
 window.doLogin           = doLogin;
 window.doRegister        = doRegister;
 window.doLogout          = doLogout;
