@@ -698,8 +698,8 @@ function showMsg(id, msg, type='err') {
   el.className = type === 'ok' ? 'ok-msg' : 'err-msg';
   el.textContent = msg;
 }
-function closeModal(id) { document.getElementById(id).classList.add('hidden'); }
-function openModal(id) { document.getElementById(id).classList.remove('hidden'); }
+window.closeModal = (id) => document.getElementById(id).classList.add('hidden');
+window.openModal  = (id) => document.getElementById(id).classList.remove('hidden');
 function fmtBig(n) {
   if (n >= 1e11) return (n/1e11).toFixed(0)+'千億';
   if (n >= 1e10) return (n/1e10).toFixed(0)+'百億';
@@ -2609,8 +2609,6 @@ function cleanupListeners() {
 window.addEventListener('beforeunload', () => {
   if (G.matchRef) remove(G.matchRef);
   if (G.teamId && G.uid) {
-    // During game: remove presence so teammates detect disconnect
-    // During lobby: remove from members
     if (G.gameState) {
       remove(ref(db, `rooms/${G.teamId}/presence/${G.uid}`));
     } else {
@@ -2618,6 +2616,34 @@ window.addEventListener('beforeunload', () => {
     }
   }
 });
+
+// ===== EXPOSE ALL ONCLICK HANDLERS TO GLOBAL SCOPE =====
+// Required because <script type="module"> is scoped — onclick= can't find module-local functions
+window.closeModal        = (id) => document.getElementById(id).classList.add('hidden');
+window.openModal         = (id) => document.getElementById(id).classList.remove('hidden');
+window.switchAuthTab     = switchAuthTab;
+window.switchTab         = switchTab;
+window.allocAttr         = allocAttr;
+window.confirmAlloc      = confirmAlloc;
+window.clickEnemy        = clickEnemy;
+window.addFriend         = addFriend;
+window.acceptFriend      = acceptFriend;
+window.declineFriend     = declineFriend;
+window.removeFriend      = removeFriend;
+window.renderFriends     = renderFriends;
+window.sendGlobalChat    = sendGlobalChat;
+window.sendTeamChat      = sendTeamChat;
+window.showCreateTeam    = showCreateTeam;
+window.showJoinTeam      = showJoinTeam;
+window.doCreateTeam      = doCreateTeam;
+window.doJoinTeam        = doJoinTeam;
+window.readyUp           = readyUp;
+window.leaveRoom         = leaveRoom;
+window.startMatchmaking  = startMatchmaking;
+window.cancelMatchmaking = cancelMatchmaking;
+window.doLogin           = doLogin;
+window.doRegister        = doRegister;
+window.doLogout          = doLogout;
 </script>
 </body>
 </html>
