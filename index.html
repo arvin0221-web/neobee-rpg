@@ -812,6 +812,27 @@ window.switchAuthTab = (tab) => {
   document.getElementById('registerForm').classList.toggle('hidden', tab !== 'register');
 };
 
+window.doLogin = async () => {
+  const name = document.getElementById('loginName').value.trim();
+  const pass = document.getElementById('loginPass').value;
+  if (!name || !pass) return showMsg('loginMsg','請輸入暱稱和密碼');
+
+  try {
+    const email = `${name.toLowerCase()}@starrock.game`;
+    await signInWithEmailAndPassword(auth, email, pass);
+    // onAuthStateChanged will fire → load player data → enterMain
+  } catch(e) {
+    const msg = e.code === 'auth/wrong-password' || e.code === 'auth/invalid-credential'
+              ? '密碼錯誤'
+              : e.code === 'auth/user-not-found' || e.code === 'auth/invalid-email'
+              ? '帳號不存在'
+              : e.code === 'auth/too-many-requests'
+              ? '嘗試次數過多，請稍後再試'
+              : `登入失敗：${e.message}`;
+    showMsg('loginMsg', msg);
+  }
+};
+
 window.doRegister = async () => {
   const name = document.getElementById('regName').value.trim();
   const pass = document.getElementById('regPass').value;
@@ -821,50 +842,25 @@ window.doRegister = async () => {
   if (!pass || pass.length < 6) return showMsg('registerMsg','密碼需6字元以上');
   if (pass !== pass2) return showMsg('registerMsg','兩次密碼不同');
 
-  // Check name uniqueness via nameIndex
-  const nameSnap = await get(ref(db, `nameIndex/${name}`));
-  if (nameSnap.exists()) return showMsg('registerMsg','此暱稱已被使用');
-
   try {
     const email = `${name.toLowerCase()}@starrock.game`;
+    // Try to create the user first; if email already taken, the name is taken
     const cred = await createUserWithEmailAndPassword(auth, email, pass);
     const uid = cred.user.uid;
-    // Write player data and name index atomically
     const newPlayer = { name, uid, exp:0, gold:0, skills:{}, friends:{}, createdAt:Date.now() };
     await Promise.all([
       set(ref(db, `players/${uid}`), newPlayer),
       set(ref(db, `nameIndex/${name}`), uid)
     ]);
-    // onAuthStateChanged will fire and call enterMain
     showMsg('registerMsg','註冊成功！', 'ok');
+    // onAuthStateChanged fires and logs in automatically
   } catch(e) {
-    const msg = e.code === 'auth/email-already-in-use' ? '此暱稱已被使用'
-              : e.code === 'auth/weak-password' ? '密碼強度不足'
+    const msg = e.code === 'auth/email-already-in-use'
+              ? '此暱稱已被使用'
+              : e.code === 'auth/weak-password'
+              ? '密碼強度不足（至少6字元）'
               : `註冊失敗：${e.message}`;
     showMsg('registerMsg', msg);
-  }
-};
-
-window.doLogin = async () => {
-  const name = document.getElementById('loginName').value.trim();
-  const pass = document.getElementById('loginPass').value;
-  if (!name || !pass) return showMsg('loginMsg','請輸入暱稱和密碼');
-
-  // Look up uid from nameIndex
-  const nameSnap = await get(ref(db, `nameIndex/${name}`));
-  if (!nameSnap.exists()) return showMsg('loginMsg','帳號不存在');
-  const uid = nameSnap.val();
-
-  try {
-    const email = `${name.toLowerCase()}@starrock.game`;
-    await signInWithEmailAndPassword(auth, email, pass);
-    // onAuthStateChanged will fire and load player data
-  } catch(e) {
-    const msg = e.code === 'auth/wrong-password' || e.code === 'auth/invalid-credential' ? '密碼錯誤'
-              : e.code === 'auth/user-not-found' ? '帳號不存在'
-              : e.code === 'auth/too-many-requests' ? '嘗試次數過多，請稍後再試'
-              : `登入失敗：${e.message}`;
-    showMsg('loginMsg', msg);
   }
 };
 
