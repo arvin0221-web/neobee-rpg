@@ -636,6 +636,8 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
 import { getDatabase, ref, set, get, push, onValue, off, remove, update, serverTimestamp, query, orderByChild, limitToLast, onChildAdded, onChildRemoved }
   from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
+import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged }
+  from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
 
 // ===== FIREBASE CONFIG =====
 // IMPORTANT: Replace with your own Firebase config
@@ -650,7 +652,8 @@ const firebaseConfig = {
   measurementId: "G-JE1BVYM7P8"
 };
 const app = initializeApp(firebaseConfig);
-const db = getDatabase(app);
+const db   = getDatabase(app);
+const auth = getAuth(app);
 
 // ===== CONSTANTS =====
 const RANKS = [
@@ -814,37 +817,83 @@ window.doRegister = async () => {
   const pass = document.getElementById('regPass').value;
   const pass2 = document.getElementById('regPass2').value;
   if (!name || name.length < 2 || name.length > 12) return showMsg('registerMsg','暱稱需2-12字元');
-  if (!pass || pass.length < 4) return showMsg('registerMsg','密碼需4字元以上');
+  if (!/^[a-zA-Z0-9\u4e00-\u9fff_-]+$/.test(name)) return showMsg('registerMsg','暱稱只能含字母/數字/中文/底線/橫線');
+  if (!pass || pass.length < 6) return showMsg('registerMsg','密碼需6字元以上');
   if (pass !== pass2) return showMsg('registerMsg','兩次密碼不同');
-  const snap = await get(ref(db, `players/${name}`));
-  if (snap.exists()) return showMsg('registerMsg','此暱稱已被使用');
-  const newPlayer = {name, password: btoa(pass), exp:0, gold:0, skills:{}, friends:{}, createdAt:Date.now()};
-  await set(ref(db, `players/${name}`), newPlayer);
-  showMsg('registerMsg','註冊成功！請登入', 'ok');
-  setTimeout(() => switchAuthTab('login'), 1200);
+
+  // Check name uniqueness via nameIndex
+  const nameSnap = await get(ref(db, `nameIndex/${name}`));
+  if (nameSnap.exists()) return showMsg('registerMsg','此暱稱已被使用');
+
+  try {
+    const email = `${name.toLowerCase()}@starrock.game`;
+    const cred = await createUserWithEmailAndPassword(auth, email, pass);
+    const uid = cred.user.uid;
+    // Write player data and name index atomically
+    const newPlayer = { name, uid, exp:0, gold:0, skills:{}, friends:{}, createdAt:Date.now() };
+    await Promise.all([
+      set(ref(db, `players/${uid}`), newPlayer),
+      set(ref(db, `nameIndex/${name}`), uid)
+    ]);
+    // onAuthStateChanged will fire and call enterMain
+    showMsg('registerMsg','註冊成功！', 'ok');
+  } catch(e) {
+    const msg = e.code === 'auth/email-already-in-use' ? '此暱稱已被使用'
+              : e.code === 'auth/weak-password' ? '密碼強度不足'
+              : `註冊失敗：${e.message}`;
+    showMsg('registerMsg', msg);
+  }
 };
 
 window.doLogin = async () => {
   const name = document.getElementById('loginName').value.trim();
   const pass = document.getElementById('loginPass').value;
   if (!name || !pass) return showMsg('loginMsg','請輸入暱稱和密碼');
-  const snap = await get(ref(db, `players/${name}`));
-  if (!snap.exists()) return showMsg('loginMsg','帳號不存在');
-  const data = snap.val();
-  if (data.password !== btoa(pass)) return showMsg('loginMsg','密碼錯誤');
-  G.uid = name;
-  G.player = data;
-  enterMain();
+
+  // Look up uid from nameIndex
+  const nameSnap = await get(ref(db, `nameIndex/${name}`));
+  if (!nameSnap.exists()) return showMsg('loginMsg','帳號不存在');
+  const uid = nameSnap.val();
+
+  try {
+    const email = `${name.toLowerCase()}@starrock.game`;
+    await signInWithEmailAndPassword(auth, email, pass);
+    // onAuthStateChanged will fire and load player data
+  } catch(e) {
+    const msg = e.code === 'auth/wrong-password' || e.code === 'auth/invalid-credential' ? '密碼錯誤'
+              : e.code === 'auth/user-not-found' ? '帳號不存在'
+              : e.code === 'auth/too-many-requests' ? '嘗試次數過多，請稍後再試'
+              : `登入失敗：${e.message}`;
+    showMsg('loginMsg', msg);
+  }
 };
 
-window.doLogout = () => {
-  remove(ref(db, `online/${G.uid}`));
+window.doLogout = async () => {
+  if (G.uid) remove(ref(db, `online/${G.uid}`));
   cleanupListeners();
   G.uid = null; G.player = null;
+  await signOut(auth);
   document.getElementById('mainScreen').classList.add('hidden');
+  document.getElementById('mainScreen').classList.remove('active');
   document.getElementById('authScreen').classList.remove('hidden');
   document.getElementById('authScreen').classList.add('active');
 };
+
+// Auto-login: restore session when page loads
+onAuthStateChanged(auth, async (user) => {
+  if (user && !G.uid) {
+    // User is already signed in (e.g. page refresh)
+    const snap = await get(ref(db, `players/${user.uid}`));
+    if (snap.exists()) {
+      G.uid = user.uid;
+      G.player = snap.val();
+      enterMain();
+    } else {
+      // Player data missing — sign out
+      await signOut(auth);
+    }
+  }
+});
 
 // ===== MAIN =====
 function enterMain() {
@@ -852,8 +901,8 @@ function enterMain() {
   document.getElementById('authScreen').classList.remove('active');
   document.getElementById('mainScreen').classList.remove('hidden');
   document.getElementById('mainScreen').classList.add('active');
-  // Write online presence
-  set(ref(db, `online/${G.uid}`), { name: G.uid, ts: Date.now() });
+  // Write online presence using uid as key, name as display
+  set(ref(db, `online/${G.uid}`), { name: G.player.name, uid: G.uid, ts: Date.now() });
   updateUI();
   setupGlobalChat();
   setupFriendListeners();
@@ -865,7 +914,7 @@ function updateUI() {
   const rank = getRank(p.exp || 0);
   const idx = getRankIndex(p.exp || 0);
   const color = getRankColor(rank.key);
-  document.getElementById('tb-name').textContent = p.name;
+  document.getElementById('tb-name').textContent = G.player.name;
   document.getElementById('tb-gold').textContent = (p.gold||0).toLocaleString();
   document.getElementById('tb-exp').textContent = fmtBig(p.exp||0);
   document.getElementById('tb-rank').textContent = rank.name;
@@ -995,8 +1044,7 @@ window.upgradeSkill = async (sid) => {
   }
   const newSkills = { ...(p.skills||{}), [sid]: curLv+1 };
   const newGold = (p.gold||0) - cost;
-  await update(ref(db, `players/${G.uid}`), { skills: newSkills, gold: newGold });
-  G.player.skills = newSkills;
+  await update(ref(db, `players/${G.uid}`), { skills: newSkills, gold: newGold });  G.player.skills = newSkills;
   G.player.gold = newGold;
   updateUI();
   renderSkillsTab();
@@ -1012,12 +1060,14 @@ function setupFriendListeners() {
     const el = document.getElementById('friendRequests');
     el.classList.toggle('hidden', keys.length === 0);
     let html = '';
-    for (const k of keys) {
+    for (const fromUid of keys) {
+      const req = data[fromUid];
+      const displayName = (typeof req === 'object' && req.name) ? req.name : fromUid;
       html += `<div class="friend-item">
-        <div><div class="friend-name">${k}</div><div class="friend-rank">邀請你成為好友</div></div>
+        <div><div class="friend-name">${displayName}</div><div class="friend-rank">邀請你成為好友</div></div>
         <div style="display:flex;gap:6px">
-          <button class="btn btn-primary btn-sm" onclick="acceptFriend('${k}')">接受</button>
-          <button class="btn btn-secondary btn-sm" onclick="declineFriend('${k}')">拒絕</button>
+          <button class="btn btn-primary btn-sm" onclick="acceptFriend('${fromUid}')">接受</button>
+          <button class="btn btn-secondary btn-sm" onclick="declineFriend('${fromUid}')">拒絕</button>
         </div>
       </div>`;
     }
@@ -1068,11 +1118,12 @@ function showTeamInviteNotif(from, roomId) {
   setTimeout(remove_, 30000);
 }
 
-window.inviteFriend = async (toName) => {
+window.inviteFriend = async (toUid, toName) => {
   if (!G.teamId) { notify('請先建立小隊', 'err'); return; }
   if (G.gameState) { notify('遊戲進行中無法邀請', 'err'); return; }
-  await set(ref(db, `teamInvites/${toName}/${G.uid}`), {
-    from: G.uid,
+  await set(ref(db, `teamInvites/${toUid}/${G.uid}`), {
+    from: G.player.name,
+    fromUid: G.uid,
     roomId: G.teamId,
     ts: Date.now()
   });
@@ -1081,37 +1132,36 @@ window.inviteFriend = async (toName) => {
 
 window.renderFriends = async () => {
   const friends = G.player.friends || {};
-  const keys = Object.keys(friends);
-  if (keys.length === 0) {
+  const uids = Object.keys(friends);
+  if (uids.length === 0) {
     document.getElementById('friendsList').innerHTML = '<div style="color:var(--text2);font-size:13px;text-align:center;padding:20px">尚無好友</div>';
     return;
   }
-  // Fetch online status and player info in parallel
   const [onlineSnap, ...playerSnaps] = await Promise.all([
     get(ref(db, 'online')),
-    ...keys.map(k => get(ref(db, `players/${k}`)))
+    ...uids.map(uid => get(ref(db, `players/${uid}`)))
   ]);
   const online = onlineSnap.exists() ? onlineSnap.val() : {};
   let html = '';
-  keys.forEach((k, i) => {
+  uids.forEach((uid, i) => {
     const snap = playerSnaps[i];
     if (!snap.exists()) return;
     const fp = snap.val();
     const rank = getRank(fp.exp||0);
     const color = getRankColor(rank.key);
-    const isOnline = !!online[k];
+    const isOnline = !!online[uid];
     const canInvite = isOnline && G.teamId && !G.gameState;
     html += `<div class="friend-item">
       <div style="display:flex;align-items:center;gap:8px">
-        <div style="width:8px;height:8px;border-radius:50%;background:${isOnline?'var(--green)':'var(--text3)'};flex-shrink:0" title="${isOnline?'在線':'離線'}"></div>
+        <div style="width:8px;height:8px;border-radius:50%;background:${isOnline?'var(--green)':'var(--text3)'};flex-shrink:0"></div>
         <div>
-          <div class="friend-name">${k} <span style="font-size:10px;color:${isOnline?'var(--green)':'var(--text3)'}">${isOnline?'在線':'離線'}</span></div>
+          <div class="friend-name">${fp.name} <span style="font-size:10px;color:${isOnline?'var(--green)':'var(--text3)'}">${isOnline?'在線':'離線'}</span></div>
           <div class="friend-rank" style="color:${color}">${rank.name}</div>
         </div>
       </div>
       <div style="display:flex;gap:6px;align-items:center">
-        ${canInvite ? `<button class="btn btn-primary btn-sm" onclick="inviteFriend('${k}')">邀請組隊</button>` : ''}
-        <button class="btn btn-secondary btn-sm" onclick="removeFriend('${k}')">移除</button>
+        ${canInvite ? `<button class="btn btn-primary btn-sm" onclick="inviteFriend('${uid}','${fp.name}')">邀請組隊</button>` : ''}
+        <button class="btn btn-secondary btn-sm" onclick="removeFriend('${uid}')">移除</button>
       </div>
     </div>`;
   });
@@ -1121,38 +1171,40 @@ window.renderFriends = async () => {
 window.addFriend = async () => {
   const name = document.getElementById('friendInput').value.trim();
   if (!name) return;
-  if (name === G.uid) return notify('不能加自己','err');
-  if ((G.player.friends||{})[name]) return notify('已是好友','err');
-  const snap = await get(ref(db, `players/${name}`));
-  if (!snap.exists()) return notify('找不到玩家','err');
-  await set(ref(db, `friendRequests/${name}/${G.uid}`), true);
+  if (name === G.player.name) return notify('不能加自己','err');
+  // Look up uid from nameIndex
+  const idxSnap = await get(ref(db, `nameIndex/${name}`));
+  if (!idxSnap.exists()) return notify('找不到玩家','err');
+  const friendUid = idxSnap.val();
+  if ((G.player.friends||{})[friendUid]) return notify('已是好友','err');
+  // Send friend request using uid as key, store name for display
+  await set(ref(db, `friendRequests/${friendUid}/${G.uid}`), { name: G.player.name, ts: Date.now() });
   notify('好友邀請已送出','ok');
   document.getElementById('friendInput').value = '';
 };
 
-window.acceptFriend = async (from) => {
-  const myFriends = { ...(G.player.friends||{}), [from]: true };
+window.acceptFriend = async (fromUid) => {
+  const myFriends = { ...(G.player.friends||{}), [fromUid]: true };
   await update(ref(db, `players/${G.uid}`), { friends: myFriends });
   G.player.friends = myFriends;
-  const theirSnap = await get(ref(db, `players/${from}`));
-  if (theirSnap.exists()) {
-    const theirFriends = { ...(theirSnap.val().friends||{}), [G.uid]: true };
-    await update(ref(db, `players/${from}`), { friends: theirFriends });
-  }
-  await remove(ref(db, `friendRequests/${G.uid}/${from}`));
+  // Add me to their friends list too
+  await update(ref(db, `players/${fromUid}/friends`), { [G.uid]: true });
+  await remove(ref(db, `friendRequests/${G.uid}/${fromUid}`));
   renderFriends();
-  notify(`已與 ${from} 成為好友！`, 'ok');
+  notify('已成為好友！', 'ok');
 };
 
-window.declineFriend = async (from) => {
-  await remove(ref(db, `friendRequests/${G.uid}/${from}`));
+window.declineFriend = async (fromUid) => {
+  await remove(ref(db, `friendRequests/${G.uid}/${fromUid}`));
 };
 
-window.removeFriend = async (name) => {
+window.removeFriend = async (friendUid) => {
   const myFriends = { ...(G.player.friends||{}) };
-  delete myFriends[name];
+  delete myFriends[friendUid];
   await update(ref(db, `players/${G.uid}`), { friends: myFriends });
   G.player.friends = myFriends;
+  // Remove me from their list too
+  await remove(ref(db, `players/${friendUid}/friends/${G.uid}`));
   renderFriends();
 };
 
@@ -1172,7 +1224,7 @@ window.loadLeaderboard = async () => {
       const rank = getRank(p.exp||0);
       const color = getRankColor(rank.key);
       const badgeClass = i===0?'top1':i===1?'top2':i===2?'top3':'';
-      const isMe = p.name === G.uid;
+      const isMe = p.uid === G.uid;
       html += `<div class="lb-item" style="${isMe?'border-color:var(--gold);background:var(--surface2)':''}">
         <div class="lb-rank ${badgeClass}">${i+1}</div>
         <div class="lb-name">${p.name}${isMe?' <span style="color:var(--gold);font-size:11px">（我）</span>':''}</div>
@@ -1191,7 +1243,7 @@ function setupGlobalChat() {
   const recentQ = query(chatRef, orderByChild('ts'), limitToLast(80));
   G.listeners.globalChat = onChildAdded(recentQ, snap => {
     const msg = snap.val();
-    appendChatMsg('globalChatMessages', msg.name, msg.text, msg.rankKey, msg.name === G.uid);
+    appendChatMsg('globalChatMessages', msg.name, msg.text, msg.rankKey, msg.name === G.player.name);
   });
 }
 
@@ -1212,7 +1264,7 @@ window.sendGlobalChat = async () => {
   if (!text) return;
   input.value = '';
   const rank = getRank(G.player.exp||0);
-  await push(ref(db,'globalChat'), { name: G.uid, text, rankKey: rank.key, ts: Date.now() });
+  await push(ref(db,'globalChat'), { name: G.player.name, text, rankKey: rank.key, ts: Date.now() });
 };
 
 // ===== TEAM CHAT (unified for lobby + game) =====
@@ -1224,7 +1276,7 @@ function setupTeamChatListener() {
     const msg = snap.val();
     if (!msg) return;
     const color = getRankColor(msg.rankKey || '鐵');
-    const isOwn = msg.name === G.uid;
+    const isOwn = msg.name === G.player.name;
     const html = `<div class="chat-msg ${isOwn?'own':'other'}" style="font-size:12px;padding:4px 8px">
       <div class="chat-msg-user" style="font-size:10px"><span style="color:${color}">${msg.name}</span></div>
       <div>${msg.text.replace(/</g,'&lt;')}</div>
@@ -1246,7 +1298,7 @@ window.sendTeamChat = async (source) => {
   if (!text) return;
   input.value = '';
   const rank = getRank(G.player.exp||0);
-  await push(ref(db, `rooms/${G.teamId}/chat`), { name: G.uid, text, rankKey: rank.key, ts: Date.now() });
+  await push(ref(db, `rooms/${G.teamId}/chat`), { name: G.player.name, text, rankKey: rank.key, ts: Date.now() });
 };
 
 window.toggleGameChat = () => {
@@ -1332,7 +1384,7 @@ async function setupRoom(code, isLeader) {
   const room = {
     status: 'waiting',
     createdAt: Date.now(),
-    members: { [G.uid]: { name: G.uid, rankKey: rank.key, rankName: rank.name, isBot: false, ready: false } },
+    members: { [G.uid]: { name: G.player.name, uid: G.uid, rankKey: rank.key, rankName: rank.name, isBot: false, ready: false } },
     leader: G.uid
   };
   await set(ref(db, `rooms/${code}`), room);
@@ -1342,7 +1394,7 @@ async function setupRoom(code, isLeader) {
 
 async function joinRoom(code) {
   const rank = getRank(G.player.exp||0);
-  await update(ref(db, `rooms/${code}/members/${G.uid}`), { name: G.uid, rankKey: rank.key, rankName: rank.name, isBot: false, ready: false });
+  await update(ref(db, `rooms/${code}/members/${G.uid}`), { name: G.player.name, uid: G.uid, rankKey: rank.key, rankName: rank.name, isBot: false, ready: false });
   listenToRoom(code);
   showRoomWaiting(code);
 }
@@ -1476,7 +1528,7 @@ window.startMatchmaking = async () => {
   // Add to matchmaking pool
   const rank = getRank(G.player.exp||0);
   const myPoolRef = ref(db, `matchPool/${G.uid}`);
-  await set(myPoolRef, { name: G.uid, rankKey: rank.key, rankName: rank.name, ts: Date.now() });
+  await set(myPoolRef, { name: G.player.name, uid: G.uid, rankKey: rank.key, rankName: rank.name, ts: Date.now() });
   G.matchRef = myPoolRef;
   // Poll for match
   G.matchTimer = setTimeout(async () => { await formBotMatch(); }, 10000);
@@ -1529,7 +1581,7 @@ async function formBotMatch() {
   const roomId = 'MATCH_' + Date.now().toString(36).toUpperCase();
   const rank = getRank(G.player.exp||0);
   const members = {
-    [G.uid]: { name: G.uid, rankKey: rank.key, rankName: rank.name, isBot: false, ready: true }
+    [G.uid]: { name: G.player.name, uid: G.uid, rankKey: rank.key, rankName: rank.name, isBot: false, ready: true }
   };
   for (let i = 1; i < 3; i++) {
     const o = [0,1,-1][Math.floor(Math.random()*3)];
@@ -1573,7 +1625,7 @@ async function startGameFromRoom(room, code) {
   // Write each real player's presence and watch for removal
   const presenceRef = ref(db, `rooms/${code}/presence`);
   const myPresenceRef = ref(db, `rooms/${code}/presence/${G.uid}`);
-  set(myPresenceRef, { name: G.uid, ts: Date.now() });
+  set(myPresenceRef, { name: G.player.name, uid: G.uid, ts: Date.now() });
 
   G.listeners.gameMembers = onChildRemoved(presenceRef, snap => {
     if (!G.gameState) return;
@@ -1650,8 +1702,8 @@ async function initGame(members, roomId) {
         def: botRank.def + extra.def,
         rankKey: botRank.key, rankName: botRank.name,
         skills:{}, allocDone:true });
-    } else if (m.name === G.uid) {
-      team.push({ name: G.uid, isBot:false, isMe:true,
+    } else if (m.name === G.player.name) {
+      team.push({ name: G.player.name, isBot:false, isMe:true,
         hp: rank.hp, maxHp: rank.hp, atk: rank.atk, def: rank.def,
         rankKey: rank.key, rankName: rank.name,
         skills: G.player.skills||{}, allocDone:false,
@@ -1864,7 +1916,7 @@ function sendSkillRequest(jobId, targetIdx) {
   const gs = G.gameState;
   push(ref(db, `rooms/${gs.roomId}/actions`), {
     type: 'skillRequest',
-    from: G.uid,
+    from: G.player.name,
     jobId,
     targetIdx: targetIdx ?? -1,
     ts: Date.now()
@@ -2637,7 +2689,7 @@ function applyBattleState(state) {
   const t = gs.turnOrder ? gs.turnOrder[gs.currentTurn] : null;
   const actor = t ? (t.type === 'team' ? gs.team[t.i] : gs.enemies[t.i]) : null;
 
-  if (state.waitingFor === G.uid) {
+  if (state.waitingFor === G.player.name) {
     gs.waitingForPlayer = true;
     document.getElementById('battleHint').innerHTML = '⚔️ <strong>輪到你！點擊右側任意敵人發起攻擊</strong>';
     document.getElementById('turnIndicator').innerHTML = `<span class="gold">★ 你的回合 ★</span>`;
@@ -2661,7 +2713,7 @@ function sendActionRequest(enemyIdx) {
   const gs = G.gameState;
   push(ref(db, `rooms/${gs.roomId}/actions`), {
     type: 'actionRequest',
-    from: G.uid,
+    from: G.player.name,
     enemyIdx,
     ts: Date.now()
   });
