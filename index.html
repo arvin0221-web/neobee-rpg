@@ -692,7 +692,7 @@ const JOBS_DEF = [
     id:'盾戰士', name:'盾戰士', icon:'🛡', color:'#4f8ef7',
     desc:'被動：每關前5回合，所有敵人傷害集中打在盾戰士身上。',
     activeDesc:'全隊回血：每人恢復各自已損失血量的30%。',
-    activeName:'守護之盾', activeCost:0, activeMax:99
+    activeName:'守護之盾', activeCost:0, activeMax:1
   },
   {
     id:'刺客', name:'刺客', icon:'🗡', color:'#a855f7',
@@ -1215,18 +1215,40 @@ window.loadLeaderboard = async () => {
       document.getElementById('lbList').innerHTML = '<div style="text-align:center;color:var(--text2);padding:20px">尚無玩家資料</div>';
       return;
     }
-    let html = '';
-    arr.slice(0,20).forEach((p,i) => {
+
+    const myRank = arr.findIndex(p => p.uid === G.uid);
+    const showList = arr.slice(0, 100);
+    const meInTop100 = myRank >= 0 && myRank < 100;
+
+    const renderRow = (p, i, highlight) => {
       const rank = getRank(p.exp||0);
       const color = getRankColor(rank.key);
       const badgeClass = i===0?'top1':i===1?'top2':i===2?'top3':'';
       const isMe = p.uid === G.uid;
-      html += `<div class="lb-item" style="${isMe?'border-color:var(--gold);background:var(--surface2)':''}">
+      return `<div class="lb-item" style="${highlight?'border-color:var(--gold);background:var(--surface2);margin-top:4px':''}">
         <div class="lb-rank ${badgeClass}">${i+1}</div>
         <div class="lb-name">${p.name}${isMe?' <span style="color:var(--gold);font-size:11px">（我）</span>':''}</div>
-        <div class="lb-info"><span style="color:${color};font-weight:700">${rank.name}</span><br><span style="font-family:monospace">${fmtBig(p.exp||0)}</span> EXP<br>💰 ${(p.gold||0).toLocaleString()}</div>
+        <div class="lb-info">
+          <span style="color:${color};font-weight:700">${rank.name}</span><br>
+          <span style="font-family:monospace">${fmtBig(p.exp||0)}</span> EXP<br>
+          💰 ${(p.gold||0).toLocaleString()}
+        </div>
       </div>`;
-    });
+    };
+
+    let html = showList.map((p, i) => renderRow(p, i, p.uid === G.uid)).join('');
+
+    // If player is outside top 100, show separator and their row
+    if (!meInTop100 && myRank >= 0) {
+      html += `<div style="text-align:center;color:var(--text3);font-size:12px;padding:8px 0;letter-spacing:2px">• • •</div>`;
+      html += renderRow(arr[myRank], myRank, true);
+    }
+
+    // If there are more than 100 players, show count
+    if (arr.length > 100) {
+      html += `<div style="text-align:center;color:var(--text3);font-size:11px;padding:8px;letter-spacing:1px">共 ${arr.length} 位玩家</div>`;
+    }
+
     document.getElementById('lbList').innerHTML = html;
   } catch(e) {
     document.getElementById('lbList').innerHTML = `<div style="text-align:center;color:var(--red);padding:20px">載入失敗：${e.message}</div>`;
@@ -1853,37 +1875,49 @@ function buildActiveSkillBar() {
   const gs = G.gameState;
   const bar = document.getElementById('activeSkillBar');
   if (!bar) return;
-  const myMem = gs.team.find(m => m.isMe);
+  const myMem = gs?.team?.find(m => m.isMe);
   if (!myMem || !myMem.job) { bar.innerHTML = ''; return; }
   const job = JOBS_DEF.find(j => j.id === myMem.job);
   if (!job) { bar.innerHTML = ''; return; }
   const used = myMem.activeUsed || 0;
-  const max  = myMem.activeMax  ?? job.activeMax;
-  const remaining = max >= 99 ? '∞' : `${max - used}`;
-  const disabled = (max < 99 && used >= max) ? 'disabled' : '';
-  bar.innerHTML = `<button class="active-skill-btn" id="activeSkillBtn" ${disabled} onclick="useActiveSkill()">
-    ${job.icon} ${job.activeName} <span class="skill-uses">[剩餘 ${remaining}]</span>
+  const max  = myMem.activeMax ?? job.activeMax;
+  const outOfUses = used >= max;
+  const notMyTurn = !gs.waitingForPlayer;
+  const remaining = `${max - used}`;
+  const disabled = outOfUses || notMyTurn ? 'disabled' : '';
+  const tooltip = outOfUses ? '本關次數已用盡' : notMyTurn ? '等待你的回合' : `使用 ${job.activeName}（消耗你的攻擊回合）`;
+  bar.innerHTML = `<button class="active-skill-btn" id="activeSkillBtn" ${disabled} onclick="useActiveSkill()" title="${tooltip}">
+    ${job.icon} ${job.activeName} <span class="skill-uses">[${remaining} 次]</span>
   </button>`;
 }
 
 window.useActiveSkill = () => {
   const gs = G.gameState;
   if (!gs || !gs.battleActive) return;
-  const myMem = gs.team.find(m => m.isMe);
-  if (!myMem || !myMem.job) return;
+
+  // Must be your turn to use active skill
+  if (!gs.waitingForPlayer) { notify('必須等到你的回合才能使用技能', 'err'); return; }
+  const t = gs.turnOrder[gs.currentTurn];
+  if (!t || t.type !== 'team') return;
+  const actor = gs.team[t.i];
+  if (!actor || !actor.isMe) { notify('必須等到你的回合才能使用技能', 'err'); return; }
+
+  const myMem = actor;
+  if (!myMem.job) return;
   const job = JOBS_DEF.find(j => j.id === myMem.job);
   const used = myMem.activeUsed || 0;
-  if (job.activeMax < 99 && used >= job.activeMax) { notify('本關次數已用盡', 'err'); return; }
+  if (used >= job.activeMax) { notify('本關次數已用盡', 'err'); return; }
 
   if (job.id === '精靈術師') {
-    // Need to pick target — enter targeting mode
     gs._targetingSkill = '精靈術師';
     document.getElementById('activeSkillBtn').classList.add('targeting');
     document.getElementById('battleHint').innerHTML = '✨ <strong>選擇要封印的敵人（點擊敵方卡片）</strong>';
     return;
   }
 
-  // Execute skill immediately (or send request if non-host)
+  // Consume the turn before executing
+  gs.waitingForPlayer = false;
+  document.getElementById('battleHint').textContent = '';
   if (isHost()) {
     executeActiveSkill(myMem, null);
   } else {
@@ -1897,6 +1931,7 @@ function handleSkillTargetClick(enemyIdx) {
   if (!gs._targetingSkill) return false;
   const jobId = gs._targetingSkill;
   gs._targetingSkill = null;
+  gs.waitingForPlayer = false;
   document.getElementById('activeSkillBtn')?.classList.remove('targeting');
   document.getElementById('battleHint').textContent = '';
   const myMem = gs.team.find(m => m.isMe);
@@ -2034,12 +2069,13 @@ function executeActiveSkill(actor, targetIdx) {
   renderBattle();
   buildActiveSkillBar();
   writeBattleState();
+
+  // Skill CONSUMES the turn — advance to next
   if (actor.job !== '爆炎法師') {
-    if (!hostCheckBattleEnd()) {
-      // Active skill doesn't consume the turn — continue current turn
-      if (gs.waitingForPlayer && actor.isMe) {
-        document.getElementById('battleHint').innerHTML = '⚔️ <strong>輪到你！點擊右側任意敵人發起攻擊</strong>';
-      }
+    // 爆炎法師 handles its own turn advancement after chain explosion
+    if (isHost() && !hostCheckBattleEnd()) {
+      gs.currentTurn++;
+      setTimeout(() => hostProcessNextTurn(), 600);
     }
   }
 }
@@ -2047,9 +2083,13 @@ function executeActiveSkill(actor, targetIdx) {
 function processSkillRequest(ev) {
   const gs = G.gameState;
   if (!gs || !isHost()) return;
-  const actor = gs.team.find(m => m.name === ev.from);
-  if (!actor) return;
+  const t = gs.turnOrder[gs.currentTurn];
+  if (!t || t.type !== 'team') return;
+  const actor = gs.team[t.i];
+  if (!actor || actor.name !== ev.from) return; // must be their turn
+  gs.waitingForPlayer = false;
   executeActiveSkill(actor, ev.targetIdx >= 0 ? ev.targetIdx : null);
+  // executeActiveSkill now handles turn advancement
 }
 
 function resetJobState(gs) {
@@ -2690,7 +2730,8 @@ function applyBattleState(state) {
 
   if (state.waitingFor === G.player.name) {
     gs.waitingForPlayer = true;
-    document.getElementById('battleHint').innerHTML = '⚔️ <strong>輪到你！點擊右側任意敵人發起攻擊</strong>';
+    buildActiveSkillBar();
+    document.getElementById('battleHint').innerHTML = '⚔️ <strong>輪到你！點擊右側任意敵人發起攻擊，或使用主動技能</strong>';
     document.getElementById('turnIndicator').innerHTML = `<span class="gold">★ 你的回合 ★</span>`;
   } else if (state.waitingFor) {
     gs.waitingForPlayer = false;
@@ -2983,11 +3024,13 @@ function hostProcessNextTurn() {
   if (t.type === 'team' && !actor.isBot) {
     // Real player's turn — tell everyone to wait for this player
     gs.waitingForPlayer = true;
-    writeBattleState(); // broadcasts waitingFor = actor.name (fixed in writeBattleState)
+    writeBattleState();
     if (actor.isMe) {
-      document.getElementById('battleHint').innerHTML = '⚔️ <strong>輪到你！點擊右側任意敵人發起攻擊</strong>';
+      buildActiveSkillBar(); // enable skill button on player's turn
+      document.getElementById('battleHint').innerHTML = '⚔️ <strong>輪到你！點擊右側任意敵人發起攻擊，或使用主動技能</strong>';
       document.getElementById('turnIndicator').innerHTML = `<span class="gold">★ 你的回合 ★</span>`;
     } else {
+      buildActiveSkillBar(); // disable skill button (not your turn)
       document.getElementById('battleHint').textContent = '';
       document.getElementById('turnIndicator').textContent = `等待 ${actor.name} 攻擊...`;
     }
