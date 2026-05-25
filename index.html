@@ -1558,7 +1558,7 @@ async function tryFormMatch() {
     const roomId = 'MATCH_' + Date.now().toString(36).toUpperCase();
     const members = {};
     for (const p of team) {
-      members[p] = { name: p, rankKey: pool[p].rankKey, rankName: pool[p].rankName, isBot: false, ready: true };
+      members[p] = { name: pool[p].name || p, uid: p, rankKey: pool[p].rankKey, rankName: pool[p].rankName, isBot: false, ready: true };
     }
     await set(ref(db, `rooms/${roomId}`), { status: 'starting', members, createdAt: Date.now() });
     for (const p of team) {
@@ -1626,7 +1626,7 @@ async function startGameFromRoom(room, code) {
   G.listeners.gameMembers = onChildRemoved(presenceRef, snap => {
     if (!G.gameState) return;
     const removedName = snap.key;
-    if (removedName === G.uid) return;
+    if (removedName === G.player.name) return; // ignore self removal
     handleTeammateDisconnect(removedName);
   });
 
@@ -2053,13 +2053,10 @@ function processSkillRequest(ev) {
 }
 
 function resetJobState(gs) {
-  // Reset per-stage job state
-  gs.team.forEach(m => {
-    m.activeUsed = 0;
-  });
-  gs._silenced = {};
+  gs.team.forEach(m => { m.activeUsed = 0; });
+  gs._silenced     = {};
   gs._frozenRounds = 0;
-  gs._shieldTurns = 0; // counts turns for 盾戰士 passive
+  gs._targetingSkill = null;
 }
 
 function getShieldTankIdx(gs) {
@@ -2196,21 +2193,24 @@ function listenForAllocReady(gs) {
   if (G.listeners.alloc) { off(allocRef); }
   G.listeners.alloc = onValue(allocRef, snap => {
     const allocData = snap.val() || {};
-    // Check each real member has submitted
+    // alloc is keyed by uid (G.uid), so check by uid
     const realMembers = gs.team.filter(m => !m.isBot);
     const allDone = realMembers.every(m => {
-      const d = (allocData[m.name] || {})[`stage${gs.stage}`];
+      const memberUid = m.uid || (m.isMe ? G.uid : null);
+      if (!memberUid) return false;
+      const d = (allocData[memberUid] || {})[`stage${gs.stage}`];
       return d && d.done;
     });
     if (!allDone) return;
 
-    // All done — apply each teammate's alloc to local team state
     off(allocRef);
     G.listeners.alloc = null;
     for (const m of gs.team) {
       if (m.isMe) continue;
       if (m.isBot) continue;
-      const d = (allocData[m.name] || {})[`stage${gs.stage}`];
+      const memberUid = m.uid;
+      if (!memberUid) continue;
+      const d = (allocData[memberUid] || {})[`stage${gs.stage}`];
       if (d) {
         m.hp = d.hp; m.maxHp = d.maxHp;
         m.atk = d.atk; m.def = d.def;
@@ -2222,10 +2222,12 @@ function listenForAllocReady(gs) {
       if (gs.roomId && isHost()) {
         const jobsSnap = await get(ref(db, `rooms/${gs.roomId}/jobs`));
         const jobsData = jobsSnap.exists() ? jobsSnap.val() : {};
+        // jobs keyed by uid
         gs.team.forEach(m => {
           if (m.isBot) return;
-          if (jobsData[m.name]) {
-            m.job        = jobsData[m.name];
+          const memberUid = m.uid || (m.isMe ? G.uid : null);
+          if (memberUid && jobsData[memberUid]) {
+            m.job        = jobsData[memberUid];
             m.activeUsed = 0;
             m.activeMax  = JOBS_DEF.find(j => j.id === m.job)?.activeMax ?? 0;
           }
@@ -2264,11 +2266,10 @@ function handleTeammateDisconnect(name) {
   addLog(`<span class="red">${name} 已離線，由同等級人機接替（屬性保留）</span>`);
   renderBattle();
 
-  // gs.hostName is stored as uid
-  // Find the uid of the disconnected player from team (if stored) or from presence data
-  const removedMember2 = gs.team.find(t => t.name === name);
-  const removedUid2 = removedMember2?.uid;
-  const wasHost = removedUid2 ? (removedUid2 === gs.hostName) : false;
+  // gs.hostName is stored as uid — find the disconnected player's uid from team
+  const disconnectedMember = gs.team.find(t => t.name === name);
+  const disconnectedUid = disconnectedMember?.uid;
+  const wasHost = disconnectedUid ? (disconnectedUid === gs.hostName) : false;
   if (wasHost) {
     gs.isHost = true;
     gs.hostName = G.uid;
@@ -2335,7 +2336,6 @@ function startBattle() {
   gs.log = [];
   gs._silenced = gs._silenced || {};
   gs._frozenRounds = gs._frozenRounds || 0;
-  gs._shieldTurns = 0;
   document.getElementById('battleSection').classList.remove('hidden');
   buildActiveSkillBar();
   buildTurnOrder();
@@ -2756,17 +2756,12 @@ function processActionRequest(ev) {
 function hostPerformAttack(attacker, defender, isSlash) {
   const gs = G.gameState;
 
-  // 盾戰士 passive: first 5 team turns, redirect enemy attacks to tank
-  if (attacker.isMonster || (attacker.isBot && !gs.team.includes(attacker))) {
-    // attacker is enemy
-  } else {
-    // attacker is team — no redirect needed
-  }
-  // If enemy is attacking a team member, check if 盾戰士 taunt is active
+  // 盾戰士 passive: if enemy is attacking a team member and shield tank is alive within first 5 team turns
+  const attackerIsEnemy = gs.enemies.includes(attacker);
   const defIsTeam = gs.team.includes(defender);
-  if (defIsTeam && (attacker.isMonster || attacker.isBot && gs.enemies.includes(attacker))) {
+  if (attackerIsEnemy && defIsTeam) {
     const tankIdx = getShieldTankIdx(gs);
-    const shieldActive = tankIdx >= 0 && (gs._shieldTurns || 0) <= 5;
+    const shieldActive = tankIdx >= 0 && (gs.roundNum || 1) <= 5;
     if (shieldActive && gs.team[tankIdx] !== defender) {
       defender = gs.team[tankIdx];
       addLog(`🛡 盾戰士為隊友擋下攻擊！`);
@@ -2960,9 +2955,8 @@ function hostProcessNextTurn() {
     return;
   }
 
-  // Track 盾戰士 shield passive turn counter (counts team turns)
-  if (t.type === 'team') gs._shieldTurns = (gs._shieldTurns || 0) + 1;
-
+  // Track 盾戰士 shield passive — active for first 5 rounds
+  // roundNum increments in buildTurnOrder at start of each new round
   // 精靈術師 silence check — skip silenced enemy turn
   if (t.type === 'enemy') {
     const silenced = (gs._silenced || {})[t.i] || 0;
