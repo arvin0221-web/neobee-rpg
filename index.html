@@ -1620,7 +1620,7 @@ async function startGameFromRoom(room, code) {
   // (members node is deleted above, so we use a different approach for disconnect detection)
   // Write each real player's presence and watch for removal
   const presenceRef = ref(db, `rooms/${code}/presence`);
-  const myPresenceRef = ref(db, `rooms/${code}/presence/${G.uid}`);
+  const myPresenceRef = ref(db, `rooms/${code}/presence/${G.player.name}`);
   set(myPresenceRef, { name: G.player.name, uid: G.uid, ts: Date.now() });
 
   G.listeners.gameMembers = onChildRemoved(presenceRef, snap => {
@@ -1645,9 +1645,8 @@ async function startGameFromRoom(room, code) {
   // Listen for host transfers
   G.listeners.hostChange = onValue(ref(db, `rooms/${code}/host`), snap => {
     if (!snap.exists() || !G.gameState) return;
-    const newHost = snap.val();
-    if (newHost === G.uid && !G.gameState.isHost) {
-      // I've been promoted to host
+    const newHostUid = snap.val();
+    if (newHostUid === G.uid && !G.gameState.isHost) {
       G.gameState.isHost = true;
       G.gameState.hostName = G.uid;
       if (G.listeners.battle)    { off(ref(db, `rooms/${code}/battle`));    G.listeners.battle = null; }
@@ -1669,18 +1668,19 @@ async function initGame(members, roomId) {
   const rank = getRank(G.player.exp||0);
   const memVals = Object.values(members);
 
-  // Determine host: first real player in the members object is the host
+  // Determine host: first real player is the host, compare by uid
   const realMems = memVals.filter(m => !m.isBot);
-  const hostName = realMems.length > 0 ? realMems[0].name : G.uid;
-  const iAmHost = (hostName === G.uid);
+  const hostUid  = realMems.length > 0 ? (realMems[0].uid || realMems[0].name) : G.uid;
+  const iAmHost  = (hostUid === G.uid);
 
-  // Pre-load skills for all real players from Firebase
-  const playerSkillsMap = {};
+  // Pre-load skills for all real players from Firebase using their uid
+  const playerSkillsMap = {}; // keyed by uid
   await Promise.all(realMems.map(async m => {
+    const uid = m.uid || m.name;
     try {
-      const snap = await get(ref(db, `players/${m.name}/skills`));
-      playerSkillsMap[m.name] = snap.exists() ? (snap.val() || {}) : {};
-    } catch(e) { playerSkillsMap[m.name] = {}; }
+      const snap = await get(ref(db, `players/${uid}/skills`));
+      playerSkillsMap[uid] = snap.exists() ? (snap.val() || {}) : {};
+    } catch(e) { playerSkillsMap[uid] = {}; }
   }));
 
   // Build player team: self + teammates
@@ -1698,20 +1698,20 @@ async function initGame(members, roomId) {
         def: botRank.def + extra.def,
         rankKey: botRank.key, rankName: botRank.name,
         skills:{}, allocDone:true });
-    } else if (m.name === G.player.name) {
-      team.push({ name: G.player.name, isBot:false, isMe:true,
+    } else if ((m.uid || m.name) === G.uid) {
+      team.push({ name: G.player.name, uid: G.uid, isBot:false, isMe:true,
         hp: rank.hp, maxHp: rank.hp, atk: rank.atk, def: rank.def,
         rankKey: rank.key, rankName: rank.name,
         skills: G.player.skills||{}, allocDone:false,
         allocExtra:{hp:0,atk:0,def:0} });
     } else {
-      // Other real player — use their rank and pre-loaded skills
       const theirRankIdx = RANKS.findIndex(r => r.key === m.rankKey);
       const theirRank = theirRankIdx >= 0 ? RANKS[theirRankIdx] : RANKS[0];
-      team.push({ name: m.name, isBot:false, isMe:false,
+      const theirUid = m.uid || m.name;
+      team.push({ name: m.name, uid: theirUid, isBot:false, isMe:false,
         hp: theirRank.hp, maxHp: theirRank.hp, atk: theirRank.atk, def: theirRank.def,
         rankKey: m.rankKey, rankName: m.rankName,
-        skills: playerSkillsMap[m.name] || {}, allocDone:false });
+        skills: playerSkillsMap[theirUid] || {}, allocDone:false });
     }
   }
   G.gameState = {
@@ -1726,12 +1726,11 @@ async function initGame(members, roomId) {
     log: [],
     selectedEnemy: -1,
     isHost: iAmHost,
-    hostName,
+    hostName: hostUid,   // stored as uid
     roundNum: 1
   };
-  // Write current host to Firebase so others can detect host transfers
   if (iAmHost) {
-    set(ref(db, `rooms/${roomId}/host`), hostName);
+    set(ref(db, `rooms/${roomId}/host`), G.uid);
   }
   document.getElementById('gameScreen').classList.remove('hidden');
   startStage(1);
@@ -1743,12 +1742,13 @@ function renderJobGrid(takenJobs) {
   const grid = document.getElementById('jobGrid');
   if (!grid) return;
   grid.innerHTML = JOBS_DEF.map(j => {
-    const takenBy = takenJobs[j.id];
-    const isTaken = takenBy && takenBy !== G.uid;
+    const takenByUid = takenJobs[j.id];
+    const isTaken = takenByUid && takenByUid !== G.uid;
+    const takenByName = isTaken ? (G.gameState?.team?.find(m => m.uid === takenByUid)?.name || takenByUid) : '';
     const isMyChoice = G._selectedJob === j.id;
     const borderColor = isTaken ? '#ffffff22' : isMyChoice ? j.color : j.color+'22';
     const opacity = isTaken ? '0.4' : '1';
-    const takenLabel = isTaken ? `<div style="font-size:10px;color:var(--red);margin-top:4px">已被 ${takenBy} 選擇</div>` : '';
+    const takenLabel = isTaken ? `<div style="font-size:10px;color:var(--red);margin-top:4px">已被 ${takenByName} 選擇</div>` : '';
     return `<div class="job-card ${isMyChoice?'selected':''} ${isTaken?'job-taken':''}"
       id="jobcard-${j.id}"
       onclick="selectJob('${j.id}')"
@@ -2264,8 +2264,11 @@ function handleTeammateDisconnect(name) {
   addLog(`<span class="red">${name} 已離線，由同等級人機接替（屬性保留）</span>`);
   renderBattle();
 
-  // If disconnected player was the host, transfer host to me
-  const wasHost = (name === gs.hostName);
+  // gs.hostName is stored as uid
+  // Find the uid of the disconnected player from team (if stored) or from presence data
+  const removedMember2 = gs.team.find(t => t.name === name);
+  const removedUid2 = removedMember2?.uid;
+  const wasHost = removedUid2 ? (removedUid2 === gs.hostName) : false;
   if (wasHost) {
     gs.isHost = true;
     gs.hostName = G.uid;
@@ -3360,7 +3363,7 @@ window.exitGame = async () => {
   }
   if (tid) {
     try {
-      await remove(ref(db, `rooms/${tid}/presence/${G.uid}`));
+      await remove(ref(db, `rooms/${tid}/presence/${G.player.name}`));
       const presSnap = await get(ref(db, `rooms/${tid}/presence`));
       if (!presSnap.exists() || Object.keys(presSnap.val()||{}).length === 0) {
         await remove(ref(db, `rooms/${tid}`));
@@ -3392,7 +3395,7 @@ window.addEventListener('beforeunload', () => {
   if (G.matchRef) remove(G.matchRef);
   if (G.teamId && G.uid) {
     if (G.gameState) {
-      remove(ref(db, `rooms/${G.teamId}/presence/${G.uid}`));
+      remove(ref(db, `rooms/${G.teamId}/presence/${G.player.name}`));
     } else {
       remove(ref(db, `rooms/${G.teamId}/members/${G.uid}`));
     }
