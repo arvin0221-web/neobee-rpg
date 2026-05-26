@@ -2660,6 +2660,7 @@ function listenBattleState() {
           setTimeout(() => {
             fxHitFlash(defFxEl);
             fxParticles(defCard, ev.dmg, ev.isCrit, ev.slashColor);
+            fxBloodDrip(defCard, ev.isCrit);
             fxDamageNumber(defFxEl, ev.dmg, ev.isCrit, false, false, false);
             if (ev.dying && ev.defIsEnemy) setTimeout(() => fxExplosion(defFxEl, defCard), 200);
             if (ev.dying && !ev.defIsEnemy) setTimeout(() => { fxGhost(defFxEl); setTimeout(() => fxTombstone(defFxEl), 800); }, 150);
@@ -2667,6 +2668,7 @@ function listenBattleState() {
         } else {
           fxHitFlash(defFxEl);
           fxParticles(defCard, ev.dmg, ev.isCrit);
+          fxBloodDrip(defCard, ev.isCrit);
           fxDamageNumber(defFxEl, ev.dmg, ev.isCrit, false, false, false);
           if (ev.dying && ev.defIsEnemy) setTimeout(() => fxExplosion(defFxEl, defCard), 200);
           if (ev.dying && !ev.defIsEnemy) setTimeout(() => { fxGhost(defFxEl); setTimeout(() => fxTombstone(defFxEl), 800); }, 150);
@@ -2907,6 +2909,7 @@ function hostPerformAttack(attacker, defender, isSlash) {
       setTimeout(() => {
         fxHitFlash(defFxEl);
         fxParticles(defCard, dmg, isCrit, slashColor);
+        fxBloodDrip(defCard, isCrit);
         fxDamageNumber(defFxEl, dmg, isCrit, false, false, false);
         if (defDying && !isDouble && !savedByPhoenix) {
           if (defIsEnemy) setTimeout(() => fxExplosion(defFxEl, defCard), 200);
@@ -2916,6 +2919,7 @@ function hostPerformAttack(attacker, defender, isSlash) {
     } else {
       fxHitFlash(defFxEl);
       fxParticles(defCard, dmg, isCrit);
+      fxBloodDrip(defCard, isCrit);
       fxDamageNumber(defFxEl, dmg, isCrit, false, false, false);
       if (defDying && !isDouble && !savedByPhoenix) {
         if (defIsEnemy) setTimeout(() => fxExplosion(defFxEl, defCard), 200);
@@ -3072,40 +3076,306 @@ function getFxCard(isEnemy, idx) {
   return document.getElementById(`fc-${isEnemy?'enemy':'team'}-${idx}`);
 }
 
-function fxSlash(fxEl, isCrit, _unused, slashColor) {
-  if (!fxEl) return;
-  const count = isCrit ? 4 : 2;
-  let colors;
-  if (slashColor === 'red') {
-    colors = ['#ff3333','#ff8800','#fff','#cc0000'];
-  } else if (isCrit) {
-    colors = ['#ffe066','#ff9900','#fff','#ffcc00'];
-  } else {
-    colors = ['#4f8ef7','#a0c4ff','#fff'];
-  }
-  const baseAngle = -28;
-  for (let k = 0; k < count; k++) {
-    const line = document.createElement('div');
-    line.className = 'slash-line';
-    const angle = baseAngle + (k - Math.floor(count/2)) * 14;
-    const topPct = 20 + k * 18;
-    line.style.cssText = `
-      --slash-angle:${angle}deg;
-      top:${topPct}%;left:-20%;
-      background:linear-gradient(90deg,transparent,${colors[k%colors.length]},transparent);
-      box-shadow:0 0 8px 2px ${colors[k%colors.length]}99;
-      animation-delay:${k*40}ms;
-    `;
-    fxEl.appendChild(line);
-    setTimeout(() => line.remove(), 500 + k*40);
-  }
-  const glow = document.createElement('div');
-  glow.className = 'slash-glow';
-  glow.style.setProperty('--glow-color', slashColor === 'red' ? '#ff3333' : isCrit ? '#ffaa00' : '#4f8ef7');
-  fxEl.appendChild(glow);
-  setTimeout(() => glow.remove(), 450);
+// ===== 特效引擎 =====
+
+/* 建立單一 DOM 粒子，掛在 parent 上，自動清除 */
+function spawnParticle(parent, { x, y, size, color, tx, ty, dur, opacity=1, shape='circle', rotate=0 }) {
+  const p = document.createElement('div');
+  const borderR = shape === 'line' ? '1px' : '50%';
+  p.style.cssText = `
+    position:absolute;left:${x}px;top:${y}px;
+    width:${size}px;height:${size}px;border-radius:${borderR};
+    background:${color};pointer-events:none;z-index:30;
+    transform:rotate(${rotate}deg);
+    box-shadow:0 0 ${size}px ${color}99;
+    transition:transform ${dur}ms ease-out,opacity ${dur}ms ease-out;
+    opacity:${opacity};will-change:transform,opacity;
+  `;
+  parent.appendChild(p);
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    p.style.transform = `translate(${tx}px,${ty}px) rotate(${rotate}deg) scale(0.05)`;
+    p.style.opacity = '0';
+  }));
+  setTimeout(() => p.remove(), dur + 60);
+  return p;
 }
 
+/* 絢麗斬擊：SVG canvas 繪製光刀，確保在卡片內 */
+function fxSlash(fxEl, isCrit, _unused, slashColor) {
+  if (!fxEl) return;
+  const card = fxEl.parentElement;
+  const W = card ? card.offsetWidth  || 120 : 120;
+  const H = card ? card.offsetHeight || 90  : 90;
+
+  let baseColor, glowColor;
+  if (slashColor === 'red') { baseColor='#ff2222'; glowColor='#ff6600'; }
+  else if (isCrit)          { baseColor='#ffe066'; glowColor='#ff9900'; }
+  else                      { baseColor='#60aaff'; glowColor='#aa55ff'; }
+
+  const count = isCrit ? 4 : 3;
+  const svg = document.createElementNS('http://www.w3.org/2000/svg','svg');
+  svg.style.cssText = `position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:25;overflow:visible`;
+  fxEl.appendChild(svg);
+
+  for (let k = 0; k < count; k++) {
+    const yFrac = 0.2 + k * 0.22;
+    const angle = -(18 + k * 8); // slight diagonal
+    const len = W * 1.4;
+    const cx = W * 0.5, cy = H * yFrac;
+    const rad = angle * Math.PI / 180;
+    const x1 = cx - Math.cos(rad)*len*0.5, y1 = cy - Math.sin(rad)*len*0.5;
+    const x2 = cx + Math.cos(rad)*len*0.5, y2 = cy + Math.sin(rad)*len*0.5;
+    const thickness = isCrit ? 4 - k*0.5 : 3 - k*0.5;
+    const delay = k * 45;
+
+    // Glow line (wide, soft)
+    const glowLine = document.createElementNS('http://www.w3.org/2000/svg','line');
+    glowLine.setAttribute('x1',x1); glowLine.setAttribute('y1',y1);
+    glowLine.setAttribute('x2',x2); glowLine.setAttribute('y2',y2);
+    glowLine.style.cssText = `stroke:${glowColor};stroke-width:${thickness*3};opacity:0;filter:blur(4px);stroke-linecap:round`;
+    svg.appendChild(glowLine);
+
+    // Core line (sharp)
+    const line = document.createElementNS('http://www.w3.org/2000/svg','line');
+    line.setAttribute('x1',x1); line.setAttribute('y1',y1);
+    line.setAttribute('x2',x2); line.setAttribute('y2',y2);
+    line.style.cssText = `stroke:#fff;stroke-width:${thickness};opacity:0;stroke-linecap:round`;
+    svg.appendChild(line);
+
+    // Animate: flash in → fade out
+    setTimeout(() => {
+      glowLine.style.transition = 'opacity 60ms';
+      line.style.transition = 'opacity 60ms';
+      glowLine.style.opacity = '0.7';
+      line.style.opacity = '1';
+      setTimeout(() => {
+        glowLine.style.transition = 'opacity 350ms ease-out';
+        line.style.transition = 'opacity 350ms ease-out';
+        glowLine.style.opacity = '0';
+        line.style.opacity = '0';
+      }, 80);
+    }, delay);
+  }
+
+  // Glow flash on card border
+  const glow = document.createElement('div');
+  glow.style.cssText = `position:absolute;inset:0;border-radius:10px;pointer-events:none;z-index:24;
+    box-shadow:inset 0 0 18px 4px ${glowColor}88;opacity:1;transition:opacity .4s ease-out`;
+  fxEl.appendChild(glow);
+  requestAnimationFrame(() => requestAnimationFrame(() => { glow.style.opacity='0'; }));
+
+  setTimeout(() => { svg.remove(); glow.remove(); }, 600);
+}
+
+/* 流血粒子：紅色液滴往下噴 */
+function fxBloodDrip(card, isCrit) {
+  if (!card) return;
+  const W = card.offsetWidth || 120;
+  const H = card.offsetHeight || 90;
+  const count = isCrit ? 10 : 6;
+  for (let i = 0; i < count; i++) {
+    const x = W * (0.25 + Math.random() * 0.5);
+    const y = H * (0.1 + Math.random() * 0.3);
+    const size = 2 + Math.random() * (isCrit ? 5 : 3);
+    const speed = 300 + Math.random() * 400;
+    const dropX = (Math.random() - 0.5) * 20;
+    const dropY = 30 + Math.random() * 50;
+    const colors = ['#cc0000','#ff2222','#dd1111','#ff4444'];
+    const color = colors[Math.floor(Math.random()*colors.length)];
+    // Elongated drop shape
+    const drop = document.createElement('div');
+    drop.style.cssText = `
+      position:absolute;left:${x}px;top:${y}px;
+      width:${size}px;height:${size*1.8}px;border-radius:${size}px ${size}px 50% 50%;
+      background:${color};pointer-events:none;z-index:29;
+      box-shadow:0 0 3px #cc000088;
+      transition:transform ${speed}ms ease-in,opacity ${speed*0.8}ms ease-in ${speed*0.2}ms;
+      will-change:transform,opacity;
+    `;
+    card.appendChild(drop);
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      drop.style.transform = `translate(${dropX}px,${dropY}px) scaleY(1.4)`;
+      drop.style.opacity = '0';
+    }));
+    setTimeout(() => drop.remove(), speed + 80);
+  }
+}
+
+/* 命中閃光 */
+function fxHitFlash(fxEl) {
+  if (!fxEl) return;
+  const flash = document.createElement('div');
+  flash.className = 'hit-flash';
+  fxEl.appendChild(flash);
+  setTimeout(() => flash.remove(), 320);
+}
+
+/* 傷害數字 */
+function fxDamageNumber(fxEl, dmg, isCrit, _u1, _u2, isThorn) {
+  if (!fxEl) return;
+  const num = document.createElement('div');
+  num.className = 'fx-dmg';
+  const color = isThorn ? '#3ecfcf' : isCrit ? '#ffe066' : '#ff6666';
+  const prefix = isThorn ? '↩' : isCrit ? '💥' : '';
+  num.style.cssText = `color:${color};font-size:${isCrit?'26px':'20px'};top:35%`;
+  num.textContent = `${prefix}-${dmg}`;
+  fxEl.appendChild(num);
+  setTimeout(() => num.remove(), 950);
+}
+
+/* 一般傷害粒子（全方向） */
+function fxParticles(card, dmg, isCrit, slashColor) {
+  if (!card) return;
+  const W = card.offsetWidth || 120;
+  const H = card.offsetHeight || 90;
+  const cx = W/2, cy = H*0.45;
+  const count = Math.min(5 + Math.floor(dmg/6), 10); // mobile-friendly cap
+  let colors;
+  if (slashColor==='red') colors=['#ff3333','#ff8800','#fff','#dd0000'];
+  else if (isCrit)        colors=['#ffe066','#ff9900','#fff','#ff6644'];
+  else                    colors=['#ff6666','#ffaa66','#ffcccc','#cc3333'];
+  for (let i=0; i<count; i++) {
+    const angle = (360/count)*i + Math.random()*30;
+    const dist  = 22 + Math.random()*30;
+    const size  = isCrit ? 3+Math.random()*4 : 2+Math.random()*3;
+    const rad   = angle*Math.PI/180;
+    spawnParticle(card, {
+      x: cx-size/2, y: cy-size/2, size,
+      color: colors[Math.floor(Math.random()*colors.length)],
+      tx: Math.cos(rad)*dist, ty: Math.sin(rad)*dist,
+      dur: 380 + Math.random()*250
+    });
+  }
+}
+
+/* 怪物死亡：多重爆炸波 + 白色粒子 */
+function fxExplosion(fxEl, card) {
+  if (!card) return;
+  const W = card.offsetWidth || 120;
+  const H = card.offsetHeight || 90;
+  const cx = W/2, cy = H*0.5;
+
+  // 3 expanding shockwave rings at staggered intervals
+  [0, 120, 240].forEach((delay, ri) => {
+    setTimeout(() => {
+      const ring = document.createElement('div');
+      const size = 20 + ri*10;
+      ring.style.cssText = `
+        position:absolute;
+        left:${cx - size/2}px;top:${cy - size/2}px;
+        width:${size}px;height:${size}px;
+        border-radius:50%;
+        border:${3-ri}px solid ${ri===0?'#ff8800':ri===1?'#ffcc00':'#ffffff'};
+        pointer-events:none;z-index:31;
+        box-shadow:0 0 ${12-ri*3}px ${ri===0?'#ff880099':'#ffcc0066'};
+        transition:transform .5s ease-out,opacity .5s ease-out;
+        will-change:transform,opacity;
+      `;
+      card.appendChild(ring);
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        ring.style.transform = 'scale(4.5)';
+        ring.style.opacity = '0';
+      }));
+      setTimeout(() => ring.remove(), 560);
+    }, delay);
+  });
+
+  // White radial particles
+  const count = 14;
+  for (let i=0; i<count; i++) {
+    const angle = (360/count)*i + Math.random()*10;
+    const dist  = 32 + Math.random()*40;
+    const size  = 3 + Math.random()*4;
+    const rad   = angle*Math.PI/180;
+    const colors = ['#ffffff','#ffeeaa','#ff8800','#ffcc00'];
+    setTimeout(() => {
+      spawnParticle(card, {
+        x: cx-size/2, y: cy-size/2, size,
+        color: colors[Math.floor(Math.random()*colors.length)],
+        tx: Math.cos(rad)*dist, ty: Math.sin(rad)*dist,
+        dur: 550 + Math.random()*300
+      });
+    }, Math.random()*100);
+  }
+
+  // Card shake
+  let shakeT=0;
+  const shake = setInterval(() => {
+    card.style.transform = `translate(${(Math.random()-.5)*8}px,${(Math.random()-.5)*4}px)`;
+    if (++shakeT>5) { clearInterval(shake); card.style.transform=''; }
+  }, 55);
+}
+
+/* 玩家死亡：幽靈上飄 + 藍白粒子 */
+function fxGhost(fxEl) {
+  if (!fxEl) return;
+  const card = fxEl.parentElement;
+  const W = card ? card.offsetWidth||120 : 120;
+  const H = card ? card.offsetHeight||90 : 90;
+  const cx = W/2, cy = H/2;
+
+  // Ghost SVG shape (simple arc + eyes)
+  const ghost = document.createElement('div');
+  ghost.style.cssText = `
+    position:absolute;left:50%;top:60%;
+    transform:translateX(-50%) scale(0.3);
+    width:40px;height:44px;pointer-events:none;z-index:32;
+    will-change:transform,opacity;
+    transition:transform 1.4s cubic-bezier(.2,.8,.3,1), opacity .5s ease-in 0.9s;
+  `;
+  // Draw ghost with CSS
+  ghost.innerHTML = `<svg width="40" height="44" viewBox="0 0 40 44" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <filter id="gf"><feGaussianBlur stdDeviation="1.5"/></filter>
+    </defs>
+    <ellipse cx="20" cy="16" rx="16" ry="14" fill="#cceeff" opacity="0.9"/>
+    <rect x="4" y="16" width="32" height="18" fill="#cceeff" opacity="0.9"/>
+    <path d="M4 34 Q9 40 14 34 Q19 40 20 34 Q21 40 26 34 Q31 40 36 34 L36 34" fill="#cceeff" opacity="0.9"/>
+    <ellipse cx="14" cy="15" rx="4" ry="5" fill="#1a3a5c" opacity="0.9"/>
+    <ellipse cx="26" cy="15" rx="4" ry="5" fill="#1a3a5c" opacity="0.9"/>
+    <ellipse cx="14" cy="16" rx="2" ry="3" fill="#aaddff"/>
+    <ellipse cx="26" cy="16" rx="2" ry="3" fill="#aaddff"/>
+    <ellipse cx="20" cy="16" rx="18" ry="16" fill="#88ccff" opacity="0.15" filter="url(#gf)"/>
+  </svg>`;
+  fxEl.appendChild(ghost);
+
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    ghost.style.transform = `translateX(-50%) translateY(-${H*1.1}px) scale(1)`;
+    ghost.style.opacity = '0';
+  }));
+  setTimeout(() => ghost.remove(), 1600);
+
+  // Blue & white rising particles
+  for (let i=0; i<10; i++) {
+    setTimeout(() => {
+      if (!card) return;
+      const x = cx + (Math.random()-.5)*W*0.7;
+      const y = cy + (Math.random()-.5)*H*0.4;
+      const size = 2 + Math.random()*3;
+      const colors = ['#aaddff','#ffffff','#88bbff','#ddeeff'];
+      spawnParticle(card, {
+        x, y, size,
+        color: colors[Math.floor(Math.random()*colors.length)],
+        tx: (Math.random()-.5)*20,
+        ty: -(25 + Math.random()*35),
+        dur: 900 + Math.random()*500,
+        opacity: 0.85
+      });
+    }, i * 120);
+  }
+}
+
+/* 墓碑 */
+function fxTombstone(fxEl) {
+  if (!fxEl) return;
+  const tomb = document.createElement('div');
+  tomb.className = 'fx-tombstone';
+  tomb.textContent = '🪦';
+  fxEl.appendChild(tomb);
+  setTimeout(() => tomb.remove(), 2500);
+}
+
+/* 防禦格擋 */
 function fxBlock(fxEl, card) {
   if (!fxEl) return;
   const shield = document.createElement('div');
@@ -3115,20 +3385,20 @@ function fxBlock(fxEl, card) {
   setTimeout(() => shield.remove(), 700);
   if (card) {
     card.style.boxShadow = '0 0 20px 6px #3ecfcfaa';
-    setTimeout(() => { card.style.boxShadow = ''; }, 500);
+    setTimeout(() => { card.style.boxShadow=''; }, 500);
   }
 }
 
+/* 致命一擊 */
 function fxInstantKill(fxEl, card, isEnemy) {
   if (!fxEl) return;
-  // Epic multi-layered instant kill effect
-  for (let i = 0; i < 6; i++) {
+  for (let i=0; i<6; i++) {
     const line = document.createElement('div');
     line.className = 'slash-line';
-    const angle = -45 + i * 15;
+    const angle = -45 + i*15;
     line.style.cssText = `
       --slash-angle:${angle}deg;
-      top:${10 + i*13}%;left:-20%;width:160%;
+      top:${10+i*13}%;left:-20%;width:160%;
       background:linear-gradient(90deg,transparent,#fff,#ffe066,#fff,transparent);
       box-shadow:0 0 16px 4px #ffe06699;
       animation-delay:${i*30}ms;height:4px;
@@ -3142,140 +3412,14 @@ function fxInstantKill(fxEl, card, isEnemy) {
   fxEl.appendChild(skull);
   setTimeout(() => skull.remove(), 900);
   if (card) {
-    card.style.animation = 'none';
-    let t = 0;
+    let t=0;
     const shake = setInterval(() => {
-      card.style.transform = `translateX(${(Math.random()-0.5)*12}px) translateY(${(Math.random()-0.5)*6}px)`;
-      if (++t > 6) { clearInterval(shake); card.style.transform = ''; }
+      card.style.transform = `translateX(${(Math.random()-.5)*12}px) translateY(${(Math.random()-.5)*6}px)`;
+      if (++t>6) { clearInterval(shake); card.style.transform=''; }
     }, 50);
   }
   if (isEnemy) setTimeout(() => fxExplosion(fxEl, card), 300);
   else setTimeout(() => { fxGhost(fxEl); setTimeout(() => fxTombstone(fxEl), 800); }, 300);
-}
-
-function fxHitFlash(fxEl) {
-  if (!fxEl) return;
-  const flash = document.createElement('div');
-  flash.className = 'hit-flash';
-  fxEl.appendChild(flash);
-  setTimeout(() => flash.remove(), 320);
-}
-
-function fxDamageNumber(fxEl, dmg, isCrit, _unused1, _unused2, isThorn) {
-  if (!fxEl) return;
-  const num = document.createElement('div');
-  num.className = 'fx-dmg';
-  let color = isThorn ? '#3ecfcf' : isCrit ? '#ffe066' : '#ff6666';
-  let prefix = isThorn ? '↩' : isCrit ? '💥' : '';
-  num.style.cssText = `color:${color};font-size:${isCrit?'26px':'20px'};top:35%`;
-  num.textContent = `${prefix}-${dmg}`;
-  fxEl.appendChild(num);
-  setTimeout(() => num.remove(), 950);
-}
-
-function fxParticles(card, dmg, isCrit, slashColor) {
-  if (!card) return;
-  const count = Math.min(6 + Math.floor(dmg / 5), 14);
-  for (let i = 0; i < count; i++) {
-    const p = document.createElement('div');
-    const angle = (360 / count) * i + Math.random() * 30;
-    const dist = 28 + Math.random() * 36;
-    const size = isCrit ? (4 + Math.random()*5) : (2 + Math.random()*4);
-    let colors;
-    if (slashColor === 'red') colors = ['#ff3333','#ff8800','#fff','#ff0000'];
-    else if (isCrit) colors = ['#ffe066','#ff9900','#fff','#ff4444'];
-    else colors = ['#ff6666','#ffaa66','#fff','#cc3333'];
-    const color = colors[Math.floor(Math.random()*colors.length)];
-    const dur = 400 + Math.random() * 300;
-    const rad = angle * Math.PI / 180;
-    const tx = Math.cos(rad) * dist;
-    const ty = Math.sin(rad) * dist;
-    p.style.cssText = `
-      position:absolute;
-      left:calc(50% - ${size/2}px);top:calc(40% - ${size/2}px);
-      width:${size}px;height:${size}px;border-radius:50%;
-      background:${color};pointer-events:none;z-index:28;
-      transition:transform ${dur}ms ease-out,opacity ${dur}ms ease-out;
-      box-shadow:0 0 4px ${color};
-    `;
-    card.appendChild(p);
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        p.style.transform = `translate(${tx}px,${ty}px) scale(0)`;
-        p.style.opacity = '0';
-      });
-    });
-    setTimeout(() => p.remove(), dur + 50);
-  }
-}
-
-function fxExplosion(fxEl, card) {
-  if (!card) return;
-  const colors = ['#ff4400','#ff8800','#ffcc00','#fff','#ff2200','#ffaa00'];
-  const count = 22;
-  for (let i = 0; i < count; i++) {
-    const p = document.createElement('div');
-    const angle = (360 / count) * i + Math.random() * 10;
-    const dist = 40 + Math.random() * 55;
-    const size = 4 + Math.random() * 7;
-    const color = colors[Math.floor(Math.random() * colors.length)];
-    const dur = 500 + Math.random() * 350;
-    const rad = angle * Math.PI / 180;
-    const tx = Math.cos(rad) * dist;
-    const ty = Math.sin(rad) * dist;
-    p.style.cssText = `
-      position:absolute;left:calc(50% - ${size/2}px);top:calc(45% - ${size/2}px);
-      width:${size}px;height:${size}px;border-radius:50%;
-      background:${color};pointer-events:none;z-index:30;
-      transition:transform ${dur}ms ease-out,opacity ${dur}ms ease-out;
-      box-shadow:0 0 6px 2px ${color}aa;
-    `;
-    card.appendChild(p);
-    requestAnimationFrame(() => requestAnimationFrame(() => {
-      p.style.transform = `translate(${tx}px,${ty}px) scale(0.1)`;
-      p.style.opacity = '0';
-    }));
-    setTimeout(() => p.remove(), dur + 60);
-  }
-  // Shockwave ring
-  const ring = document.createElement('div');
-  ring.style.cssText = `
-    position:absolute;left:10%;top:10%;width:80%;height:80%;
-    border-radius:50%;border:3px solid #ff8800;pointer-events:none;z-index:29;
-    transition:transform .5s ease-out,opacity .5s ease-out;
-    box-shadow:0 0 12px #ff880088;
-  `;
-  card.appendChild(ring);
-  requestAnimationFrame(() => requestAnimationFrame(() => {
-    ring.style.transform = 'scale(3.5)';
-    ring.style.opacity = '0';
-  }));
-  setTimeout(() => ring.remove(), 560);
-  // Card shake
-  let shakeT = 0;
-  const shake = setInterval(() => {
-    card.style.transform = `translateX(${(Math.random()-0.5)*10}px)`;
-    if (++shakeT > 5) { clearInterval(shake); card.style.transform = ''; }
-  }, 55);
-}
-
-function fxGhost(fxEl) {
-  if (!fxEl) return;
-  const ghost = document.createElement('div');
-  ghost.className = 'fx-ghost';
-  ghost.textContent = '👻';
-  fxEl.appendChild(ghost);
-  setTimeout(() => ghost.remove(), 1700);
-}
-
-function fxTombstone(fxEl) {
-  if (!fxEl) return;
-  const tomb = document.createElement('div');
-  tomb.className = 'fx-tombstone';
-  tomb.textContent = '🪦';
-  fxEl.appendChild(tomb);
-  // Tombstone stays visible (card is dead/greyed)
-  setTimeout(() => tomb.remove(), 2500);
 }
 
 function getTargetIndex(target) {
