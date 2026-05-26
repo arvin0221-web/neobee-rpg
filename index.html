@@ -423,7 +423,6 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
       <div id="tab-play" class="hidden">
         <div style="max-width:500px;margin:0 auto;text-align:center">
           <div style="font-size:24px;font-weight:900;color:var(--gold);letter-spacing:4px;margin-bottom:8px">選擇遊玩方式</div>
-          <div style="font-size:13px;color:var(--text2);margin-bottom:32px;letter-spacing:1px">與隊友一起挑戰五關怪物</div>
           <div style="display:flex;flex-direction:column;gap:16px">
             <button class="btn btn-primary" style="padding:16px;font-size:16px" onclick="showCreateTeam()">⚔️ 建立小隊</button>
             <button class="btn btn-secondary" style="padding:16px;font-size:16px;border-color:var(--accent2);color:var(--accent2)" onclick="showJoinTeam()">🔑 加入小隊</button>
@@ -674,7 +673,9 @@ const STAGE_CONFIG = [
   {stage:3,playerPts:5,monsterPts:22,exp:500,gold:650},
   {stage:4,playerPts:10,monsterPts:35,exp:1500,gold:2500},
   {stage:5,playerPts:10,monsterPts:50,exp:5000,gold:9000},
-  {stage:6,playerPts:10,monsterPts:70,exp:10000,gold:20000}
+  {stage:6,playerPts:10,monsterPts:70,exp:10000,gold:20000},
+  {stage:7,playerPts:10,monsterPts:90,exp:35000,gold:80000},
+  {stage:8,playerPts:10,monsterPts:120,exp:90000,gold:200000}
 ];
 const SKILLS_DEF = [
   {id:'反傷',   name:'反傷',   desc:'受到傷害時，將傷害的5%返還給攻擊者（最低1點）。每升1級+7%。',                                  baseCost:1000,  maxLvOverride:null, costMult:15},
@@ -764,14 +765,23 @@ function getSkillMaxLevel(exp, sd) {
   }
   return rankCap;
 }
-function rollMonsterStats(pts) {
+function rollMonsterStats(pts, stage) {
   // Each point randomly becomes: +5 hp, or +1 atk, or +1 def
+  // From stage 7+: atk 37%, hp 37%, def 26%
   let hpPts = 0, atk = 0, def = 0;
+  const late = stage && stage >= 7;
   for (let i = 0; i < pts; i++) {
-    const r = Math.floor(Math.random() * 3);
-    if (r === 0) hpPts++;
-    else if (r === 1) atk++;
-    else def++;
+    const r = Math.random() * 100;
+    if (late) {
+      if (r < 37)       hpPts++;  // 37%
+      else if (r < 74)  atk++;    // 37%
+      else              def++;    // 26%
+    } else {
+      const ri = Math.floor(Math.random() * 3);
+      if (ri === 0) hpPts++;
+      else if (ri === 1) atk++;
+      else def++;
+    }
   }
   const hp = Math.max(5, hpPts * 5);
   return {hp, atk, def, maxHp: hp};
@@ -2117,7 +2127,7 @@ function startStage(stage) {
   // Generate enemies
   gs.enemies = [];
   for (let i = 0; i < 3; i++) {
-    const s = rollMonsterStats(cfg.monsterPts);
+    const s = rollMonsterStats(cfg.monsterPts, stage);
     gs.enemies.push({ name:`怪物${i+1}`, isMonster:true, hp:s.hp, maxHp:s.hp, atk:s.atk, def:s.def, skills:{} });
   }
   gs.battleActive = false;
