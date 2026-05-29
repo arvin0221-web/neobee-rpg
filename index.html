@@ -417,6 +417,23 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
           <div class="card-title">已解鎖技能</div>
           <div id="home-skills-list" style="font-size:13px;color:var(--text2);line-height:2"></div>
         </div>
+        <div class="card">
+          <div class="card-title">等級一覽</div>
+          <div style="overflow-x:auto">
+            <table id="rankTable" style="width:100%;border-collapse:collapse;font-size:12px">
+              <thead>
+                <tr style="color:var(--text2);border-bottom:1px solid var(--border)">
+                  <th style="text-align:left;padding:6px 8px;font-weight:600">等級</th>
+                  <th style="text-align:right;padding:6px 8px;font-weight:600">所需 EXP</th>
+                  <th style="text-align:right;padding:6px 8px;font-weight:600">❤ 血量</th>
+                  <th style="text-align:right;padding:6px 8px;font-weight:600">⚔ 攻擊</th>
+                  <th style="text-align:right;padding:6px 8px;font-weight:600">🛡 防禦</th>
+                </tr>
+              </thead>
+              <tbody id="rankTableBody"></tbody>
+            </table>
+          </div>
+        </div>
       </div>
 
       <!-- PLAY TAB -->
@@ -676,13 +693,13 @@ const RANKS = [
   {name:'黑鐵',key:'鐵',exp:0,              hp:5,  atk:0,  def:0},
   {name:'青銅',key:'銅',exp:1000,            hp:10, atk:0,  def:0},
   {name:'白銀',key:'銀',exp:10000,           hp:15, atk:1,  def:1},
-  {name:'黃金',key:'金',exp:100000,          hp:25, atk:2,  def:2},
-  {name:'白金',key:'白金',exp:1000000,       hp:45, atk:3,  def:3},
-  {name:'鑽石',key:'鑽',exp:10000000,        hp:65, atk:5,  def:5},
-  {name:'翡翠',key:'翡',exp:100000000,       hp:95, atk:7,  def:7},
-  {name:'曜石',key:'曜',exp:1000000000,      hp:125,atk:10, def:10},
-  {name:'隕鐵',key:'隕',exp:10000000000,     hp:165,atk:13, def:13},
-  {name:'星岩',key:'岩',exp:100000000000,    hp:205,atk:17, def:17}
+  {name:'黃金',key:'金',exp:100000,          hp:30, atk:2,  def:2},
+  {name:'白金',key:'白金',exp:1000000,       hp:50, atk:3,  def:3},
+  {name:'鑽石',key:'鑽',exp:10000000,        hp:75, atk:5,  def:5},
+  {name:'翡翠',key:'翡',exp:100000000,       hp:105,atk:7,  def:7},
+  {name:'曜石',key:'曜',exp:1000000000,      hp:140,atk:11, def:11},
+  {name:'隕鐵',key:'隕',exp:10000000000,     hp:200,atk:14, def:14},
+  {name:'星岩',key:'岩',exp:100000000000,    hp:300,atk:18, def:18}
 ];
 const STAGE_CONFIG = [
   {stage:1,playerPts:10,monsterPts:10,exp:100,gold:100},
@@ -973,6 +990,28 @@ function updateUI() {
     if (sd && lv > 0) html += `<span style="margin-right:16px">【${sd.name} Lv.${lv}】</span>`;
   }
   skillsEl.innerHTML = html || '<span>尚未擁有技能</span>';
+  // Render rank table (only build DOM once, then just highlight current rank)
+  const tbody = document.getElementById('rankTableBody');
+  if (tbody) {
+    if (!tbody.dataset.built) {
+      tbody.dataset.built = '1';
+      tbody.innerHTML = RANKS.map(r => {
+        const c = getRankColor(r.key);
+        const expStr = r.exp === 0 ? '0' : r.exp.toLocaleString();
+        return `<tr class="rank-row" data-key="${r.key}" style="border-bottom:1px solid var(--border)22;transition:background .2s">
+          <td style="padding:7px 8px;font-weight:700;color:${c}">${r.name}</td>
+          <td style="padding:7px 8px;text-align:right;color:var(--text2)">${expStr}</td>
+          <td style="padding:7px 8px;text-align:right;color:#4ade80">${r.hp}</td>
+          <td style="padding:7px 8px;text-align:right;color:#f87171">${r.atk}</td>
+          <td style="padding:7px 8px;text-align:right;color:#38bdf8">${r.def}</td>
+        </tr>`;
+      }).join('');
+    }
+    // Highlight current rank row
+    tbody.querySelectorAll('.rank-row').forEach(row => {
+      row.style.background = row.dataset.key === rank.key ? getRankColor(rank.key) + '22' : '';
+    });
+  }
 }
 
 window.switchTab = (tab) => {
