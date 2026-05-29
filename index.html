@@ -425,8 +425,7 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
           <div style="font-size:24px;font-weight:900;color:var(--gold);letter-spacing:4px;margin-bottom:8px">選擇遊玩方式</div>
           <div style="display:flex;flex-direction:column;gap:16px">
             <button class="btn btn-primary" style="padding:16px;font-size:16px" onclick="showCreateTeam()">⚔️ 建立小隊</button>
-            <button class="btn btn-secondary" style="padding:16px;font-size:16px;border-color:var(--accent2);color:var(--accent2)" onclick="showJoinTeam()">🔑 加入小隊</button>
-            <button class="btn btn-secondary" style="padding:16px;font-size:16px" onclick="startMatchmaking()">🔀 隨機匹配</button>
+            <button class="btn btn-secondary" style="padding:16px;font-size:16px;border-color:var(--accent2);color:var(--accent2)" onclick="showSearchRooms()">🔍 搜尋/加入房間</button>
           </div>
         </div>
       </div>
@@ -574,8 +573,21 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
   <div class="modal-card">
     <div class="modal-title">⚔️ 建立小隊</div>
     <div class="form-group">
-      <div class="form-label">小隊代碼（4-8字元）</div>
-      <input class="form-input" id="createTeamCode" placeholder="自訂代碼，例：HERO1234" maxlength="8">
+      <div class="form-label">小隊代碼（可選填，空白自動生成）</div>
+      <input class="form-input" id="createTeamCode" placeholder="留空則自動生成 6 字元代碼" maxlength="8">
+    </div>
+    <div class="form-group" style="margin-top:12px">
+      <div class="form-label">開始關卡</div>
+      <select class="form-input" id="createTeamStage" style="background:var(--bg2);color:var(--text)">
+        <option value="1">第 1 關（預設）</option>
+        <option value="2">第 2 關</option>
+        <option value="3">第 3 關</option>
+        <option value="4">第 4 關</option>
+        <option value="5">第 5 關</option>
+        <option value="6">第 6 關</option>
+        <option value="7">第 7 關</option>
+        <option value="8">第 8 關</option>
+      </select>
     </div>
     <div id="createTeamMsg" style="font-size:12px;color:var(--red);margin-top:4px"></div>
     <div class="modal-actions">
@@ -585,18 +597,23 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
   </div>
 </div>
 
-<!-- MODAL: Join Team -->
-<div id="joinTeamModal" class="modal-overlay hidden">
-  <div class="modal-card">
-    <div class="modal-title">🔑 加入小隊</div>
-    <div class="form-group">
-      <div class="form-label">小隊代碼</div>
-      <input class="form-input" id="joinTeamCode" placeholder="輸入小隊代碼" maxlength="8">
+<!-- MODAL: Search Rooms -->
+<div id="searchRoomsModal" class="modal-overlay hidden">
+  <div class="modal-card" style="max-width:480px;width:95%">
+    <div class="modal-title">🔍 搜尋房間</div>
+    <div style="display:flex;gap:8px;margin-bottom:12px">
+      <input class="form-input" id="joinByCodeInput" placeholder="直接輸入房間代碼加入" maxlength="8" style="flex:1">
+      <button class="btn btn-primary btn-sm" onclick="joinByCode()">加入</button>
     </div>
-    <div id="joinTeamMsg" style="font-size:12px;color:var(--red);margin-top:4px"></div>
-    <div class="modal-actions">
-      <button class="btn btn-primary" onclick="doJoinTeam()">加入</button>
-      <button class="btn btn-secondary" onclick="closeModal('joinTeamModal')">取消</button>
+    <div id="joinByCodeMsg" style="font-size:12px;color:var(--red);margin-bottom:8px"></div>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+      <div style="font-size:12px;color:var(--text2);letter-spacing:2px">公開等待中的房間</div>
+      <button class="btn btn-secondary btn-sm" onclick="loadOpenRooms()">🔄 重新整理</button>
+    </div>
+    <div id="openRoomsList" style="max-height:260px;overflow-y:auto"></div>
+    <div id="searchRoomsMsg" style="font-size:12px;color:var(--text2);margin-top:8px;text-align:center"></div>
+    <div class="modal-actions" style="margin-top:12px">
+      <button class="btn btn-secondary" onclick="closeModal('searchRoomsModal')">關閉</button>
     </div>
   </div>
 </div>
@@ -685,7 +702,6 @@ const SKILLS_DEF = [
   {id:'暴徒',   name:'暴徒',   desc:'血量低於20%時傷害+50%，攻擊特效變為紅色斬擊。每升1級額外+15%傷害加成。',                      baseCost:1000,  maxLvOverride:null, costMult:10},
   {id:'致命一擊',name:'致命一擊',desc:'每次攻擊有1%機率讓對手瞬間喪命（特效炸裂）。每升1級+1%機率。',                             baseCost:1000,  maxLvOverride:null, costMult:10},
   {id:'絕對防禦',name:'絕對防禦',desc:'每次受到攻擊有5%機率完全免疫傷害。每升1級+5%機率。',                                       baseCost:1000,  maxLvOverride:null, costMult:10},
-  {id:'蠻力',   name:'蠻力',   desc:'每擁有15HP，攻擊+1（動態計算）。每升1級，每15HP獲得的攻擊加成+1。',                          baseCost:10000, maxLvOverride:null, costMult:10},
 ];
 
 const JOBS_DEF = [
@@ -1114,7 +1130,7 @@ function showTeamInviteNotif(from, roomId) {
     const room = snap.val();
     if (room.status !== 'waiting') { notify('小隊已開始遊戲，無法加入', 'err'); return; }
     closeModal('createTeamModal');
-    closeModal('joinTeamModal');
+    closeModal('searchRoomsModal');
     G.teamId = roomId;
     await joinRoom(roomId);
     notify(`已加入 ${from} 的小隊！`, 'ok');
@@ -1359,155 +1375,322 @@ function hideGameChat() {
   document.getElementById('gameChatPanel').classList.add('hidden');
 }
 
-// ===== PLAY / MATCHMAKING =====
+// ===== PLAY / ROOM SYSTEM =====
+
+function genRoomCode() {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  let code = '';
+  for (let i = 0; i < 6; i++) code += chars[Math.floor(Math.random() * chars.length)];
+  return code;
+}
+
 window.showCreateTeam = () => {
   document.getElementById('createTeamCode').value = '';
   document.getElementById('createTeamMsg').textContent = '';
+  document.getElementById('createTeamStage').value = '1';
   openModal('createTeamModal');
-};
-window.showJoinTeam = () => {
-  document.getElementById('joinTeamCode').value = '';
-  document.getElementById('joinTeamMsg').textContent = '';
-  openModal('joinTeamModal');
 };
 
 window.doCreateTeam = async () => {
-  const code = document.getElementById('createTeamCode').value.trim().toUpperCase();
-  if (!code || code.length < 4 || code.length > 8) {
-    document.getElementById('createTeamMsg').textContent = '代碼需4-8字元';
+  let code = document.getElementById('createTeamCode').value.trim().toUpperCase();
+  const startStageVal = parseInt(document.getElementById('createTeamStage').value) || 1;
+  const msgEl = document.getElementById('createTeamMsg');
+  // Auto-generate if blank
+  if (!code) {
+    // Find an unused code
+    let attempts = 0;
+    while (attempts < 10) {
+      const candidate = genRoomCode();
+      const snap = await get(ref(db, `rooms/${candidate}`));
+      if (!snap.exists()) { code = candidate; break; }
+      attempts++;
+    }
+    if (!code) { msgEl.textContent = '無法生成代碼，請稍後再試'; return; }
+  } else if (code.length < 4 || code.length > 8) {
+    msgEl.textContent = '代碼需4-8字元';
     return;
-  }
-  const snap = await get(ref(db, `rooms/${code}`));
-  if (snap.exists()) {
-    document.getElementById('createTeamMsg').textContent = '此代碼已被使用';
-    return;
+  } else {
+    const snap = await get(ref(db, `rooms/${code}`));
+    if (snap.exists()) { msgEl.textContent = '此代碼已被使用'; return; }
   }
   closeModal('createTeamModal');
   G.teamId = code;
-  await setupRoom(code, true);
+  await setupRoom(code, startStageVal);
 };
 
-window.doJoinTeam = async () => {
-  const code = document.getElementById('joinTeamCode').value.trim().toUpperCase();
-  if (!code) { document.getElementById('joinTeamMsg').textContent = '請輸入代碼'; return; }
+window.showSearchRooms = () => {
+  document.getElementById('joinByCodeInput').value = '';
+  document.getElementById('joinByCodeMsg').textContent = '';
+  document.getElementById('searchRoomsMsg').textContent = '';
+  document.getElementById('openRoomsList').innerHTML = '<div style="text-align:center;color:var(--text2);padding:16px">載入中...</div>';
+  openModal('searchRoomsModal');
+  loadOpenRooms();
+};
+
+window.loadOpenRooms = async () => {
+  const listEl = document.getElementById('openRoomsList');
+  const msgEl  = document.getElementById('searchRoomsMsg');
+  listEl.innerHTML = '<div style="text-align:center;color:var(--text2);padding:16px">載入中...</div>';
+  msgEl.textContent = '';
+  try {
+    const snap = await get(ref(db, 'rooms'));
+    if (!snap.exists()) { listEl.innerHTML = ''; msgEl.textContent = '目前沒有公開房間'; return; }
+    const rooms = snap.val();
+    const openRooms = Object.entries(rooms)
+      .filter(([id, r]) => r.status === 'waiting' && r.public === true)
+      .sort((a, b) => (b[1].createdAt||0) - (a[1].createdAt||0));
+    if (!openRooms.length) { listEl.innerHTML = ''; msgEl.textContent = '目前沒有公開等待中的房間'; return; }
+    listEl.innerHTML = openRooms.map(([id, r]) => {
+      const members = Object.values(r.members || {}).filter(m => !m.isBot);
+      const count = members.length;
+      const names = members.map(m => m.name).join('、');
+      const stageLabel = r.startStage > 1 ? ` · 從第${r.startStage}關開始` : '';
+      const full = count >= 3;
+      return `<div style="display:flex;align-items:center;justify-content:space-between;background:var(--bg2);border-radius:8px;padding:10px 12px;margin-bottom:8px;gap:8px">
+        <div style="flex:1;min-width:0">
+          <div style="font-weight:700;color:var(--accent);font-size:13px">${id}</div>
+          <div style="font-size:11px;color:var(--text2);margin-top:2px">${names}${stageLabel}</div>
+          <div style="font-size:11px;color:${full?'var(--red)':'var(--green)'};margin-top:2px">${count}/3 人${full?' · 已滿':''}</div>
+        </div>
+        ${full ? `<button class="btn btn-secondary btn-sm" disabled>已滿</button>`
+                : `<button class="btn btn-primary btn-sm" onclick="requestJoinRoom('${id}')">申請加入</button>`}
+      </div>`;
+    }).join('');
+  } catch(e) {
+    listEl.innerHTML = '';
+    msgEl.textContent = '載入失敗，請重試';
+    console.error(e);
+  }
+};
+
+window.joinByCode = async () => {
+  const code = document.getElementById('joinByCodeInput').value.trim().toUpperCase();
+  const msgEl = document.getElementById('joinByCodeMsg');
+  if (!code) { msgEl.textContent = '請輸入代碼'; return; }
   const snap = await get(ref(db, `rooms/${code}`));
-  if (!snap.exists()) { document.getElementById('joinTeamMsg').textContent = '找不到此小隊'; return; }
+  if (!snap.exists()) { msgEl.textContent = '找不到此房間'; return; }
   const room = snap.val();
-  if (room.status === 'starting' || room.status === 'ingame') {
-    document.getElementById('joinTeamMsg').textContent = '此小隊已開始遊戲，無法加入';
-    return;
-  }
+  if (room.status === 'starting' || room.status === 'ingame') { msgEl.textContent = '此房間已開始遊戲'; return; }
   const memberCount = Object.values(room.members || {}).filter(m => !m.isBot).length;
-  if (memberCount >= 3) {
-    document.getElementById('joinTeamMsg').textContent = '小隊已滿員';
-    return;
-  }
-  closeModal('joinTeamModal');
-  G.teamId = code;
-  await joinRoom(code);
+  if (memberCount >= 3) { msgEl.textContent = '房間已滿員'; return; }
+  closeModal('searchRoomsModal');
+  await requestJoinRoom(code);
 };
 
-async function setupRoom(code, isLeader) {
+window.requestJoinRoom = async (roomId) => {
+  closeModal('searchRoomsModal');
+  // Send join request to room leader
+  await set(ref(db, `rooms/${roomId}/joinRequests/${G.uid}`), {
+    name: G.player.name, uid: G.uid, ts: Date.now()
+  });
+  // Show waiting UI
+  document.getElementById('matchScreen').classList.remove('hidden');
+  document.getElementById('matchTitle').textContent = '申請加入房間';
+  document.getElementById('matchSub').textContent = `房間代碼：${roomId}`;
+  document.getElementById('matchSpinner').classList.remove('hidden');
+  document.getElementById('matchStatus').textContent = '等待房主審核...';
+  document.getElementById('matchTeamDisplay').innerHTML = '';
+  document.getElementById('matchTimer').textContent = '';
+  document.getElementById('matchBtns').innerHTML = `<button class="btn btn-danger" onclick="cancelJoinRequest('${roomId}')">取消申請</button>`;
+  // Listen for response
+  const respRef = ref(db, `joinResponses/${G.uid}`);
+  if (G.listeners.joinResp) { try { off(respRef); } catch(e){} }
+  G.listeners.joinResp = onValue(respRef, async snap => {
+    if (!snap.exists()) return;
+    const resp = snap.val();
+    await remove(respRef);
+    if (G.listeners.joinResp) { off(respRef); G.listeners.joinResp = null; }
+    if (resp.approved) {
+      document.getElementById('matchSpinner').classList.add('hidden');
+      document.getElementById('matchStatus').textContent = '已獲准加入！';
+      G.teamId = roomId;
+      await joinRoom(roomId);
+    } else {
+      document.getElementById('matchScreen').classList.add('hidden');
+      notify('房主已拒絕你的加入申請', 'err');
+    }
+  });
+};
+
+window.cancelJoinRequest = async (roomId) => {
+  if (G.listeners.joinResp) {
+    try { off(ref(db, `joinResponses/${G.uid}`)); } catch(e){}
+    G.listeners.joinResp = null;
+  }
+  await remove(ref(db, `rooms/${roomId}/joinRequests/${G.uid}`));
+  document.getElementById('matchScreen').classList.add('hidden');
+};
+
+window.respondJoinRequest = async (roomId, applicantUid, approve) => {
+  // Remove the request
+  await remove(ref(db, `rooms/${roomId}/joinRequests/${applicantUid}`));
+  if (approve) {
+    // Check room still has space
+    const snap = await get(ref(db, `rooms/${roomId}/members`));
+    const count = snap.exists() ? Object.values(snap.val()).filter(m => !m.isBot).length : 0;
+    if (count >= 3) {
+      await set(ref(db, `joinResponses/${applicantUid}`), { approved: false, ts: Date.now() });
+      notify('房間已滿，無法接受申請', 'err');
+      return;
+    }
+  }
+  await set(ref(db, `joinResponses/${applicantUid}`), { approved: approve, ts: Date.now() });
+  // Remove notification element
+  const el = document.getElementById(`joinreq-${applicantUid}`);
+  if (el) el.remove();
+};
+
+function listenForJoinRequests(roomId) {
+  const reqRef = ref(db, `rooms/${roomId}/joinRequests`);
+  if (G.listeners.joinRequests) { try { off(reqRef); } catch(e){} }
+  G.listeners.joinRequests = onValue(reqRef, snap => {
+    // Remove old notifications
+    document.querySelectorAll('.join-req-notice').forEach(el => el.remove());
+    if (!snap.exists()) return;
+    const requests = snap.val();
+    const container = document.getElementById('matchBtns');
+    if (!container) return;
+    Object.entries(requests).forEach(([uid, req]) => {
+      if (document.getElementById(`joinreq-${uid}`)) return;
+      const div = document.createElement('div');
+      div.className = 'join-req-notice';
+      div.id = `joinreq-${uid}`;
+      div.style.cssText = 'background:var(--bg2);border:1px solid var(--accent);border-radius:8px;padding:10px 12px;margin-top:8px;display:flex;align-items:center;justify-content:space-between;gap:8px';
+      div.innerHTML = `<div style="font-size:13px">👤 <strong>${req.name}</strong> 申請加入</div>
+        <div style="display:flex;gap:6px">
+          <button class="btn btn-primary btn-sm" onclick="respondJoinRequest('${roomId}','${uid}',true)">同意</button>
+          <button class="btn btn-danger btn-sm" onclick="respondJoinRequest('${roomId}','${uid}',false)">拒絕</button>
+        </div>`;
+      container.appendChild(div);
+    });
+  });
+}
+
+async function setupRoom(code, startStageNum) {
+  startStageNum = startStageNum || 1;
   const rank = getRank(G.player.exp||0);
   const room = {
     status: 'waiting',
+    public: true,
     createdAt: Date.now(),
+    startStage: startStageNum,
     members: { [G.uid]: { name: G.player.name, uid: G.uid, rankKey: rank.key, rankName: rank.name, isBot: false, ready: false } },
     leader: G.uid
   };
   await set(ref(db, `rooms/${code}`), room);
   listenToRoom(code);
-  showRoomWaiting(code);
+  showRoomWaiting(code, true, startStageNum);
 }
 
 async function joinRoom(code) {
   const rank = getRank(G.player.exp||0);
   await update(ref(db, `rooms/${code}/members/${G.uid}`), { name: G.player.name, uid: G.uid, rankKey: rank.key, rankName: rank.name, isBot: false, ready: false });
   listenToRoom(code);
-  showRoomWaiting(code);
+  // Fetch startStage from room
+  const snap = await get(ref(db, `rooms/${code}`));
+  const startStageNum = snap.exists() ? (snap.val().startStage || 1) : 1;
+  showRoomWaiting(code, false, startStageNum);
 }
 
-function showRoomWaiting(code) {
+function showRoomWaiting(code, isLeader, startStageNum) {
   document.getElementById('matchScreen').classList.remove('hidden');
   document.getElementById('matchTitle').textContent = '小隊等待室';
-  document.getElementById('matchSub').textContent = `小隊代碼：${code}`;
+  document.getElementById('matchSub').textContent = `房間代碼：${code}`;
   document.getElementById('matchTimer').textContent = '';
   document.getElementById('matchSpinner').classList.add('hidden');
   document.getElementById('matchStatus').textContent = '等待隊員加入...';
-  document.getElementById('matchBtns').innerHTML = `
-    <button class="btn btn-primary" onclick="readyUp()" id="readyBtn">準備</button>
-    <button class="btn btn-danger" onclick="leaveRoom()">離開小隊</button>`;
+  const stageLabel = (startStageNum && startStageNum > 1) ? `從第 ${startStageNum} 關開始` : '';
+  if (isLeader) {
+    document.getElementById('matchBtns').innerHTML = `
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;font-size:12px;color:var(--text2)">
+        開始關卡：
+        <select id="roomStartStageSelect" style="background:var(--bg2);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:4px 8px"
+          onchange="updateRoomStartStage('${code}',this.value)">
+          ${[1,2,3,4,5,6,7,8].map(i=>`<option value="${i}" ${i===startStageNum?'selected':''}>${i===1?'第 '+i+' 關（預設）':'第 '+i+' 關'}</option>`).join('')}
+        </select>
+      </div>
+      <button class="btn btn-primary" onclick="readyUp('${code}')" id="readyBtn">開始遊戲</button>
+      <button class="btn btn-danger" onclick="leaveRoom()">解散房間</button>`;
+    listenForJoinRequests(code);
+  } else {
+    document.getElementById('matchBtns').innerHTML = `
+      ${stageLabel ? `<div style="font-size:12px;color:var(--text2);margin-bottom:4px">📍 ${stageLabel}</div>` : ''}
+      <button class="btn btn-danger" onclick="leaveRoom()">離開房間</button>`;
+  }
   renderMatchTeam();
   showLobbyChat();
 }
 
 function listenToRoom(code) {
-  if (G.listeners.room) off(ref(db, `rooms/${code}`));
+  if (G.listeners.room) { try { off(ref(db, `rooms/${G.teamId || code}`)); } catch(e){} }
   G.listeners.room = onValue(ref(db, `rooms/${code}`), snap => {
     if (!snap.exists()) { leaveRoom(); return; }
     const room = snap.val();
     const members = room.members || {};
     renderMatchTeam(members);
+    // Update start stage label for non-leaders
+    const stageEl = document.getElementById('roomStartStageSelect');
+    if (!stageEl && room.startStage) {
+      const btns = document.getElementById('matchBtns');
+      const lbl = btns?.querySelector('.stage-lbl');
+      if (lbl) lbl.textContent = `📍 從第 ${room.startStage} 關開始`;
+    }
     if (room.status === 'starting') {
-      // All ready, start game
       startGameFromRoom(room, code);
     }
     if (room.status === 'disbanded') { leaveRoom(); }
   });
 }
 
-window.readyUp = async () => {
-  const snap = await get(ref(db, `rooms/${G.teamId}/members`));
+window.updateRoomStartStage = async (code, val) => {
+  await update(ref(db, `rooms/${code}`), { startStage: parseInt(val) });
+};
+
+window.readyUp = async (code) => {
+  code = code || G.teamId;
+  const snap = await get(ref(db, `rooms/${code}`));
   if (!snap.exists()) return;
-  const members = snap.val();
-  const memVals = Object.values(members).filter(m => !m.isBot);
-  if (memVals.length < 2) {
-    notify('至少需要2位玩家才能開始', 'err');
-    return;
+  const room = snap.val();
+  const mems = room.members || {};
+  const memVals = Object.values(mems);
+  const realMembers = memVals.filter(m => !m.isBot);
+  // Leader can start solo (with bots)
+  const updated = { ...mems };
+  const highestExp = realMembers.reduce((maxExp, m) => {
+    const rIdx = RANKS.findIndex(r => r.key === m.rankKey);
+    const exp = rIdx >= 0 ? RANKS[rIdx].exp : 0;
+    return exp > maxExp ? exp : maxExp;
+  }, 0);
+  // Fill up to 3 with bots
+  const currentCount = memVals.length;
+  for (let i = currentCount; i < 3; i++) {
+    const botOffset = [0, 1, -1][Math.floor(Math.random() * 3)];
+    const bs = botStats(botOffset, highestExp);
+    updated[`Bot_${i}`] = { name:`人機${i}`, rankKey:bs.rankKey, rankName:bs.rankName, isBot:true, ready:true };
   }
-  // Mark self ready
-  await update(ref(db, `rooms/${G.teamId}/members/${G.uid}`), { ready: true });
-  document.getElementById('readyBtn').disabled = true;
-  document.getElementById('readyBtn').textContent = '已準備';
-  // Check if all ready
-  setTimeout(async () => {
-    const snap2 = await get(ref(db, `rooms/${G.teamId}`));
-    if (!snap2.exists()) return;
-    const room = snap2.val();
-    const mems = room.members || {};
-    const memValsAll = Object.values(mems);
-    const realMembers = memValsAll.filter(m => !m.isBot);
-    const allReady = realMembers.every(m => m.ready);
-    if (allReady && realMembers.length >= 2) {
-      const updated = { ...mems };
-      // Find highest rank among real players to base bot level on
-      const highestExp = realMembers.reduce((maxExp, m) => {
-        const rIdx = RANKS.findIndex(r => r.key === m.rankKey);
-        const exp = rIdx >= 0 ? RANKS[rIdx].exp : 0;
-        return exp > maxExp ? exp : maxExp;
-      }, 0);
-      // Fill up to 3 with bots
-      const currentCount = memValsAll.length;
-      for (let i = currentCount; i < 3; i++) {
-        const botOffset = [0, 1, -1][Math.floor(Math.random() * 3)];
-        const bs = botStats(botOffset, highestExp);
-        updated[`Bot_${i}`] = { name:`人機${i}`, rankKey:bs.rankKey, rankName:bs.rankName, isBot:true, ready:true };
-      }
-      await update(ref(db, `rooms/${G.teamId}`), { status: 'starting', members: updated });
-    }
-  }, 500);
+  // Mark all real members ready
+  realMembers.forEach(m => { if (updated[m.uid]) updated[m.uid].ready = true; });
+  await update(ref(db, `rooms/${code}`), { status: 'starting', members: updated });
 };
 
 window.leaveRoom = async () => {
   hideLobbyChat();
   if (G.listeners.teamChat) { try { off(ref(db, `rooms/${G.teamId}/chat`)); } catch(e){} G.listeners.teamChat = null; }
+  if (G.listeners.joinRequests) { try { off(ref(db, `rooms/${G.teamId}/joinRequests`)); } catch(e){} G.listeners.joinRequests = null; }
+  if (G.listeners.joinResp) { try { off(ref(db, `joinResponses/${G.uid}`)); } catch(e){} G.listeners.joinResp = null; }
   if (G.teamId) {
-    if (G.listeners.room) { off(ref(db, `rooms/${G.teamId}`)); G.listeners.room = null; }
+    if (G.listeners.room) { try { off(ref(db, `rooms/${G.teamId}`)); } catch(e){} G.listeners.room = null; }
     try {
-      await remove(ref(db, `rooms/${G.teamId}/members/${G.uid}`));
-      const snap = await get(ref(db, `rooms/${G.teamId}/members`));
-      if (!snap.exists() || Object.keys(snap.val()).length === 0) {
-        await remove(ref(db, `rooms/${G.teamId}`));
+      const snap = await get(ref(db, `rooms/${G.teamId}`));
+      if (snap.exists()) {
+        const room = snap.val();
+        if (room.leader === G.uid) {
+          // Leader dissolves the room
+          await update(ref(db, `rooms/${G.teamId}`), { status: 'disbanded' });
+          await remove(ref(db, `rooms/${G.teamId}`));
+        } else {
+          await remove(ref(db, `rooms/${G.teamId}/members/${G.uid}`));
+        }
       }
     } catch(e){}
     G.teamId = null;
@@ -1538,98 +1721,6 @@ function renderMatchTeam(members) {
   }
   document.getElementById('matchTeamDisplay').innerHTML = html;
 }
-
-// ===== MATCHMAKING =====
-window.startMatchmaking = async () => {
-  document.getElementById('matchScreen').classList.remove('hidden');
-  document.getElementById('matchTitle').textContent = '隨機匹配';
-  document.getElementById('matchSub').textContent = '搜尋隊友中...';
-  document.getElementById('matchSpinner').classList.remove('hidden');
-  document.getElementById('matchTeamDisplay').innerHTML = '';
-  document.getElementById('matchBtns').innerHTML = `<button class="btn btn-danger" onclick="cancelMatchmaking()">取消匹配</button>`;
-  let seconds = 0;
-  document.getElementById('matchTimer').textContent = '0s';
-  G.matchCountdown = setInterval(() => {
-    seconds++;
-    document.getElementById('matchTimer').textContent = seconds + 's';
-  }, 1000);
-  // Add to matchmaking pool
-  const rank = getRank(G.player.exp||0);
-  const myPoolRef = ref(db, `matchPool/${G.uid}`);
-  await set(myPoolRef, { name: G.player.name, uid: G.uid, rankKey: rank.key, rankName: rank.name, ts: Date.now() });
-  G.matchRef = myPoolRef;
-  // Poll for match
-  G.matchTimer = setTimeout(async () => { await formBotMatch(); }, 10000);
-  // Listen for a room assignment
-  const assignRef = ref(db, `matchAssign/${G.uid}`);
-  G.listeners.matchAssign = onValue(assignRef, async snap => {
-    if (snap.exists()) {
-      clearInterval(G.matchCountdown);
-      clearTimeout(G.matchTimer);
-      const { roomId } = snap.val();
-      await remove(assignRef);
-      G.teamId = roomId;
-      listenToRoom(roomId);
-      // Wait for room to start
-      document.getElementById('matchStatus').textContent = '已找到隊伍！等待準備...';
-      document.getElementById('matchSpinner').classList.add('hidden');
-    }
-  });
-  // Try to form a team from pool
-  setTimeout(() => tryFormMatch(), 2000);
-};
-
-async function tryFormMatch() {
-  if (!G.matchRef) return;
-  const poolSnap = await get(ref(db, 'matchPool'));
-  const pool = poolSnap.val() || {};
-  const players = Object.keys(pool).filter(k => pool[k]);
-  if (players.length >= 3) {
-    // Form a team (leader is first player in pool)
-    const team = players.slice(0, 3);
-    const roomId = 'MATCH_' + Date.now().toString(36).toUpperCase();
-    const members = {};
-    for (const p of team) {
-      members[p] = { name: pool[p].name || p, uid: p, rankKey: pool[p].rankKey, rankName: pool[p].rankName, isBot: false, ready: true };
-    }
-    await set(ref(db, `rooms/${roomId}`), { status: 'starting', members, createdAt: Date.now() });
-    for (const p of team) {
-      await set(ref(db, `matchAssign/${p}`), { roomId });
-      await remove(ref(db, `matchPool/${p}`));
-    }
-  } else if (G.matchRef) {
-    setTimeout(() => tryFormMatch(), 3000);
-  }
-}
-
-async function formBotMatch() {
-  if (!G.matchRef) return;
-  clearInterval(G.matchCountdown);
-  document.getElementById('matchStatus').textContent = '補充人機隊友...';
-  const roomId = 'MATCH_' + Date.now().toString(36).toUpperCase();
-  const rank = getRank(G.player.exp||0);
-  const members = {
-    [G.uid]: { name: G.player.name, uid: G.uid, rankKey: rank.key, rankName: rank.name, isBot: false, ready: true }
-  };
-  for (let i = 1; i < 3; i++) {
-    const o = [0,1,-1][Math.floor(Math.random()*3)];
-    const bs = botStats(o, G.player.exp||0);
-    members[`Bot_${i}`] = { name:`人機${i}`, rankKey:bs.rankKey, rankName:bs.rankName, isBot:true, ready:true };
-  }
-  await set(ref(db, `rooms/${roomId}`), { status: 'starting', members, createdAt: Date.now() });
-  await remove(G.matchRef);
-  G.matchRef = null;
-  G.teamId = roomId;
-  listenToRoom(roomId);
-}
-
-window.cancelMatchmaking = async () => {
-  clearInterval(G.matchCountdown);
-  clearTimeout(G.matchTimer);
-  if (G.matchRef) { await remove(G.matchRef); G.matchRef = null; }
-  if (G.listeners.matchAssign) { off(ref(db, `matchAssign/${G.uid}`)); G.listeners.matchAssign = null; }
-  document.getElementById('matchScreen').classList.add('hidden');
-};
 
 // ===== GAME START FROM ROOM =====
 async function startGameFromRoom(room, code) {
@@ -1691,12 +1782,13 @@ async function startGameFromRoom(room, code) {
     }
   });
 
-  await initGame(members, code);
+  await initGame(members, code, room.startStage || 1);
   showGameChat();
 }
 
 // ===== GAME ENGINE =====
-async function initGame(members, roomId) {
+async function initGame(members, roomId, startStageNum) {
+  startStageNum = startStageNum || 1;
   const rank = getRank(G.player.exp||0);
   const memVals = Object.values(members);
 
@@ -1715,27 +1807,38 @@ async function initGame(members, roomId) {
     } catch(e) { playerSkillsMap[uid] = {}; }
   }));
 
+  // Calculate accumulated attribute points for skipped stages (stages 1 ~ startStageNum-1)
+  // Each skipped stage grants its playerPts as bonus stats (player chooses; we auto-distribute evenly or use full HP by default)
+  // Per spec: players get the attribute points but NOT the rewards of skipped stages
+  let skippedPts = 0;
+  for (let s = 1; s < startStageNum; s++) {
+    skippedPts += STAGE_CONFIG[s-1].playerPts;
+  }
+
   // Build player team: self + teammates
   const team = [];
   for (const m of memVals) {
     if (m.isBot) {
-      // Bot rank is already decided in readyUp (stored as m.rankKey/m.rankName)
-      // Use that rank's base stats directly, then add random 10 pts on top
       const botRankIdx = RANKS.findIndex(r => r.key === m.rankKey);
       const botRank = botRankIdx >= 0 ? RANKS[botRankIdx] : RANKS[0];
       const extra = rollMonsterStats(10);
+      // Bots also get skipped stage pts (auto-distribute: half HP, quarter ATK, quarter DEF)
+      const botSkip = skippedPts > 0 ? rollMonsterStats(skippedPts, startStageNum) : {hp:0,atk:0,def:0};
       team.push({ name: m.name, isBot:true, isMe:false,
-        hp: botRank.hp + extra.hp, maxHp: botRank.hp + extra.hp,
-        atk: botRank.atk + extra.atk,
-        def: botRank.def + extra.def,
+        hp: botRank.hp + extra.hp + botSkip.hp,
+        maxHp: botRank.hp + extra.hp + botSkip.hp,
+        atk: botRank.atk + extra.atk + botSkip.atk,
+        def: botRank.def + extra.def + botSkip.def,
         rankKey: botRank.key, rankName: botRank.name,
         skills:{}, allocDone:true });
     } else if ((m.uid || m.name) === G.uid) {
+      // Self: base rank stats; skipped pts will be allocated in the first alloc panel
       team.push({ name: G.player.name, uid: G.uid, isBot:false, isMe:true,
         hp: rank.hp, maxHp: rank.hp, atk: rank.atk, def: rank.def,
         rankKey: rank.key, rankName: rank.name,
         skills: G.player.skills||{}, allocDone:false,
-        allocExtra:{hp:0,atk:0,def:0} });
+        allocExtra:{hp:0,atk:0,def:0},
+        skippedPts });
     } else {
       const theirRankIdx = RANKS.findIndex(r => r.key === m.rankKey);
       const theirRank = theirRankIdx >= 0 ? RANKS[theirRankIdx] : RANKS[0];
@@ -1743,11 +1846,12 @@ async function initGame(members, roomId) {
       team.push({ name: m.name, uid: theirUid, isBot:false, isMe:false,
         hp: theirRank.hp, maxHp: theirRank.hp, atk: theirRank.atk, def: theirRank.def,
         rankKey: m.rankKey, rankName: m.rankName,
-        skills: playerSkillsMap[theirUid] || {}, allocDone:false });
+        skills: playerSkillsMap[theirUid] || {}, allocDone:false,
+        skippedPts });
     }
   }
   G.gameState = {
-    stage: 1,
+    stage: startStageNum,
     team,
     enemies: [],
     currentTurn: 0,
@@ -1759,13 +1863,14 @@ async function initGame(members, roomId) {
     selectedEnemy: -1,
     isHost: iAmHost,
     hostName: hostUid,   // stored as uid
-    roundNum: 1
+    roundNum: 1,
+    startStage: startStageNum
   };
   if (iAmHost) {
     set(ref(db, `rooms/${roomId}/host`), G.uid);
   }
   document.getElementById('gameScreen').classList.remove('hidden');
-  startStage(1);
+  startStage(startStageNum);
 }
 
 // ===== JOB SYSTEM =====
@@ -1873,8 +1978,13 @@ window.confirmJob = () => {
   }
   document.getElementById('jobSelectPanel').style.display = 'none';
   document.getElementById('allocPanel').classList.remove('hidden');
-  const cfg = STAGE_CONFIG[0];
-  resetAllocUI(cfg.playerPts, myMem);
+  const cfg = STAGE_CONFIG[gs.stage - 1];
+  const skippedBonus = (myMem?.skippedPts > 0) ? myMem.skippedPts : 0;
+  const pts = cfg.playerPts + skippedBonus;
+  if (skippedBonus > 0) {
+    document.getElementById('gameStageSub').textContent = `分配屬性點數（含跳關補點 +${skippedBonus}）`;
+  }
+  resetAllocUI(pts, myMem);
   // Write job to Firebase so host and teammates see it
   if (gs.roomId) {
     set(ref(db, `rooms/${gs.roomId}/jobs/${G.uid}`), G._selectedJob);
@@ -2024,8 +2134,9 @@ function executeActiveSkill(actor, targetIdx) {
       writeBattleEvent({ type:'attack', attIsEnemy:false, attIdx:gs.team.indexOf(actor), defIsEnemy, defIdx, dmg, isCrit:false, isSlash:false, slashColor:'red', dying: target.hp<=0&&!saved });
       requestAnimationFrame(() => { const fxEl=getFxEl(defIsEnemy,defIdx); const card=getFxCard(defIsEnemy,defIdx); fxHitFlash(fxEl); fxParticles(card,dmg,false,'red'); fxDamageNumber(fxEl,dmg,false,false,false,false); if(target.hp<=0&&!saved)setTimeout(()=>fxExplosion(fxEl,card),200); });
     });
-    // Chain explosion if any died
+    renderBattle(); writeBattleState(); buildActiveSkillBar();
     if (anyDied) {
+      // 有擊殺 → 連鎖爆炸後再推回合
       setTimeout(() => {
         const stillAlive = gs.enemies.filter(e => e.hp > 0);
         if (stillAlive.length) {
@@ -2040,13 +2151,15 @@ function executeActiveSkill(actor, targetIdx) {
             writeBattleEvent({ type:'attack', attIsEnemy:false, attIdx:gs.team.indexOf(actor), defIsEnemy, defIdx, dmg, isCrit:false, isSlash:false, dying: target.hp<=0&&!saved });
             requestAnimationFrame(()=>{ const fxEl=getFxEl(defIsEnemy,defIdx); const card=getFxCard(defIsEnemy,defIdx); fxHitFlash(fxEl); fxParticles(card,dmg,true); if(target.hp<=0&&!saved)setTimeout(()=>fxExplosion(fxEl,card),100); });
           });
+          renderBattle(); writeBattleState();
         }
-        renderBattle(); writeBattleState();
-        if (!hostCheckBattleEnd()) setTimeout(()=>hostProcessNextTurn(), 600);
+        if (!hostCheckBattleEnd()) { gs.currentTurn++; setTimeout(()=>hostProcessNextTurn(), 600); }
       }, 600);
-      renderBattle(); writeBattleState();
-      return; // wait for chain
+    } else {
+      // 無擊殺 → 直接推進回合（修正卡住 bug）
+      if (isHost() && !hostCheckBattleEnd()) { gs.currentTurn++; setTimeout(()=>hostProcessNextTurn(), 600); }
     }
+    return; // 爆炎法師 自行處理回合推進，不走底下通用邏輯
   }
 
   else if (actor.job === '精靈術師') {
@@ -2118,10 +2231,17 @@ function startStage(stage) {
   gs.stage = stage;
   gs.selectedEnemy = -1;
   const cfg = STAGE_CONFIG[stage-1];
-  // Restore team HP to max
+  // Restore team HP to max; give bots their attribute points immediately
   for (const m of gs.team) {
+    if (stage > 1 && m.isBot) {
+      // Auto-allocate this stage's pts for bots using the same random distribution as monsters
+      const botExtra = rollMonsterStats(cfg.playerPts, stage);
+      m.maxHp += botExtra.hp;
+      m.atk   += botExtra.atk;
+      m.def   += botExtra.def;
+      m.allocDone = true;
+    }
     m.hp = m.maxHp;
-    if (stage > 1 && m.isBot) m.allocDone = false;
     if (stage > 1 && !m.isMe && !m.isBot) m.allocDone = false;
   }
   // Generate enemies
@@ -2137,22 +2257,36 @@ function startStage(stage) {
   resetJobState(gs);
 
   document.getElementById('gameStageText').textContent = `第 ${stage} 關`;
-  document.getElementById('gameStageSub').textContent = stage === 1 ? '選擇職業' : '分配屬性點數';
   document.getElementById('allocPanel').classList.add('hidden');
   document.getElementById('battleSection').classList.add('hidden');
   document.getElementById('resultOverlay').classList.add('hidden');
   document.getElementById('jobSelectPanel').style.display = 'none';
 
-  const pts = cfg.playerPts;
+  // Calculate alloc pts: current stage pts + any skipped stages bonus (first entry into game only)
   const myMem = gs.team.find(m => m.isMe);
+  const isFirstStage = (stage === (gs.startStage || 1));
+  const skippedBonus = (isFirstStage && myMem?.skippedPts > 0) ? myMem.skippedPts : 0;
+  const pts = cfg.playerPts + skippedBonus;
+
   if (myMem) {
     myMem.allocExtra = {hp:0,atk:0,def:0};
     myMem.allocDone = false;
   }
 
-  if (stage === 1) {
+  // Update sub-header
+  const isVeryFirst = isFirstStage && stage === 1;
+  document.getElementById('gameStageSub').textContent = isVeryFirst ? '選擇職業' : '分配屬性點數';
+  if (skippedBonus > 0) {
+    document.getElementById('gameStageSub').textContent = `分配屬性點數（含跳關補點 +${skippedBonus}）`;
+  }
+
+  if (isVeryFirst) {
     // Show job selection first, then alloc
     showJobSelect();
+  } else if (isFirstStage && stage > 1) {
+    // Skipped stages, jump directly to alloc (no job selection on non-stage-1 starts)
+    document.getElementById('allocPanel').classList.remove('hidden');
+    resetAllocUI(pts, myMem);
   } else {
     document.getElementById('allocPanel').classList.remove('hidden');
     resetAllocUI(pts, myMem);
@@ -2454,13 +2588,7 @@ window.clickEnemy = (i) => {
 };
 
 function getEffectiveAtk(fighter) {
-  // 蠻力: each 15 HP gives +(lv) bonus ATK
-  const bruteLv = (fighter.skills||{})['蠻力'] || 0;
-  let atk = fighter.atk;
-  if (bruteLv > 0) {
-    atk += Math.floor(fighter.hp / 15) * bruteLv;
-  }
-  return atk;
+  return fighter.atk;
 }
 
 function calcSingleHit(attacker, defender) {
@@ -3609,13 +3737,10 @@ window.removeFriend      = removeFriend;
 window.renderFriends     = renderFriends;
 window.sendGlobalChat    = sendGlobalChat;
 window.showCreateTeam    = showCreateTeam;
-window.showJoinTeam      = showJoinTeam;
+window.showSearchRooms   = showSearchRooms;
 window.doCreateTeam      = doCreateTeam;
-window.doJoinTeam        = doJoinTeam;
 window.readyUp           = readyUp;
 window.leaveRoom         = leaveRoom;
-window.startMatchmaking  = startMatchmaking;
-window.cancelMatchmaking = cancelMatchmaking;
 window.confirmJob        = confirmJob;
 window.selectJob         = selectJob;
 window.useActiveSkill    = useActiveSkill;
