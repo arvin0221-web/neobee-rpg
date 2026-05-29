@@ -1976,9 +1976,9 @@ window.confirmJob = () => {
   const cfg = STAGE_CONFIG[gs.stage - 1];
   const skippedBonus = (myMem?.skippedPts > 0) ? myMem.skippedPts : 0;
   const pts = cfg.playerPts + skippedBonus;
-  if (skippedBonus > 0) {
-    document.getElementById('gameStageSub').textContent = `分配屬性點數（含跳關補點 +${skippedBonus}）`;
-  }
+  document.getElementById('gameStageSub').textContent = skippedBonus > 0
+    ? `分配屬性點數（含跳關補點 +${skippedBonus}）`
+    : '分配屬性點數';
   resetAllocUI(pts, myMem);
   // Write job to Firebase so host and teammates see it
   if (gs.roomId) {
@@ -2269,19 +2269,17 @@ function startStage(stage) {
   }
 
   // Update sub-header
-  const isVeryFirst = isFirstStage && stage === 1;
-  document.getElementById('gameStageSub').textContent = isVeryFirst ? '選擇職業' : '分配屬性點數';
-  if (skippedBonus > 0) {
-    document.getElementById('gameStageSub').textContent = `分配屬性點數（含跳關補點 +${skippedBonus}）`;
+  if (isFirstStage) {
+    document.getElementById('gameStageSub').textContent = skippedBonus > 0
+      ? `選擇職業（含跳關補點 +${skippedBonus}）`
+      : '選擇職業';
+  } else {
+    document.getElementById('gameStageSub').textContent = '分配屬性點數';
   }
 
-  if (isVeryFirst) {
-    // Show job selection first, then alloc
+  if (isFirstStage) {
+    // Always show job selection at the start of a new game, regardless of which stage
     showJobSelect();
-  } else if (isFirstStage && stage > 1) {
-    // Skipped stages, jump directly to alloc (no job selection on non-stage-1 starts)
-    document.getElementById('allocPanel').classList.remove('hidden');
-    resetAllocUI(pts, myMem);
   } else {
     document.getElementById('allocPanel').classList.remove('hidden');
     resetAllocUI(pts, myMem);
