@@ -386,6 +386,8 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
       <div class="nav-tab" onclick="switchTab('friends')">👥 好友</div>
       <div class="nav-tab" onclick="switchTab('leaderboard')">🏆 排行榜</div>
       <div class="nav-tab" onclick="switchTab('globalChat')">💬 全服聊天</div>
+      <div class="nav-tab" onclick="switchTab('equipment')">⚙️ 裝備</div>
+      <div class="nav-tab" onclick="switchTab('dungeon')">🏰 副本</div>
     </div>
     <div class="tab-content">
 
@@ -411,6 +413,14 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
           <div class="card">
             <div class="card-title">金幣</div>
             <div class="gold-display"><div class="gold-amount" id="stat-gold">0</div></div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-title">裝備欄</div>
+          <div style="display:flex;flex-direction:column;gap:8px" id="home-equip-slots">
+            <div class="eq-slot"><div class="eq-slot-label">⚔ 武器</div><div class="eq-slot-info"><div class="eq-slot-name" id="home-eq-weapon" style="color:var(--text2)">未裝備</div></div></div>
+            <div class="eq-slot"><div class="eq-slot-label">🛡 盔甲</div><div class="eq-slot-info"><div class="eq-slot-name" id="home-eq-armor" style="color:var(--text2)">未裝備</div></div></div>
+            <div class="eq-slot"><div class="eq-slot-label">💍 飾品</div><div class="eq-slot-info"><div class="eq-slot-name" id="home-eq-trinket" style="color:var(--text2)">未裝備</div></div></div>
           </div>
         </div>
         <div class="card">
@@ -482,7 +492,85 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
         </div>
       </div>
 
+
+      <!-- EQUIPMENT TAB -->
+      <div id="tab-equipment" class="hidden">
+        <div style="max-width:700px;margin:0 auto">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+            <div style="font-size:20px;font-weight:900;color:var(--gold);letter-spacing:3px">裝備管理</div>
+          </div>
+          <!-- Equipped slots -->
+          <div class="card" style="margin-bottom:16px">
+            <div class="card-title">已裝備</div>
+            <div style="display:flex;flex-direction:column;gap:8px" id="equip-equipped-slots">
+              <div class="eq-slot"><div class="eq-slot-label">⚔ 武器</div><div class="eq-slot-info" id="slot-weapon-info"><div class="eq-slot-name" style="color:var(--text2)">未裝備</div></div><button class="btn btn-secondary btn-sm hidden" id="slot-weapon-unequip" onclick="unequipItem('weapon')">卸下</button></div>
+              <div class="eq-slot"><div class="eq-slot-label">🛡 盔甲</div><div class="eq-slot-info" id="slot-armor-info"><div class="eq-slot-name" style="color:var(--text2)">未裝備</div></div><button class="btn btn-secondary btn-sm hidden" id="slot-armor-unequip" onclick="unequipItem('armor')">卸下</button></div>
+              <div class="eq-slot"><div class="eq-slot-label">💍 飾品</div><div class="eq-slot-info" id="slot-trinket-info"><div class="eq-slot-name" style="color:var(--text2)">未裝備</div></div><button class="btn btn-secondary btn-sm hidden" id="slot-trinket-unequip" onclick="unequipItem('trinket')">卸下</button></div>
+            </div>
+          </div>
+          <!-- Inventory -->
+          <div class="card">
+            <div class="card-title">背包</div>
+            <div id="equip-inventory" style="display:flex;flex-direction:column;gap:8px">
+              <div style="color:var(--text2);font-size:13px">暫無裝備</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- DUNGEON TAB -->
+      <div id="tab-dungeon" class="hidden">
+        <div style="max-width:500px;margin:0 auto;text-align:center">
+          <div style="font-size:24px;font-weight:900;color:var(--gold);letter-spacing:4px;margin-bottom:8px">🏰 裝備副本</div>
+          <div style="font-size:13px;color:var(--text2);margin-bottom:24px;letter-spacing:1px">三人挑戰Boss・打倒即獲得裝備</div>
+          <div class="card" style="margin-bottom:16px;text-align:left">
+            <div class="card-title">選擇難度</div>
+            <div id="dungeon-diff-grid" style="display:grid;grid-template-columns:repeat(2,1fr);gap:8px"></div>
+          </div>
+          <div class="card" style="margin-bottom:16px;text-align:left;display:none" id="dungeon-boss-preview">
+            <div class="card-title">Boss 預覽</div>
+            <div id="dungeon-boss-stats" style="font-size:13px;line-height:2;color:var(--text2)"></div>
+          </div>
+          <button class="btn btn-primary" style="padding:16px;font-size:16px;width:100%" onclick="showCreateDungeon()">⚔️ 建立副本房間</button>
+          <div style="margin-top:12px">
+            <button class="btn btn-secondary" style="padding:12px;font-size:14px;width:100%;border-color:var(--accent2);color:var(--accent2)" onclick="showSearchDungeon()">🔍 搜尋副本房間</button>
+          </div>
+        </div>
+      </div>
+
     </div><!-- end tab-content -->
+  </div>
+</div>
+
+<!-- DUNGEON RESULT OVERLAY -->
+<div id="dungeonResultOverlay" class="result-overlay hidden">
+  <div style="background:var(--surface);border:1px solid var(--border);border-radius:20px;padding:40px;max-width:420px;width:95%;text-align:center">
+    <div class="result-title" id="dungeonResultTitle"></div>
+    <div id="dungeonLootArea" style="margin:20px 0"></div>
+    <div style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap;margin-top:16px">
+      <button class="btn btn-primary" id="dungeonEquipBtn" onclick="equipDroppedItem()" style="display:none">立即裝備</button>
+      <button class="btn btn-secondary" onclick="exitDungeon()">離開副本</button>
+    </div>
+  </div>
+</div>
+
+<!-- DUNGEON SEARCH MODAL -->
+<div id="searchDungeonModal" class="modal-overlay hidden">
+  <div class="modal-card" style="max-width:480px;width:95%">
+    <div class="modal-title">🔍 搜尋副本房間</div>
+    <div style="display:flex;gap:8px;margin-bottom:12px">
+      <input class="form-input" id="joinDungeonCodeInput" placeholder="直接輸入房間代碼加入" maxlength="8" style="flex:1">
+      <button class="btn btn-primary btn-sm" onclick="joinDungeonByCode()">加入</button>
+    </div>
+    <div id="joinDungeonCodeMsg" style="font-size:12px;color:var(--red);margin-bottom:8px"></div>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+      <div style="font-size:12px;color:var(--text2);letter-spacing:2px">公開等待中的副本</div>
+      <button class="btn btn-secondary btn-sm" onclick="loadOpenDungeons()">🔄 重新整理</button>
+    </div>
+    <div id="openDungeonsList" style="max-height:260px;overflow-y:auto"></div>
+    <div class="modal-actions" style="margin-top:12px">
+      <button class="btn btn-secondary" onclick="closeModal('searchDungeonModal')">關閉</button>
+    </div>
   </div>
 </div>
 
@@ -754,6 +842,102 @@ const JOBS_DEF = [
   }
 ];
 
+
+// ===== EQUIPMENT SYSTEM =====
+const RARITIES = [
+  { id:'普通',   weight:70,   mult:1.0, cls:'eq-rarity-普通'   },
+  { id:'稀有',   weight:20,   mult:1.2, cls:'eq-rarity-稀有'   },
+  { id:'超稀有', weight:5,    mult:1.4, cls:'eq-rarity-超稀有' },
+  { id:'史詩',   weight:3,    mult:1.7, cls:'eq-rarity-史詩'   },
+  { id:'傳奇',   weight:1.5,  mult:2.0, cls:'eq-rarity-傳奇'   },
+  { id:'超凡',   weight:0.4,  mult:3.0, cls:'eq-rarity-超凡'   },
+  { id:'超超超凡',weight:0.1, mult:5.0, cls:'eq-rarity-超超超凡'},
+];
+
+// 裝備模板：每個等級基礎值（index 0=Lv1 ~ 9=Lv10）
+const EQ_TEMPLATES = {
+  weapon: {
+    id:'weapon', name:'電刀', icon:'⚡', slot:'weapon',
+    desc: lv => `每次攻擊會讓其餘存活敵人受到原傷害 ${[3,6,10,13,16,20,23,26,30,34][lv-1]}% 的傷害`,
+    baseVals: [3,6,10,13,16,20,23,26,30,34],  // splash % per level
+  },
+  armor: {
+    id:'armor', name:'天使聖鎧', icon:'😇', slot:'armor',
+    desc: lv => `每次受到攻擊有 ${[0.5,1,1.5,2,2.5,3,3.5,4,4.5,5][lv-1]}% 機率恢復已損失血量的 60%`,
+    baseVals: [0.5,1,1.5,2,2.5,3,3.5,4,4.5,5],  // heal chance %
+  },
+  trinket: {
+    id:'trinket', name:'心臟炸藥', icon:'💣', slot:'trinket',
+    desc: lv => `死亡時對所有敵人造成最大血量 ${[5,10,15,20,25,30,35,40,45,50][lv-1]}% 的傷害（扣除對方防禦）`,
+    baseVals: [5,10,15,20,25,30,35,40,45,50],  // death dmg %
+  }
+};
+
+// Boss stats per rank (index 0=黑鐵 ~ 9=星岩)
+const DUNGEON_BOSS = [
+  { hp:100,  atk:10,  defMin:0,  defMax:10  },
+  { hp:200,  atk:20,  defMin:0,  defMax:20  },
+  { hp:300,  atk:30,  defMin:0,  defMax:30  },
+  { hp:400,  atk:40,  defMin:0,  defMax:40  },
+  { hp:500,  atk:50,  defMin:0,  defMax:50  },
+  { hp:600,  atk:60,  defMin:0,  defMax:60  },
+  { hp:700,  atk:70,  defMin:0,  defMax:70  },
+  { hp:800,  atk:80,  defMin:0,  defMax:80  },
+  { hp:900,  atk:90,  defMin:0,  defMax:90  },
+  { hp:1000, atk:100, defMin:0,  defMax:100 },
+];
+
+// Player attribute points given before dungeon per rank
+const DUNGEON_PLAYER_PTS = [5,10,15,20,25,30,35,40,45,50];
+
+function rollRarity() {
+  const total = RARITIES.reduce((s,r) => s + r.weight, 0);
+  let r = Math.random() * total;
+  for (const rarity of RARITIES) {
+    r -= rarity.weight;
+    if (r <= 0) return rarity;
+  }
+  return RARITIES[0];
+}
+
+function rollEquipItem(rankIdx) {
+  const rarity = rollRarity();
+  const slots = ['weapon','armor','trinket'];
+  const slotId = slots[Math.floor(Math.random() * 3)];
+  const tmpl = EQ_TEMPLATES[slotId];
+  // Equipment level = rank index + 1 (Lv1~10)
+  const lv = rankIdx + 1;
+  const baseVal = tmpl.baseVals[lv-1];
+  const finalVal = Math.round(baseVal * rarity.mult * 10) / 10;
+  return {
+    uid: Date.now().toString(36) + Math.random().toString(36).slice(2,6),
+    slot: slotId,
+    name: tmpl.name,
+    icon: tmpl.icon,
+    rarity: rarity.id,
+    rarityClass: rarity.cls,
+    level: lv,
+    rankIdx,
+    val: finalVal,
+    desc: tmpl.desc(lv).replace(tmpl.baseVals[lv-1], finalVal)
+  };
+}
+
+function rarityLabel(item) {
+  return `<span class="${item.rarityClass}">${item.rarity}</span>`;
+}
+function itemFullLabel(item) {
+  return `<span class="${item.rarityClass}">${item.icon} ${item.name}</span> <span style="color:var(--text2);font-size:11px">Lv${item.level} ${item.rarity}</span>`;
+}
+
+// Get equipped item for a slot
+function getEquipped(slot) {
+  const eq = (G.player.equipped || {});
+  const uid = eq[slot];
+  if (!uid) return null;
+  return ((G.player.inventory || []).find(i => i.uid === uid)) || null;
+}
+
 // ===== STATE =====
 window.G = {
   uid: null, // use nickname as uid
@@ -990,6 +1174,21 @@ function updateUI() {
     if (sd && lv > 0) html += `<span style="margin-right:16px">【${sd.name} Lv.${lv}】</span>`;
   }
   skillsEl.innerHTML = html || '<span>尚未擁有技能</span>';
+  // Home equipment display
+  const slotMap = {weapon:'home-eq-weapon', armor:'home-eq-armor', trinket:'home-eq-trinket'};
+  for (const [slot, elId] of Object.entries(slotMap)) {
+    const el = document.getElementById(elId);
+    if (!el) continue;
+    const item = getEquipped(slot);
+    if (item) {
+      el.className = `eq-slot-name ${item.rarityClass}`;
+      el.textContent = `${item.icon} ${item.name} Lv${item.level} ${item.rarity}`;
+    } else {
+      el.className = 'eq-slot-name';
+      el.style.color = 'var(--text2)';
+      el.textContent = '未裝備';
+    }
+  }
   // Render rank table (only build DOM once, then just highlight current rank)
   const tbody = document.getElementById('rankTableBody');
   if (tbody) {
@@ -1017,16 +1216,16 @@ function updateUI() {
 window.switchTab = (tab) => {
   document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
   document.querySelectorAll('.tab-content > div').forEach(d => d.classList.add('hidden'));
-  const tabs = ['home','play','skills','friends','leaderboard','globalChat'];
+  const tabs = ['home','play','skills','friends','leaderboard','globalChat','equipment','dungeon'];
   const idx = tabs.indexOf(tab);
   if (idx >= 0) document.querySelectorAll('.nav-tab')[idx].classList.add('active');
   document.getElementById(`tab-${tab}`).classList.remove('hidden');
   G.currentTab = tab;
   if (tab === 'skills') renderSkillsTab();
   if (tab === 'leaderboard') loadLeaderboard();
-  if (tab === 'friends') {
-    renderFriends(); // onValue listener in enterMain also triggers this on data change
-  }
+  if (tab === 'friends') renderFriends();
+  if (tab === 'equipment') renderEquipTab();
+  if (tab === 'dungeon') renderDungeonTab();
 };
 
 // ===== SKILLS TAB =====
@@ -1682,6 +1881,9 @@ window.updateRoomStartStage = async (code, val) => {
 
 window.readyUp = async (code) => {
   code = code || G.teamId;
+  // Dungeon has its own readyUp logic
+  const snapCheck = await get(ref(db, `rooms/${code}`));
+  if (snapCheck.exists() && snapCheck.val().isDungeon) { return readyUpDungeon(code); }
   const snap = await get(ref(db, `rooms/${code}`));
   if (!snap.exists()) return;
   const room = snap.val();
@@ -1816,7 +2018,11 @@ async function startGameFromRoom(room, code) {
     }
   });
 
-  await initGame(members, code, room.startStage || 1);
+  if (room.isDungeon) {
+    await initDungeon(members, code, room.dungeonRankIdx || 0);
+  } else {
+    await initGame(members, code, room.startStage || 1);
+  }
   showGameChat();
 }
 
@@ -2012,9 +2218,14 @@ window.confirmJob = () => {
   }
   document.getElementById('jobSelectPanel').style.display = 'none';
   document.getElementById('allocPanel').classList.remove('hidden');
-  const cfg = STAGE_CONFIG[gs.stage - 1];
-  const skippedBonus = (myMem?.skippedPts > 0) ? myMem.skippedPts : 0;
-  const pts = cfg.playerPts + skippedBonus;
+  let pts;
+  const skippedBonus = (!gs.isDungeon && myMem?.skippedPts > 0) ? myMem.skippedPts : 0;
+  if (gs.isDungeon) {
+    pts = gs._dungeonAllocPts || DUNGEON_PLAYER_PTS[gs.dungeonRankIdx || 0];
+  } else {
+    const cfg = STAGE_CONFIG[gs.stage - 1];
+    pts = cfg.playerPts + skippedBonus;
+  }
   document.getElementById('gameStageSub').textContent = skippedBonus > 0
     ? `分配屬性點數（含跳關補點 +${skippedBonus}）`
     : '分配屬性點數';
@@ -2916,8 +3127,14 @@ function applyBattleState(state) {
   }
 
   // Stage result
-  if (state.stageResult === 'win')  setTimeout(() => showStageResult(true),  300);
-  if (state.stageResult === 'lose') setTimeout(() => showStageResult(false), 300);
+  if (state.stageResult === 'win') {
+    if (G.gameState?.isDungeon) setTimeout(() => showDungeonResult(true),  300);
+    else                         setTimeout(() => showStageResult(true),    300);
+  }
+  if (state.stageResult === 'lose') {
+    if (G.gameState?.isDungeon) setTimeout(() => showDungeonResult(false), 300);
+    else                         setTimeout(() => showStageResult(false),   300);
+  }
 }
 
 // Non-host sends attack request via dedicated actions node (not battleLog)
@@ -3063,10 +3280,12 @@ function hostPerformAttack(attacker, defender, isSlash) {
       writeBattleEvent({ type:'attack', attIsEnemy, attIdx, defIsEnemy, defIdx,
         dmg: dmg2, isCrit: isCrit2, isSlash: true, slashColor, dying: dying2 && !saved2 });
       applyThorns(defender, attacker, dmg2, defIsEnemy, defIdx, attIsEnemy, attIdx);
+      if (!attIsEnemy) applyWeaponSplash(attacker, defender, dmg2);
       renderBattle();
     }, 350);
   } else {
     applyThorns(defender, attacker, dmg, defIsEnemy, defIdx, attIsEnemy, attIdx);
+    if (!attIsEnemy) applyWeaponSplash(attacker, defender, dmg);
   }
 
   // Local effects for host
@@ -3083,7 +3302,11 @@ function hostPerformAttack(attacker, defender, isSlash) {
         fxDamageNumber(defFxEl, dmg, isCrit, false, false, false);
         if (defDying && !isDouble && !savedByPhoenix) {
           if (defIsEnemy) setTimeout(() => fxExplosion(defFxEl, defCard), 200);
-          else setTimeout(() => { fxGhost(defFxEl); setTimeout(() => fxTombstone(defFxEl), 800); }, 150);
+          else {
+            setTimeout(() => { fxGhost(defFxEl); setTimeout(() => fxTombstone(defFxEl), 800); }, 150);
+            // 心臟炸藥
+            if (!defIsEnemy) setTimeout(() => applyTrinketDeath(defender, G.gameState), 200);
+          }
         }
       }, 120);
     } else {
@@ -3100,6 +3323,8 @@ function hostPerformAttack(attacker, defender, isSlash) {
 }
 
 function applyThorns(defender, attacker, dmg, defIsEnemy, defIdx, attIsEnemy, attIdx) {
+  // 天使聖鎧: chance to heal on being hit
+  if (!defIsEnemy) applyArmorHeal(defender, dmg);
   const thornLv = (defender.skills||{})['反傷'] || 0;
   if (thornLv > 0 && attacker.hp > 0) {
     const thornPct = 5 + (thornLv-1)*7;
@@ -3127,12 +3352,20 @@ function hostCheckBattleEnd() {
   const enemiesAlive = gs.enemies.some(e => e.hp > 0);
   if (!enemiesAlive) {
     set(ref(db, `rooms/${gs.roomId}/battle/stageResult`), 'win');
-    setTimeout(() => showStageResult(true), 600);
+    if (gs.isDungeon) {
+      setTimeout(() => showDungeonResult(true), 600);
+    } else {
+      setTimeout(() => showStageResult(true), 600);
+    }
     return true;
   }
   if (!teamAlive) {
     set(ref(db, `rooms/${gs.roomId}/battle/stageResult`), 'lose');
-    setTimeout(() => showStageResult(false), 600);
+    if (gs.isDungeon) {
+      setTimeout(() => showDungeonResult(false), 600);
+    } else {
+      setTimeout(() => showStageResult(false), 600);
+    }
     return true;
   }
   return false;
@@ -3753,6 +3986,459 @@ window.addEventListener('beforeunload', () => {
   }
 });
 
+
+// ===== EQUIPMENT TAB =====
+function renderEquipTab() {
+  const inv  = G.player.inventory || [];
+  const eq   = G.player.equipped  || {};
+
+  // Equipped slots
+  const slotDefs = [{id:'weapon',lbl:'⚔ 武器'},{id:'armor',lbl:'🛡 盔甲'},{id:'trinket',lbl:'💍 飾品'}];
+  for (const sd of slotDefs) {
+    const infoEl   = document.getElementById(`slot-${sd.id}-info`);
+    const unEqBtn  = document.getElementById(`slot-${sd.id}-unequip`);
+    if (!infoEl) continue;
+    const item = getEquipped(sd.id);
+    if (item) {
+      infoEl.innerHTML = `<div class="eq-slot-name ${item.rarityClass}">${item.icon} ${item.name} <span style="font-size:11px;color:var(--text2)">Lv${item.level}</span></div><div class="eq-slot-desc">${item.desc}</div>`;
+      unEqBtn.classList.remove('hidden');
+    } else {
+      infoEl.innerHTML = `<div class="eq-slot-name" style="color:var(--text2)">未裝備</div>`;
+      unEqBtn.classList.add('hidden');
+    }
+  }
+
+  // Inventory
+  const invEl = document.getElementById('equip-inventory');
+  if (!invEl) return;
+  const unequipped = inv.filter(i => !Object.values(eq).includes(i.uid));
+  if (!unequipped.length) {
+    invEl.innerHTML = '<div style="color:var(--text2);font-size:13px">背包中沒有裝備</div>';
+    return;
+  }
+  invEl.innerHTML = unequipped.map(item => `
+    <div class="eq-item-card" onclick="equipItem('${item.uid}')">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
+        <div>
+          <div class="${item.rarityClass}" style="font-weight:700;font-size:14px">${item.icon} ${item.name}</div>
+          <div style="font-size:11px;color:var(--text2);margin-top:3px">Lv${item.level} · ${item.rarity} · ${item.desc}</div>
+        </div>
+        <button class="btn btn-primary btn-sm" style="flex-shrink:0" onclick="event.stopPropagation();equipItem('${item.uid}')">裝備</button>
+      </div>
+    </div>`).join('');
+}
+
+window.equipItem = async (uid) => {
+  const inv = G.player.inventory || [];
+  const item = inv.find(i => i.uid === uid);
+  if (!item) return;
+  const eq = { ...(G.player.equipped || {}), [item.slot]: uid };
+  G.player.equipped = eq;
+  await update(ref(db, `players/${G.uid}`), { equipped: eq });
+  renderEquipTab();
+  updateUI();
+  notify(`已裝備 ${item.name}！`, 'ok');
+};
+
+window.unequipItem = async (slot) => {
+  const eq = { ...(G.player.equipped || {}) };
+  delete eq[slot];
+  G.player.equipped = eq;
+  await update(ref(db, `players/${G.uid}`), { equipped: eq });
+  renderEquipTab();
+  updateUI();
+};
+
+// Save inventory + equipped to Firebase
+async function savePlayerEquip() {
+  await update(ref(db, `players/${G.uid}`), {
+    inventory: G.player.inventory || [],
+    equipped:  G.player.equipped  || {}
+  });
+}
+
+// Apply equipment passive effects during battle
+// Called in hostPerformAttack after dealing damage to an enemy
+function applyWeaponSplash(attacker, primaryTarget, primaryDmg) {
+  const gs = G.gameState;
+  if (attacker.isMonster || attacker.isBot) return;
+  const weapon = attacker.equippedItems?.weapon;
+  if (!weapon) return;
+  const splashPct = weapon.val / 100;
+  const others = gs.enemies.filter(e => e.hp > 0 && e !== primaryTarget);
+  if (!others.length) return;
+  const splashDmg = Math.max(1, Math.round(primaryDmg * splashPct));
+  for (const e of others) {
+    e.hp = Math.max(0, e.hp - splashDmg);
+    const { isEnemy: dIE, idx: dIdx } = getTargetIndex(e);
+    addLog(`⚡ 電刀連電！${e.name} 受到 <span class="cyan">${splashDmg}</span> 點傷害`);
+    writeBattleEvent({ type:'attack', attIsEnemy:false, attIdx:gs.team.indexOf(attacker),
+      defIsEnemy:dIE, defIdx:dIdx, dmg:splashDmg, isCrit:false, isSlash:false, dying:e.hp<=0 });
+    requestAnimationFrame(() => {
+      const fxEl = getFxEl(dIE, dIdx);
+      const card  = getFxCard(dIE, dIdx);
+      fxHitFlash(fxEl);
+      fxDamageNumber(fxEl, splashDmg, false, false, false, false);
+      if (e.hp <= 0) setTimeout(() => fxExplosion(fxEl, card), 150);
+    });
+  }
+}
+
+// 天使聖鎧: called when player receives damage
+function applyArmorHeal(defender, dmgReceived) {
+  if (defender.isMonster || defender.isBot) return;
+  const armor = defender.equippedItems?.armor;
+  if (!armor) return;
+  const chance = armor.val; // val is already the %
+  if (Math.random() * 100 < chance) {
+    const lost = defender.maxHp - defender.hp;
+    if (lost <= 0) return;
+    const heal = Math.round(lost * 0.6);
+    defender.hp = Math.min(defender.maxHp, defender.hp + heal);
+    addLog(`😇 <span class="green">${defender.name}</span> 天使聖鎧！恢復 <span class="green">${heal}</span> 血量`);
+    const { isEnemy: dIE, idx: dIdx } = getTargetIndex(defender);
+    requestAnimationFrame(() => fxDamageNumber(getFxEl(dIE, dIdx), heal, false, false, true, false));
+  }
+}
+
+// 心臟炸藥: called when player dies
+function applyTrinketDeath(attacker, gs) {
+  if (attacker.isMonster || attacker.isBot) return;
+  const trinket = attacker.equippedItems?.trinket;
+  if (!trinket) return;
+  const pct = trinket.val / 100;
+  const rawDmg = Math.round(attacker.maxHp * pct);
+  for (const e of gs.enemies.filter(en => en.hp > 0)) {
+    const dmg = Math.max(0, rawDmg - e.def);
+    if (dmg <= 0) continue;
+    e.hp = Math.max(0, e.hp - dmg);
+    const { isEnemy: dIE, idx: dIdx } = getTargetIndex(e);
+    addLog(`💣 <span class="red">${attacker.name}</span> 心臟炸藥！${e.name} 受到 <span class="red">${dmg}</span> 點傷害`);
+    writeBattleEvent({ type:'attack', attIsEnemy:false, attIdx:gs.team.indexOf(attacker),
+      defIsEnemy:dIE, defIdx:dIdx, dmg, isCrit:false, isSlash:false, dying:e.hp<=0 });
+    requestAnimationFrame(() => {
+      const fxEl = getFxEl(dIE, dIdx);
+      const card  = getFxCard(dIE, dIdx);
+      fxHitFlash(fxEl);
+      fxParticles(card, dmg, false, 'red');
+      fxDamageNumber(fxEl, dmg, false, false, false, false);
+      if (e.hp <= 0) setTimeout(() => fxExplosion(fxEl, card), 150);
+    });
+  }
+}
+
+// Load equipped items onto a fighter object before battle
+function loadEquipmentOntoFighter(fighter) {
+  if (fighter.isBot || fighter.isMonster) return;
+  const inv = G.player.inventory || [];
+  const eq  = G.player.equipped  || {};
+  fighter.equippedItems = {};
+  for (const [slot, uid] of Object.entries(eq)) {
+    const item = inv.find(i => i.uid === uid);
+    if (item) fighter.equippedItems[slot] = item;
+  }
+}
+
+// ===== DUNGEON SYSTEM =====
+window.G.dungeonDiff = 0; // selected rank index
+window.G.dungeonPendingLoot = null;
+
+function renderDungeonTab() {
+  const grid = document.getElementById('dungeon-diff-grid');
+  if (!grid) return;
+  grid.innerHTML = RANKS.map((r, i) => {
+    const col = getRankColor(r.key);
+    const sel = G.dungeonDiff === i ? 'selected' : '';
+    return `<div class="dungeon-diff-btn ${sel}" onclick="selectDungeonDiff(${i})" style="border-color:${sel?col:'var(--border2)'}">
+      <div style="font-weight:900;color:${col};font-size:15px">${r.name}</div>
+      <div style="font-size:11px;color:var(--text2);margin-top:4px">Boss HP ${DUNGEON_BOSS[i].hp}</div>
+    </div>`;
+  }).join('');
+  updateDungeonPreview();
+}
+
+window.selectDungeonDiff = (idx) => {
+  G.dungeonDiff = idx;
+  renderDungeonTab();
+};
+
+function updateDungeonPreview() {
+  const preview = document.getElementById('dungeon-boss-preview');
+  const statsEl = document.getElementById('dungeon-boss-stats');
+  if (!preview || !statsEl) return;
+  const b = DUNGEON_BOSS[G.dungeonDiff];
+  const r = RANKS[G.dungeonDiff];
+  const col = getRankColor(r.key);
+  preview.style.display = '';
+  statsEl.innerHTML = `
+    <span style="color:${col};font-weight:900">【${r.name}難度】</span><br>
+    ❤ 血量：<span style="color:var(--green)">${b.hp}</span><br>
+    ⚔ 攻擊：<span style="color:var(--red)">${b.atk}</span><br>
+    🛡 防禦：<span style="color:var(--cyan)">${b.defMin}~${b.defMax}</span>（每次受攻擊隨機）<br>
+    🎁 玩家獲得屬性點：<span style="color:var(--gold)">${DUNGEON_PLAYER_PTS[G.dungeonDiff]}</span>`;
+}
+
+window.showCreateDungeon = async () => {
+  const code = 'D' + genRoomCode();
+  G.teamId = code;
+  G.isDungeon = true;
+  G.dungeonRankIdx = G.dungeonDiff;
+  await setupDungeonRoom(code, G.dungeonDiff);
+};
+
+window.showSearchDungeon = () => {
+  document.getElementById('joinDungeonCodeInput').value = '';
+  document.getElementById('joinDungeonCodeMsg').textContent = '';
+  document.getElementById('openDungeonsList').innerHTML = '<div style="text-align:center;color:var(--text2);padding:16px">載入中...</div>';
+  openModal('searchDungeonModal');
+  loadOpenDungeons();
+};
+
+window.loadOpenDungeons = async () => {
+  const listEl = document.getElementById('openDungeonsList');
+  const snap = await get(ref(db, 'rooms'));
+  if (!snap.exists()) { listEl.innerHTML = '<div style="color:var(--text2);font-size:13px;padding:8px">目前沒有副本房間</div>'; return; }
+  const rooms = snap.val();
+  const open = Object.entries(rooms)
+    .filter(([id, r]) => r.status === 'waiting' && r.isDungeon === true && r.public === true)
+    .sort((a,b) => (b[1].createdAt||0) - (a[1].createdAt||0));
+  if (!open.length) { listEl.innerHTML = '<div style="color:var(--text2);font-size:13px;padding:8px">目前沒有公開副本房間</div>'; return; }
+  listEl.innerHTML = open.map(([id, r]) => {
+    const members = Object.values(r.members||{}).filter(m=>!m.isBot);
+    const count = members.length;
+    const rName = RANKS[r.dungeonRankIdx||0]?.name || '黑鐵';
+    const rCol  = getRankColor(RANKS[r.dungeonRankIdx||0]?.key || '鐵');
+    const full = count >= 3;
+    return `<div style="display:flex;align-items:center;justify-content:space-between;background:var(--bg2);border-radius:8px;padding:10px 12px;margin-bottom:8px;gap:8px">
+      <div style="flex:1">
+        <div style="font-weight:700;color:var(--accent);font-size:13px">${id}</div>
+        <div style="font-size:11px;color:${rCol};margin-top:2px">${rName} 難度 · ${count}/3 人</div>
+      </div>
+      ${full ? `<button class="btn btn-secondary btn-sm" disabled>已滿</button>`
+             : `<button class="btn btn-primary btn-sm" onclick="requestJoinDungeon('${id}')">申請加入</button>`}
+    </div>`;
+  }).join('');
+};
+
+window.joinDungeonByCode = async () => {
+  const code = document.getElementById('joinDungeonCodeInput').value.trim().toUpperCase();
+  const msgEl = document.getElementById('joinDungeonCodeMsg');
+  if (!code) { msgEl.textContent = '請輸入代碼'; return; }
+  const snap = await get(ref(db, `rooms/${code}`));
+  if (!snap.exists()) { msgEl.textContent = '找不到此副本房間'; return; }
+  const room = snap.val();
+  if (!room.isDungeon) { msgEl.textContent = '這不是副本房間'; return; }
+  if (room.status !== 'waiting') { msgEl.textContent = '副本已開始'; return; }
+  const cnt = Object.values(room.members||{}).filter(m=>!m.isBot).length;
+  if (cnt >= 3) { msgEl.textContent = '房間已滿'; return; }
+  closeModal('searchDungeonModal');
+  await requestJoinDungeon(code);
+};
+
+window.requestJoinDungeon = async (roomId) => {
+  closeModal('searchDungeonModal');
+  G.isDungeon = true;
+  G.teamId = roomId;
+  const snap = await get(ref(db, `rooms/${roomId}`));
+  G.dungeonRankIdx = snap.exists() ? (snap.val().dungeonRankIdx || 0) : 0;
+  await requestJoinRoom(roomId); // reuse existing join request system
+};
+
+async function setupDungeonRoom(code, rankIdx) {
+  const rank = getRank(G.player.exp||0);
+  const room = {
+    status: 'waiting', public: true, isDungeon: true,
+    dungeonRankIdx: rankIdx,
+    createdAt: Date.now(), startStage: 1, leader: G.uid,
+    members: { [G.uid]: { name:G.player.name, uid:G.uid, rankKey:rank.key, rankName:rank.name, isBot:false, ready:false } }
+  };
+  await set(ref(db, `rooms/${code}`), room);
+  listenToRoom(code);
+  showRoomWaiting(code, true, 1);
+  document.getElementById('matchTitle').textContent = '🏰 副本等待室';
+  document.getElementById('matchSub').textContent = `${RANKS[rankIdx].name} 難度 · 代碼：${code}`;
+}
+
+// Override readyUp for dungeon: no startStage skip logic needed
+window.readyUpDungeon = async (code) => {
+  const snap = await get(ref(db, `rooms/${code}`));
+  if (!snap.exists()) return;
+  const room = snap.val();
+  const mems = room.members || {};
+  const memVals = Object.values(mems);
+  const realMembers = memVals.filter(m => !m.isBot);
+  const updated = { ...mems };
+  const rankIdx = room.dungeonRankIdx || 0;
+  // Fill bots based on dungeon difficulty rank
+  for (let i = memVals.length; i < 3; i++) {
+    const bs = botStatsForRank(rankIdx);
+    updated[`Bot_${i}`] = { name:`人機${i}`, rankKey:bs.rankKey, rankName:bs.rankName, isBot:true, ready:true };
+  }
+  realMembers.forEach(m => { if (updated[m.uid]) updated[m.uid].ready = true; });
+  await update(ref(db, `rooms/${code}`), { status:'starting', members:updated });
+};
+
+function botStatsForRank(rankIdx) {
+  const r = RANKS[Math.max(0, Math.min(rankIdx, RANKS.length-1))];
+  return { rankKey: r.key, rankName: r.name };
+}
+
+async function initDungeon(members, roomId, rankIdx) {
+  rankIdx = rankIdx || 0;
+  const rank = getRank(G.player.exp||0);
+  const memVals = Object.values(members);
+  const realMems = memVals.filter(m => !m.isBot);
+  const hostUid = realMems.length > 0 ? (realMems[0].uid||realMems[0].name) : G.uid;
+  const iAmHost = hostUid === G.uid;
+
+  const playerSkillsMap = {};
+  await Promise.all(realMems.map(async m => {
+    const uid = m.uid||m.name;
+    try { const s = await get(ref(db, `players/${uid}/skills`)); playerSkillsMap[uid] = s.exists()?(s.val()||{}):{};} catch(e){playerSkillsMap[uid]={};}
+  }));
+
+  // Build boss
+  const bCfg = DUNGEON_BOSS[rankIdx];
+  const boss = {
+    name:'Boss', isMonster:true, isDungeonBoss:true,
+    hp:bCfg.hp, maxHp:bCfg.hp, atk:bCfg.atk,
+    def:bCfg.defMin, defMin:bCfg.defMin, defMax:bCfg.defMax,
+    skills:{}, rankIdx
+  };
+
+  const pts = DUNGEON_PLAYER_PTS[rankIdx];
+  const team = [];
+  for (const m of memVals) {
+    if (m.isBot) {
+      const botR = RANKS[Math.max(0, Math.min(rankIdx, RANKS.length-1))];
+      // Use rankIdx+1 as pseudo-stage so high-difficulty (idx>=6) uses late-game distribution
+      const pseudoStage = rankIdx + 1;
+      const extra = rollMonsterStats(pts, pseudoStage);
+      team.push({ name:m.name, isBot:true, isMe:false,
+        hp:botR.hp+extra.hp, maxHp:botR.hp+extra.hp,
+        atk:botR.atk+extra.atk, def:botR.def+extra.def,
+        rankKey:botR.key, rankName:botR.name, skills:{}, allocDone:true, equippedItems:{} });
+    } else if ((m.uid||m.name) === G.uid) {
+      team.push({ name:G.player.name, uid:G.uid, isBot:false, isMe:true,
+        hp:rank.hp, maxHp:rank.hp, atk:rank.atk, def:rank.def,
+        rankKey:rank.key, rankName:rank.name,
+        skills:G.player.skills||{}, allocDone:false, allocExtra:{hp:0,atk:0,def:0}, skippedPts:0 });
+    } else {
+      const theirR = RANKS[RANKS.findIndex(r=>r.key===m.rankKey)] || RANKS[0];
+      const theirUid = m.uid||m.name;
+      team.push({ name:m.name, uid:theirUid, isBot:false, isMe:false,
+        hp:theirR.hp, maxHp:theirR.hp, atk:theirR.atk, def:theirR.def,
+        rankKey:m.rankKey, rankName:m.rankName,
+        skills:playerSkillsMap[theirUid]||{}, allocDone:false, skippedPts:0 });
+    }
+  }
+  // Load equipment onto self
+  const me = team.find(m => m.isMe);
+  if (me) loadEquipmentOntoFighter(me);
+
+  G.gameState = {
+    stage:1, team, enemies:[boss], currentTurn:0, turnOrder:[],
+    battleActive:false, roomId, pendingAlloc:true, log:[],
+    selectedEnemy:-1, isHost:iAmHost, hostName:hostUid,
+    roundNum:1, startStage:1, isDungeon:true, dungeonRankIdx:rankIdx
+  };
+  if (iAmHost) set(ref(db, `rooms/${roomId}/host`), G.uid);
+  document.getElementById('gameScreen').classList.remove('hidden');
+  startDungeonStage(rankIdx, pts);
+}
+
+function startDungeonStage(rankIdx, pts) {
+  const gs = G.gameState;
+  const myMem = gs.team.find(m => m.isMe);
+  gs.pendingAlloc = true;
+  gs.log = [];
+  gs._phoenixCount = {};
+  resetJobState(gs);
+  document.getElementById('gameStageText').textContent = `🏰 ${RANKS[rankIdx].name}副本`;
+  document.getElementById('gameStageSub').textContent = '選擇職業';
+  document.getElementById('allocPanel').classList.add('hidden');
+  document.getElementById('battleSection').classList.add('hidden');
+  document.getElementById('resultOverlay').classList.add('hidden');
+  document.getElementById('dungeonResultOverlay').classList.add('hidden');
+  document.getElementById('jobSelectPanel').style.display = 'none';
+  if (myMem) { myMem.allocExtra = {hp:0,atk:0,def:0}; myMem.allocDone = false; }
+  showJobSelect();
+  // After job confirm, alloc pts will be used; override confirmJob behavior via flag
+  gs._dungeonAllocPts = pts;
+}
+
+// Override showStageResult for dungeon boss
+function showDungeonResult(win) {
+  const gs = G.gameState;
+  gs.battleActive = false;
+  const overlay = document.getElementById('dungeonResultOverlay');
+  const titleEl = document.getElementById('dungeonResultTitle');
+  const lootEl  = document.getElementById('dungeonLootArea');
+  const eqBtn   = document.getElementById('dungeonEquipBtn');
+  overlay.classList.remove('hidden');
+  if (win) {
+    titleEl.textContent = '🎉 Boss 擊倒！';
+    titleEl.className   = 'result-title result-win';
+    // Roll loot
+    const item = rollEquipItem(gs.dungeonRankIdx);
+    G.dungeonPendingLoot = item;
+    lootEl.innerHTML = `
+      <div style="margin-bottom:12px;font-size:13px;color:var(--text2)">獲得裝備掉落：</div>
+      <div style="background:var(--bg2);border:1px solid var(--border2);border-radius:12px;padding:16px;text-align:left">
+        <div class="${item.rarityClass}" style="font-size:18px;font-weight:900">${item.icon} ${item.name}</div>
+        <div style="font-size:12px;color:var(--text2);margin-top:4px">Lv${item.level} · ${rarityLabel(item)} · ${item.desc}</div>
+      </div>`;
+    eqBtn.style.display = '';
+    // Award loot to inventory
+    awardDungeonLoot(item);
+  } else {
+    titleEl.textContent = '💀 Boss 挑戰失敗';
+    titleEl.className   = 'result-title result-lose';
+    lootEl.innerHTML    = '<div style="color:var(--text2)">隊伍全員陣亡，本次無掉落</div>';
+    eqBtn.style.display = 'none';
+  }
+}
+
+async function awardDungeonLoot(item) {
+  const inv = [...(G.player.inventory || []), item];
+  G.player.inventory = inv;
+  await update(ref(db, `players/${G.uid}`), { inventory: inv });
+  updateUI();
+}
+
+window.equipDroppedItem = async () => {
+  const item = G.dungeonPendingLoot;
+  if (!item) return;
+  await equipItem(item.uid);
+  document.getElementById('dungeonEquipBtn').style.display = 'none';
+  notify(`已裝備 ${item.name}！`, 'ok');
+};
+
+window.exitDungeon = async () => {
+  document.getElementById('dungeonResultOverlay').classList.add('hidden');
+  document.getElementById('gameScreen').classList.add('hidden');
+  document.getElementById('resultOverlay').classList.add('hidden');
+  hideGameChat();
+  G.isDungeon = false;
+  G.dungeonPendingLoot = null;
+  const tid = G.teamId;
+  if (tid) {
+    for (const [key, lRef] of Object.entries({
+      alloc:`rooms/${tid}/alloc`, gameMembers:`rooms/${tid}/presence`,
+      battle:`rooms/${tid}/battle`, battleLog:`rooms/${tid}/battleLog`,
+      nextStage:`rooms/${tid}/nextStage`, actions:`rooms/${tid}/actions`,
+      joinRequests:`rooms/${tid}/joinRequests`
+    })) {
+      try { if (G.listeners[key]) off(ref(db, lRef)); } catch(e){}
+      G.listeners[key] = null;
+    }
+    try { await remove(ref(db, `rooms/${tid}`)); } catch(e){}
+    G.teamId = null;
+  }
+  G.gameState = null;
+  switchTab('dungeon');
+};
+
 // ===== EXPOSE ALL ONCLICK HANDLERS TO GLOBAL SCOPE =====
 // Required because <script type="module"> is scoped — onclick= can't find module-local functions
 window.closeModal        = (id) => document.getElementById(id).classList.add('hidden');
@@ -3780,6 +4466,18 @@ window.inviteFriend       = inviteFriend;
 window.doLogin           = doLogin;
 window.doRegister        = doRegister;
 window.doLogout          = doLogout;
+window.renderEquipTab    = renderEquipTab;
+window.renderDungeonTab  = renderDungeonTab;
+window.selectDungeonDiff = selectDungeonDiff;
+window.showCreateDungeon = showCreateDungeon;
+window.showSearchDungeon = showSearchDungeon;
+window.loadOpenDungeons  = loadOpenDungeons;
+window.joinDungeonByCode = joinDungeonByCode;
+window.requestJoinDungeon= requestJoinDungeon;
+window.equipItem         = equipItem;
+window.unequipItem       = unequipItem;
+window.equipDroppedItem  = equipDroppedItem;
+window.exitDungeon       = exitDungeon;
 </script>
 </body>
 </html>
