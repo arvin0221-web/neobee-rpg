@@ -3356,7 +3356,15 @@ function hostPerformAttack(attacker, defender, isSlash) {
         dmg: dmg2, isCrit: isCrit2, isSlash: true, slashColor, dying: dying2 && !saved2 });
       applyThorns(defender, attacker, dmg2, defIsEnemy, defIdx, attIsEnemy, attIdx);
       if (!attIsEnemy) applyWeaponSplash(attacker, defender, dmg2);
-      renderBattle();
+      renderBattle(); writeBattleState();
+      // 二連斬打死後檢查戰鬥結束，避免死機
+      if (dying2 && !saved2 && !defIsEnemy && !attacker.isMonster) {
+        setTimeout(() => applyTrinketDeath(defender, G.gameState), 50);
+      }
+      if (isHost() && !hostCheckBattleEnd()) {
+        gs.currentTurn++;
+        setTimeout(() => hostProcessNextTurn(), 600);
+      }
     }, 350);
   } else {
     applyThorns(defender, attacker, dmg, defIsEnemy, defIdx, attIsEnemy, attIdx);
@@ -3379,8 +3387,7 @@ function hostPerformAttack(attacker, defender, isSlash) {
           if (defIsEnemy) setTimeout(() => fxExplosion(defFxEl, defCard), 200);
           else {
             setTimeout(() => { fxGhost(defFxEl); setTimeout(() => fxTombstone(defFxEl), 800); }, 150);
-            // 心臟炸藥
-            if (!defIsEnemy) setTimeout(() => applyTrinketDeath(defender, G.gameState), 200);
+            setTimeout(() => applyTrinketDeath(defender, G.gameState), 200);
           }
         }
       }, 120);
@@ -3391,7 +3398,10 @@ function hostPerformAttack(attacker, defender, isSlash) {
       fxDamageNumber(defFxEl, dmg, isCrit, false, false, false);
       if (defDying && !isDouble && !savedByPhoenix) {
         if (defIsEnemy) setTimeout(() => fxExplosion(defFxEl, defCard), 200);
-        else setTimeout(() => { fxGhost(defFxEl); setTimeout(() => fxTombstone(defFxEl), 800); }, 150);
+        else {
+          setTimeout(() => { fxGhost(defFxEl); setTimeout(() => fxTombstone(defFxEl), 800); }, 150);
+          setTimeout(() => applyTrinketDeath(defender, G.gameState), 200);
+        }
       }
     }
   });
@@ -4187,12 +4197,14 @@ function applyTrinketDeath(attacker, gs) {
   if (!trinket) return;
   const pct = trinket.val / 100;
   const rawDmg = Math.round(attacker.maxHp * pct);
+  let anyEnemyDied = false;
   for (const e of gs.enemies.filter(en => en.hp > 0)) {
     const dmg = Math.max(0, rawDmg - e.def);
     if (dmg <= 0) continue;
     e.hp = Math.max(0, e.hp - dmg);
+    if (e.hp <= 0) anyEnemyDied = true;
     const { isEnemy: dIE, idx: dIdx } = getTargetIndex(e);
-    addLog(`💣 <span class="red">${attacker.name}</span> 心臟炸藥！${e.name} 受到 <span class="red">${dmg}</span> 點傷害`);
+    addLog(`💣 <span class="red">${attacker.name}</span> 心臟炸藥！${e.name} 受到 <span class="red">${dmg}</span> 點傷害${e.hp<=0?' 💀':''}`);
     writeBattleEvent({ type:'attack', attIsEnemy:false, attIdx:gs.team.indexOf(attacker),
       defIsEnemy:dIE, defIdx:dIdx, dmg, isCrit:false, isSlash:false, dying:e.hp<=0 });
     requestAnimationFrame(() => {
@@ -4203,6 +4215,13 @@ function applyTrinketDeath(attacker, gs) {
       fxDamageNumber(fxEl, dmg, false, false, false, false);
       if (e.hp <= 0) setTimeout(() => fxExplosion(fxEl, card), 150);
     });
+  }
+  // After explosion, re-render and check if all enemies dead → player wins
+  if (anyEnemyDied) {
+    setTimeout(() => {
+      renderBattle(); writeBattleState();
+      hostCheckBattleEnd();
+    }, 400);
   }
 }
 
