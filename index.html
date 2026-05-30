@@ -139,6 +139,34 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
 .skill-cap{font-size:11px;color:var(--text3)}
 .skill-cost{font-size:12px;color:var(--gold);margin-bottom:10px}
 
+/* ===== EQUIPMENT & DUNGEON ===== */
+:root {
+  --rarity-border-普通:    #666;
+  --rarity-border-稀有:    #4ec97a;
+  --rarity-border-超稀有:  #4f8ef7;
+  --rarity-border-史詩:    #a855f7;
+  --rarity-border-傳奇:    #e8c84a;
+  --rarity-border-超凡:    #f87171;
+  --rarity-border-超超超凡:#c084fc;
+}
+.eq-rarity-普通   { color:#ffffff }
+.eq-rarity-稀有   { color:#4ec97a }
+.eq-rarity-超稀有 { color:#4f8ef7 }
+.eq-rarity-史詩   { color:#a855f7 }
+.eq-rarity-傳奇   { color:#e8c84a }
+.eq-rarity-超凡   { background:linear-gradient(90deg,#f87171,#fb923c,#fbbf24,#4ade80,#60a5fa,#c084fc);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;font-weight:900 }
+.eq-rarity-超超超凡{ background:linear-gradient(90deg,#f87171,#fb923c,#fbbf24,#4ade80,#60a5fa,#c084fc,#f87171);background-size:200%;-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;font-weight:900;animation:rainbowShift 1.5s linear infinite }
+@keyframes rainbowShift{0%{background-position:0%}100%{background-position:200%}}
+.eq-slot{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:12px 14px;display:flex;align-items:center;justify-content:space-between;gap:8px;min-height:56px}
+.eq-slot-label{font-size:11px;color:var(--text2);letter-spacing:1px;flex-shrink:0}
+.eq-slot-info{flex:1;min-width:0}
+.eq-slot-name{font-size:13px;font-weight:700}
+.eq-slot-desc{font-size:11px;color:var(--text2);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.eq-item-card{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:12px 14px;transition:.15s}
+.eq-item-card:hover{background:var(--surface2)}
+.dungeon-diff-btn{border-radius:10px;padding:12px 16px;cursor:pointer;text-align:center;transition:.15s;width:100%;border:1px solid var(--border2);background:var(--surface2)}
+.dungeon-diff-btn:hover{filter:brightness(1.15)}
+
 /* ===== FRIENDS TAB ===== */
 .friend-list{display:flex;flex-direction:column;gap:8px}
 .friend-item{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:12px 16px;display:flex;align-items:center;justify-content:space-between}
@@ -678,8 +706,8 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
   <div class="modal-card">
     <div class="modal-title">⚔️ 建立小隊</div>
     <div class="form-group">
-      <div class="form-label">小隊代碼（可選填，空白自動生成）</div>
-      <input class="form-input" id="createTeamCode" placeholder="留空則自動生成 6 字元代碼" maxlength="8">
+      <div class="form-label">小隊代碼（2~8 字元，英數字）</div>
+      <input class="form-input" id="createTeamCode" placeholder="自訂代碼，例：HERO88" maxlength="8">
     </div>
     <div class="form-group" style="margin-top:12px">
       <div class="form-label">開始關卡</div>
@@ -1622,30 +1650,18 @@ window.showCreateTeam = () => {
   document.getElementById('createTeamMsg').textContent = '';
   document.getElementById('createTeamStage').value = '1';
   openModal('createTeamModal');
+  setTimeout(() => document.getElementById('createTeamCode').focus(), 100);
 };
 
 window.doCreateTeam = async () => {
   let code = document.getElementById('createTeamCode').value.trim().toUpperCase();
   const startStageVal = parseInt(document.getElementById('createTeamStage').value) || 1;
   const msgEl = document.getElementById('createTeamMsg');
-  // Auto-generate if blank
-  if (!code) {
-    // Find an unused code
-    let attempts = 0;
-    while (attempts < 10) {
-      const candidate = genRoomCode();
-      const snap = await get(ref(db, `rooms/${candidate}`));
-      if (!snap.exists()) { code = candidate; break; }
-      attempts++;
-    }
-    if (!code) { msgEl.textContent = '無法生成代碼，請稍後再試'; return; }
-  } else if (code.length < 4 || code.length > 8) {
-    msgEl.textContent = '代碼需4-8字元';
-    return;
-  } else {
-    const snap = await get(ref(db, `rooms/${code}`));
-    if (snap.exists()) { msgEl.textContent = '此代碼已被使用'; return; }
-  }
+  if (!code || code.length < 2) { msgEl.textContent = '請輸入至少 2 字元的代碼'; return; }
+  if (code.length > 8) { msgEl.textContent = '代碼最多 8 字元'; return; }
+  if (!/^[A-Z0-9]+$/.test(code)) { msgEl.textContent = '代碼只能使用英文字母和數字'; return; }
+  const snap = await get(ref(db, `rooms/${code}`));
+  if (snap.exists()) { msgEl.textContent = '此代碼已被使用，請換一個'; return; }
   closeModal('createTeamModal');
   G.teamId = code;
   await setupRoom(code, startStageVal);
@@ -1827,31 +1843,75 @@ async function joinRoom(code) {
 
 function showRoomWaiting(code, isLeader, startStageNum) {
   document.getElementById('matchScreen').classList.remove('hidden');
-  document.getElementById('matchTitle').textContent = '小隊等待室';
+  document.getElementById('matchTitle').textContent = G.isDungeon ? '🏰 副本等待室' : '小隊等待室';
   document.getElementById('matchSub').textContent = `房間代碼：${code}`;
   document.getElementById('matchTimer').textContent = '';
   document.getElementById('matchSpinner').classList.add('hidden');
   document.getElementById('matchStatus').textContent = '等待隊員加入...';
-  const stageLabel = (startStageNum && startStageNum > 1) ? `從第 ${startStageNum} 關開始` : '';
+  const stageLabel = (!G.isDungeon && startStageNum && startStageNum > 1) ? `從第 ${startStageNum} 關開始` : '';
+  // Build invite friends section (shown to all)
+  const friendsHtml = buildWaitingRoomFriendsHtml();
   if (isLeader) {
-    document.getElementById('matchBtns').innerHTML = `
+    const stageSel = G.isDungeon ? '' : `
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;font-size:12px;color:var(--text2)">
         開始關卡：
         <select id="roomStartStageSelect" style="background:var(--bg2);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:4px 8px"
           onchange="updateRoomStartStage('${code}',this.value)">
           ${[1,2,3,4,5,6,7,8].map(i=>`<option value="${i}" ${i===startStageNum?'selected':''}>${i===1?'第 '+i+' 關（預設）':'第 '+i+' 關'}</option>`).join('')}
         </select>
-      </div>
+      </div>`;
+    document.getElementById('matchBtns').innerHTML = `
+      ${stageSel}
       <button class="btn btn-primary" onclick="readyUp('${code}')" id="readyBtn">開始遊戲</button>
-      <button class="btn btn-danger" onclick="leaveRoom()">解散房間</button>`;
+      <button class="btn btn-danger" onclick="leaveRoom()">解散房間</button>
+      ${friendsHtml}`;
     listenForJoinRequests(code);
   } else {
     document.getElementById('matchBtns').innerHTML = `
       ${stageLabel ? `<div style="font-size:12px;color:var(--text2);margin-bottom:4px">📍 ${stageLabel}</div>` : ''}
-      <button class="btn btn-danger" onclick="leaveRoom()">離開房間</button>`;
+      <button class="btn btn-danger" onclick="leaveRoom()">離開房間</button>
+      ${friendsHtml}`;
   }
   renderMatchTeam();
   showLobbyChat();
+  setTimeout(populateWaitingRoomFriends, 100);
+}
+
+function buildWaitingRoomFriendsHtml() {
+  const friends = G.player.friends || {};
+  const uids = Object.keys(friends);
+  if (!uids.length) return '';
+  // We render synchronously from cached G.player.friends; online status will refresh on next renderFriends
+  return `<div style="margin-top:12px;border-top:1px solid var(--border);padding-top:10px">
+    <div style="font-size:11px;color:var(--text2);letter-spacing:2px;margin-bottom:8px">邀請好友</div>
+    <div id="waitingRoomFriendsList"></div>
+  </div>`;
+}
+
+// Called after matchBtns is rendered to populate async friend list
+async function populateWaitingRoomFriends() {
+  const el = document.getElementById('waitingRoomFriendsList');
+  if (!el) return;
+  const friends = G.player.friends || {};
+  const uids = Object.keys(friends);
+  if (!uids.length) { el.innerHTML = '<div style="font-size:12px;color:var(--text2)">尚無好友</div>'; return; }
+  const [onlineSnap] = await Promise.all([get(ref(db,'online'))]);
+  const online = onlineSnap.exists() ? onlineSnap.val() : {};
+  el.innerHTML = uids.map(uid => {
+    const isOnline = !!online[uid];
+    const fname = friends[uid]?.name || uid;
+    // get name from online node if available
+    const displayName = online[uid]?.name || uid;
+    return `<div style="display:flex;align-items:center;justify-content:space-between;padding:4px 0;font-size:12px">
+      <span>
+        <span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:${isOnline?'var(--green)':'var(--text3)'};margin-right:6px;vertical-align:middle"></span>
+        ${displayName}
+      </span>
+      ${isOnline && G.teamId
+        ? `<button class="btn btn-primary btn-sm" style="padding:3px 10px;font-size:11px" onclick="inviteFriend('${uid}','${displayName}')">邀請</button>`
+        : `<span style="color:var(--text3);font-size:11px">離線</span>`}
+    </div>`;
+  }).join('');
 }
 
 function listenToRoom(code) {
@@ -2078,7 +2138,7 @@ async function initGame(members, roomId, startStageNum) {
         rankKey: rank.key, rankName: rank.name,
         skills: G.player.skills||{}, allocDone:false,
         allocExtra:{hp:0,atk:0,def:0},
-        skippedPts });
+        skippedPts, equippedItems:{} });
     } else {
       const theirRankIdx = RANKS.findIndex(r => r.key === m.rankKey);
       const theirRank = theirRankIdx >= 0 ? RANKS[theirRankIdx] : RANKS[0];
@@ -2090,6 +2150,10 @@ async function initGame(members, roomId, startStageNum) {
         skippedPts });
     }
   }
+  // Load equipment onto self fighter
+  const meSelf = team.find(m => m.isMe);
+  if (meSelf) loadEquipmentOntoFighter(meSelf);
+
   G.gameState = {
     stage: startStageNum,
     team,
@@ -2916,6 +2980,8 @@ function checkPhoenix(defender, gs) {
 
 // 致命一擊 instant kill check
 function checkInstantKill(attacker, defender) {
+  // 致命一擊 disabled in dungeon boss fights
+  if (G.gameState?.isDungeon) return false;
   const lv = (attacker.skills||{})['致命一擊'] || 0;
   if (lv <= 0) return false;
   const chance = 1 + (lv - 1) * 1;
@@ -3236,6 +3302,10 @@ function hostPerformAttack(attacker, defender, isSlash) {
     }
   }
 
+  // Dungeon boss: randomize def each hit
+  if (defender.isDungeonBoss) {
+    defender.def = Math.floor(Math.random() * (defender.defMax - defender.defMin + 1)) + defender.defMin;
+  }
   const { dmg, isCrit, isDouble, dmg2, isCrit2 } = calcDamage(attacker, defender);
   const brutish = isBrutishActive(attacker);
   const slashColor = brutish ? 'red' : (isCrit ? 'gold' : 'blue');
@@ -3248,6 +3318,8 @@ function hostPerformAttack(attacker, defender, isSlash) {
   }
   if (!savedByPhoenix) {
     defender.hp = Math.max(0, defender.hp - dmg);
+    // 天使聖鎧：每次受擊後觸發（不論是否致死）
+    if (!defIsEnemy) applyArmorHeal(defender, dmg);
   }
   let defDying = defender.hp <= 0;
 
@@ -3269,7 +3341,10 @@ function hostPerformAttack(attacker, defender, isSlash) {
       const wouldDie2 = defender.hp - dmg2 <= 0;
       let saved2 = false;
       if (wouldDie2) saved2 = checkPhoenix(defender, gs);
-      if (!saved2) defender.hp = Math.max(0, defender.hp - dmg2);
+      if (!saved2) {
+        defender.hp = Math.max(0, defender.hp - dmg2);
+        if (!defIsEnemy) applyArmorHeal(defender, dmg2);
+      }
       const dying2 = defender.hp <= 0;
       let msg2 = `<span class="accent">${attacker.name}</span> ⚔️⚔️<span style="color:#a0c4ff">二連斬！</span>`;
       if (isCrit2) msg2 += ` 💥<span class="gold">爆擊！</span>`;
@@ -3323,8 +3398,6 @@ function hostPerformAttack(attacker, defender, isSlash) {
 }
 
 function applyThorns(defender, attacker, dmg, defIsEnemy, defIdx, attIsEnemy, attIdx) {
-  // 天使聖鎧: chance to heal on being hit
-  if (!defIsEnemy) applyArmorHeal(defender, dmg);
   const thornLv = (defender.skills||{})['反傷'] || 0;
   if (thornLv > 0 && attacker.hp > 0) {
     const thornPct = 5 + (thornLv-1)*7;
@@ -4000,7 +4073,7 @@ function renderEquipTab() {
     if (!infoEl) continue;
     const item = getEquipped(sd.id);
     if (item) {
-      infoEl.innerHTML = `<div class="eq-slot-name ${item.rarityClass}">${item.icon} ${item.name} <span style="font-size:11px;color:var(--text2)">Lv${item.level}</span></div><div class="eq-slot-desc">${item.desc}</div>`;
+      infoEl.innerHTML = `<div class="eq-slot-name"><span class="${item.rarityClass}" style="font-weight:700">${item.icon} ${item.name}</span> <span style="font-size:10px;border:1px solid currentColor;border-radius:4px;padding:1px 5px;vertical-align:middle" class="${item.rarityClass}">Lv${item.level} ${item.rarity}</span></div><div class="eq-slot-desc" style="color:var(--text2);font-size:11px;margin-top:2px">${item.desc}</div>`;
       unEqBtn.classList.remove('hidden');
     } else {
       infoEl.innerHTML = `<div class="eq-slot-name" style="color:var(--text2)">未裝備</div>`;
@@ -4017,13 +4090,19 @@ function renderEquipTab() {
     return;
   }
   invEl.innerHTML = unequipped.map(item => `
-    <div class="eq-item-card" onclick="equipItem('${item.uid}')">
+    <div class="eq-item-card" style="border-color:var(--rarity-border-${item.rarity})">
       <div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
-        <div>
-          <div class="${item.rarityClass}" style="font-weight:700;font-size:14px">${item.icon} ${item.name}</div>
-          <div style="font-size:11px;color:var(--text2);margin-top:3px">Lv${item.level} · ${item.rarity} · ${item.desc}</div>
+        <div style="min-width:0;flex:1">
+          <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+            <span class="${item.rarityClass}" style="font-weight:700;font-size:14px">${item.icon} ${item.name}</span>
+            <span class="${item.rarityClass}" style="font-size:10px;border:1px solid currentColor;border-radius:4px;padding:1px 6px">Lv${item.level} ${item.rarity}</span>
+          </div>
+          <div style="font-size:11px;color:var(--text2);margin-top:4px">${item.desc}</div>
         </div>
-        <button class="btn btn-primary btn-sm" style="flex-shrink:0" onclick="event.stopPropagation();equipItem('${item.uid}')">裝備</button>
+        <div style="display:flex;flex-direction:column;gap:4px;flex-shrink:0">
+          <button class="btn btn-primary btn-sm" onclick="event.stopPropagation();equipItem('${item.uid}')">裝備</button>
+          <button class="btn btn-danger btn-sm" onclick="event.stopPropagation();confirmDeleteItem('${item.uid}')">刪除</button>
+        </div>
       </div>
     </div>`).join('');
 }
@@ -4148,8 +4227,9 @@ function renderDungeonTab() {
   if (!grid) return;
   grid.innerHTML = RANKS.map((r, i) => {
     const col = getRankColor(r.key);
-    const sel = G.dungeonDiff === i ? 'selected' : '';
-    return `<div class="dungeon-diff-btn ${sel}" onclick="selectDungeonDiff(${i})" style="border-color:${sel?col:'var(--border2)'}">
+    const sel = G.dungeonDiff === i;
+    return `<div class="dungeon-diff-btn" onclick="selectDungeonDiff(${i})"
+      style="border:${sel?'2':'1'}px solid ${col};background:${sel?col+'2a':'var(--surface2)'}">
       <div style="font-weight:900;color:${col};font-size:15px">${r.name}</div>
       <div style="font-size:11px;color:var(--text2);margin-top:4px">Boss HP ${DUNGEON_BOSS[i].hp}</div>
     </div>`;
@@ -4439,6 +4519,52 @@ window.exitDungeon = async () => {
   switchTab('dungeon');
 };
 
+
+window.confirmDeleteItem = (uid) => {
+  const inv = G.player.inventory || [];
+  const item = inv.find(i => i.uid === uid);
+  if (!item) return;
+  // Reuse existing confirm modal pattern — build inline confirm
+  const existing = document.getElementById('deleteItemConfirmModal');
+  if (existing) existing.remove();
+  const modal = document.createElement('div');
+  modal.id = 'deleteItemConfirmModal';
+  modal.className = 'modal-overlay';
+  modal.style.zIndex = '9999';
+  modal.innerHTML = `
+    <div class="modal-card" style="max-width:360px;text-align:center">
+      <div class="modal-title" style="color:var(--red)">🗑 刪除裝備</div>
+      <div style="margin:12px 0 20px;font-size:14px;color:var(--text2)">
+        確定要刪除<br>
+        <span class="${item.rarityClass}" style="font-weight:700;font-size:16px">${item.icon} ${item.name}</span>
+        <span class="${item.rarityClass}" style="font-size:11px;border:1px solid currentColor;border-radius:4px;padding:1px 6px;margin-left:4px">Lv${item.level} ${item.rarity}</span>
+        <br><span style="font-size:12px;color:var(--red);margin-top:6px;display:block">此操作無法復原</span>
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-danger" onclick="deleteItem('${uid}')">確認刪除</button>
+        <button class="btn btn-secondary" onclick="document.getElementById('deleteItemConfirmModal').remove()">取消</button>
+      </div>
+    </div>`;
+  document.body.appendChild(modal);
+};
+
+window.deleteItem = async (uid) => {
+  document.getElementById('deleteItemConfirmModal')?.remove();
+  // Remove from inventory
+  let inv = [...(G.player.inventory || [])];
+  inv = inv.filter(i => i.uid !== uid);
+  G.player.inventory = inv;
+  // Also unequip if equipped
+  const eq = { ...(G.player.equipped || {}) };
+  for (const [slot, eUid] of Object.entries(eq)) {
+    if (eUid === uid) delete eq[slot];
+  }
+  G.player.equipped = eq;
+  await update(ref(db, `players/${G.uid}`), { inventory: inv, equipped: eq });
+  renderEquipTab();
+  updateUI();
+  notify('裝備已刪除', 'ok');
+};
 // ===== EXPOSE ALL ONCLICK HANDLERS TO GLOBAL SCOPE =====
 // Required because <script type="module"> is scoped — onclick= can't find module-local functions
 window.closeModal        = (id) => document.getElementById(id).classList.add('hidden');
@@ -4467,6 +4593,9 @@ window.doLogin           = doLogin;
 window.doRegister        = doRegister;
 window.doLogout          = doLogout;
 window.renderEquipTab    = renderEquipTab;
+window.confirmDeleteItem = confirmDeleteItem;
+window.deleteItem        = deleteItem;
+window.populateWaitingRoomFriends = populateWaitingRoomFriends;
 window.renderDungeonTab  = renderDungeonTab;
 window.selectDungeonDiff = selectDungeonDiff;
 window.showCreateDungeon = showCreateDungeon;
