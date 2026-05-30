@@ -602,6 +602,17 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
   </div>
 </div>
 
+<!-- PLAYER PROFILE MODAL -->
+<div id="playerProfileModal" class="modal-overlay hidden">
+  <div class="modal-card" style="max-width:420px;width:95%">
+    <div class="modal-title" id="profileModalTitle">👤 玩家檔案</div>
+    <div id="profileModalBody" style="font-size:13px;line-height:1.8;color:var(--text2)">載入中...</div>
+    <div class="modal-actions" style="margin-top:16px">
+      <button class="btn btn-secondary" onclick="closeModal('playerProfileModal')">關閉</button>
+    </div>
+  </div>
+</div>
+
 <!-- MATCH SCREEN -->
 <div id="matchScreen" class="hidden">
   <div class="match-card">
@@ -640,10 +651,19 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
 
     <!-- Job Selection Panel (stage 1 only) -->
     <div class="job-select-panel" id="jobSelectPanel" style="display:none">
-      <div class="alloc-title">選擇職業</div>
+      <div class="alloc-title" id="jobSelectTitle">選擇職業</div>
       <div class="job-grid" id="jobGrid"></div>
-      <div style="text-align:center">
+      <div style="text-align:center;margin-top:8px">
         <button class="btn btn-primary" onclick="confirmJob()" id="confirmJobBtn" disabled>確認職業</button>
+      </div>
+      <!-- 人機職業選擇區（單排時顯示） -->
+      <div id="botJobSelectArea" style="display:none;margin-top:20px;border-top:1px solid var(--border);padding-top:16px">
+        <div class="alloc-title" id="botJobSelectTitle" style="font-size:14px">為人機隊友選擇職業</div>
+        <div class="job-grid" id="botJobGrid"></div>
+        <div style="text-align:center;margin-top:8px">
+          <button class="btn btn-secondary" onclick="confirmBotJob()" id="confirmBotJobBtn" disabled>確認人機職業</button>
+          <button class="btn btn-secondary" onclick="skipBotJob()" style="margin-left:8px">跳過（不選職業）</button>
+        </div>
       </div>
     </div>
 
@@ -1524,6 +1544,9 @@ window.loadLeaderboard = async () => {
           <span style="font-family:monospace">${fmtBig(p.exp||0)}</span> EXP<br>
           💰 ${(p.gold||0).toLocaleString()}
         </div>
+        <button onclick="showPlayerProfile('${p.uid}')" title="查看個人檔案"
+          style="background:none;border:none;cursor:pointer;font-size:18px;padding:4px 8px;color:var(--text2);transition:color .15s;flex-shrink:0"
+          onmouseover="this.style.color='var(--accent)'" onmouseout="this.style.color='var(--text2)'">⚙️</button>
       </div>`;
     };
 
@@ -2275,7 +2298,7 @@ window.confirmJob = () => {
   const gs = G.gameState;
   const myMem = gs.team.find(m => m.isMe);
   if (myMem) {
-    myMem.job       = G._selectedJob;
+    myMem.job        = G._selectedJob;
     myMem.activeUsed = 0;
     myMem.activeMax  = JOBS_DEF.find(j => j.id === G._selectedJob).activeMax;
   }
@@ -2283,6 +2306,18 @@ window.confirmJob = () => {
   if (gs.roomId && G.listeners.jobSelect) {
     try { off(ref(db, `rooms/${gs.roomId}/jobs`)); } catch(e){}
     G.listeners.jobSelect = null;
+  }
+  // Solo mode: allow player to assign jobs to bot teammates
+  const realTeammates = gs.team.filter(m => !m.isMe && !m.isBot);
+  const bots = gs.team.filter(m => m.isBot);
+  if (realTeammates.length === 0 && bots.length > 0) {
+    // Enter bot job selection phase
+    G._botJobQueue = bots.map(b => b); // queue of bots to assign
+    G._botJobIdx   = 0;
+    document.getElementById('jobSelectPanel').style.display = 'block';
+    document.getElementById('confirmJobBtn').style.display = 'none';
+    showBotJobSelect();
+    return;
   }
   document.getElementById('jobSelectPanel').style.display = 'none';
   document.getElementById('allocPanel').classList.remove('hidden');
@@ -2347,6 +2382,12 @@ window.useActiveSkill = () => {
     document.getElementById('battleHint').innerHTML = '✨ <strong>選擇要封印的敵人（點擊敵方卡片）</strong>';
     return;
   }
+  if (job.id === '刺客') {
+    gs._targetingSkill = '刺客';
+    document.getElementById('activeSkillBtn').classList.add('targeting');
+    document.getElementById('battleHint').innerHTML = '🗡 <strong>選擇攻擊目標（無視全部防禦）</strong>';
+    return;
+  }
 
   // Consume the turn before executing
   gs.waitingForPlayer = false;
@@ -2409,26 +2450,57 @@ function executeActiveSkill(actor, targetIdx) {
   }
 
   else if (actor.job === '刺客') {
-    // Ignore 100% def, pick random alive enemy
-    const targets = gs.enemies.filter(e => e.hp > 0);
-    if (!targets.length) return;
-    const target = targets[Math.floor(Math.random() * targets.length)];
+    // Player picks target (or bot picks random); ignore 100% def; triggers all passives
+    const aliveEnemies = gs.enemies.filter(e => e.hp > 0);
+    if (!aliveEnemies.length) return;
+    // targetIdx: if provided use it, else random (for bot)
+    const target = (targetIdx !== null && targetIdx >= 0 && gs.enemies[targetIdx]?.hp > 0)
+      ? gs.enemies[targetIdx]
+      : aliveEnemies[Math.floor(Math.random() * aliveEnemies.length)];
     const { isEnemy: defIsEnemy, idx: defIdx } = getTargetIndex(target);
-    // Calc damage ignoring all defense
+
+    // Base dmg ignoring all defense; apply crit / double hit passives
     const effAtk = getEffectiveAtk(actor);
-    let dmg = effAtk; // ignore 100% def
+    let dmg = Math.max(1, effAtk);
+    // 暴徒
+    const brutish = isBrutishActive(actor);
+    if (brutish) dmg = Math.ceil(dmg * (1 + 0.5 + ((actor.skills?.['暴徒']||0)-1)*0.15));
+    // 爆擊
+    const critLvA = (actor.skills||{})['爆擊'] || 0;
+    const isCrit = critLvA > 0 && Math.random() * 100 < (10 + (critLvA-1)*5);
+    if (isCrit) { dmg = Math.round(dmg * (1.2 + (critLvA-1)*0.05)); }
+    dmg = Math.round(dmg);
     if (dmg < 1) dmg = 1;
+
     const wouldDie = target.hp - dmg <= 0;
     const savedByPhoenix = wouldDie && checkPhoenix(target, gs);
-    if (!savedByPhoenix) target.hp = Math.max(0, target.hp - dmg);
-    addLog(`🗡 <span style="color:#a855f7">${actor.name}</span> 必殺！無視全部防禦，對 ${target.name} 造成 <span class="red">${dmg}</span> 傷害${target.hp<=0?' 💀':''}`);
-    writeBattleEvent({ type:'attack', attIsEnemy:false, attIdx:gs.team.indexOf(actor), defIsEnemy, defIdx, dmg, isCrit:false, isSlash:true, slashColor:'red', dying: target.hp<=0 && !savedByPhoenix });
+    if (!savedByPhoenix) {
+      target.hp = Math.max(0, target.hp - dmg);
+      if (!defIsEnemy) applyArmorHeal(target, dmg);
+    }
+    const dying = target.hp <= 0 && !savedByPhoenix;
+    addLog(`🗡 <span style="color:#a855f7">${actor.name}</span> 必殺！無視全部防禦，對 ${target.name} 造成 <span class="red">${dmg}</span>${isCrit?' <span class="gold">爆擊！</span>':''}${dying?' 💀':''}`);
+    // 反傷
+    applyThorns(target, actor, dmg, defIsEnemy, defIdx, false, gs.team.indexOf(actor));
+    // 電刀 splash
+    if (!actor.isBot && !actor.isMonster) applyWeaponSplash(actor, target, dmg);
+    writeBattleEvent({ type:'attack', attIsEnemy:false, attIdx:gs.team.indexOf(actor), defIsEnemy, defIdx, dmg, isCrit, isSlash:true, slashColor: brutish?'red':'#a855f7', dying });
     requestAnimationFrame(() => {
       const fxEl = getFxEl(defIsEnemy, defIdx);
       const card  = getFxCard(defIsEnemy, defIdx);
-      fxSlash(fxEl, false, false, 'red');
-      setTimeout(() => { fxHitFlash(fxEl); fxParticles(card, dmg, false, 'red'); fxDamageNumber(fxEl, dmg, false, false, false, false); if(target.hp<=0&&!savedByPhoenix) setTimeout(()=>fxExplosion(fxEl,card),200); }, 120);
+      fxSlash(fxEl, false, false, brutish?'red':'#a855f7');
+      setTimeout(() => {
+        fxHitFlash(fxEl); fxParticles(card, dmg, isCrit, brutish?'red':'#a855f7');
+        fxDamageNumber(fxEl, dmg, isCrit, false, false, brutish);
+        if (dying) setTimeout(()=>fxExplosion(fxEl,card),200);
+      }, 120);
     });
+    // Turn advance (刺客 handles its own like 爆炎)
+    renderBattle(); writeBattleState();
+    if (dying && !defIsEnemy) setTimeout(() => applyTrinketDeath(target, gs), 200);
+    if (isHost() && !hostCheckBattleEnd()) { gs.currentTurn++; setTimeout(() => hostProcessNextTurn(), 600); }
+    buildActiveSkillBar();
+    return;
   }
 
   else if (actor.job === '爆炎法師') {
@@ -2568,6 +2640,8 @@ function startStage(stage) {
   gs.log = [];
   gs._phoenixCount = {};
   resetJobState(gs);
+  // Reset bot active skill usage each stage
+  gs.team.forEach(m => { if (m.isBot) m.botJobUsedThisStage = false; });
 
   document.getElementById('gameStageText').textContent = `第 ${stage} 關`;
   document.getElementById('allocPanel').classList.add('hidden');
@@ -3540,6 +3614,27 @@ function hostProcessNextTurn() {
       if (t.type === 'team') targets = gs.enemies.filter(e => e.hp > 0);
       else targets = gs.team.filter(m => m.hp > 0);
       if (!targets.length) { gs.currentTurn++; hostProcessNextTurn(); return; }
+
+      // Bot active skill: use on round 5 if has job, still alive, and hasn't used this stage
+      if (t.type === 'team' && actor.isBot && actor.job &&
+          (gs.roundNum || 1) >= 5 && !actor.botJobUsedThisStage &&
+          (actor.activeUsed || 0) < (actor.activeMax || 0)) {
+        actor.botJobUsedThisStage = true;
+        // 刺客 picks random target; 精靈術師 picks random target; others pass null
+        const needsTarget = ['刺客','精靈術師'].includes(actor.job);
+        const tIdx = needsTarget ? gs.enemies.indexOf(targets[Math.floor(Math.random()*targets.length)]) : null;
+        executeActiveSkill(actor, tIdx);
+        // executeActiveSkill handles turn advancement for jobs that return early
+        // For jobs that don't return early, advance here
+        const selfAdvancing = ['刺客','爆炎法師'].includes(actor.job);
+        if (!selfAdvancing) {
+          gs.currentTurn++;
+          renderBattle(); writeBattleState();
+          if (!hostCheckBattleEnd()) setTimeout(() => hostProcessNextTurn(), 700);
+        }
+        return;
+      }
+
       const target = targets[Math.floor(Math.random() * targets.length)];
       hostPerformAttack(actor, target, false);
       gs.currentTurn++;
@@ -4457,6 +4552,8 @@ function startDungeonStage(rankIdx, pts) {
   gs.log = [];
   gs._phoenixCount = {};
   resetJobState(gs);
+  // Reset bot active skill usage each stage
+  gs.team.forEach(m => { if (m.isBot) m.botJobUsedThisStage = false; });
   document.getElementById('gameStageText').textContent = `🏰 ${RANKS[rankIdx].name}副本`;
   document.getElementById('gameStageSub').textContent = '選擇職業';
   document.getElementById('allocPanel').classList.add('hidden');
@@ -4588,6 +4685,208 @@ window.deleteItem = async (uid) => {
   updateUI();
   notify('裝備已刪除', 'ok');
 };
+
+// ===== BOT JOB SELECTION (solo mode) =====
+function showBotJobSelect() {
+  const gs = G.gameState;
+  const bots = G._botJobQueue;
+  const idx  = G._botJobIdx;
+  if (idx >= bots.length) { finishBotJobSelect(); return; }
+  const bot = bots[idx];
+
+  document.getElementById('botJobSelectArea').style.display = 'block';
+  document.getElementById('jobSelectTitle').textContent = '選擇職業（已選：' + (gs.team.find(m=>m.isMe)?.job || '') + '）';
+  document.getElementById('botJobSelectTitle').textContent = `為 ${bot.name} 選擇職業`;
+  document.getElementById('confirmBotJobBtn').disabled = true;
+  G._selectedBotJob = null;
+  renderBotJobGrid();
+}
+
+function renderBotJobGrid() {
+  const gs = G.gameState;
+  const grid = document.getElementById('botJobGrid');
+  if (!grid) return;
+  // Collect taken jobs: player's own job + previously assigned bot jobs
+  const takenSet = new Set();
+  gs.team.forEach(m => { if (m.job) takenSet.add(m.job); });
+
+  grid.innerHTML = JOBS_DEF.map(j => {
+    const taken = takenSet.has(j.id);
+    const isSel = G._selectedBotJob === j.id;
+    const borderColor = taken ? '#ffffff22' : isSel ? j.color : j.color + '22';
+    const opacity = taken ? '0.4' : '1';
+    const takenLbl = taken ? `<div style="font-size:10px;color:var(--red);margin-top:4px">已被選擇</div>` : '';
+    return `<div class="job-card ${isSel?'selected':''} ${taken?'job-taken':''}"
+      id="botjobcard-${j.id}"
+      onclick="selectBotJob('${j.id}')"
+      style="border-color:${borderColor};opacity:${opacity};${taken?'cursor:not-allowed':''}">
+      <div class="job-icon">${j.icon}</div>
+      <div class="job-name" style="color:${j.color}">${j.name}</div>
+      <div class="job-passive">${j.desc}</div>
+      <div class="job-active-lbl">⚡ ${j.activeName}${j.activeMax<99?' ×'+j.activeMax:''}<br>${j.activeDesc}</div>
+      ${takenLbl}
+    </div>`;
+  }).join('');
+}
+
+window.selectBotJob = (jobId) => {
+  const gs = G.gameState;
+  const takenSet = new Set();
+  gs.team.forEach(m => { if (m.job) takenSet.add(m.job); });
+  if (takenSet.has(jobId)) return;
+  // Deselect all
+  document.querySelectorAll('#botJobGrid .job-card').forEach(c => {
+    const jid = c.id.replace('botjobcard-', '');
+    const job = JOBS_DEF.find(j => j.id === jid);
+    if (job && !c.classList.contains('job-taken')) {
+      c.style.borderColor = job.color + '22';
+      c.classList.remove('selected');
+    }
+  });
+  const card = document.getElementById(`botjobcard-${jobId}`);
+  const job  = JOBS_DEF.find(j => j.id === jobId);
+  if (card && job) {
+    card.style.borderColor = job.color;
+    card.classList.add('selected');
+    G._selectedBotJob = jobId;
+    document.getElementById('confirmBotJobBtn').disabled = false;
+  }
+};
+
+window.confirmBotJob = () => {
+  if (!G._selectedBotJob) return;
+  const gs  = G.gameState;
+  const bot = G._botJobQueue[G._botJobIdx];
+  const jobDef = JOBS_DEF.find(j => j.id === G._selectedBotJob);
+  bot.job        = G._selectedBotJob;
+  bot.activeUsed = 0;
+  bot.activeMax  = jobDef.activeMax;
+  bot.botJobUsedThisStage = false;
+  G._botJobIdx++;
+  G._selectedBotJob = null;
+  if (G._botJobIdx < G._botJobQueue.length) {
+    renderBotJobGrid();
+    showBotJobSelect();
+  } else {
+    finishBotJobSelect();
+  }
+};
+
+window.skipBotJob = () => {
+  // Bot stays with no job
+  G._botJobIdx++;
+  G._selectedBotJob = null;
+  if (G._botJobIdx < G._botJobQueue.length) {
+    showBotJobSelect();
+  } else {
+    finishBotJobSelect();
+  }
+};
+
+function finishBotJobSelect() {
+  document.getElementById('botJobSelectArea').style.display = 'none';
+  document.getElementById('confirmJobBtn').style.display = '';
+  document.getElementById('jobSelectPanel').style.display = 'none';
+  document.getElementById('allocPanel').classList.remove('hidden');
+  const gs = G.gameState;
+  const myMem = gs.team.find(m => m.isMe);
+  let pts;
+  const skippedBonus = (!gs.isDungeon && myMem?.skippedPts > 0) ? myMem.skippedPts : 0;
+  if (gs.isDungeon) {
+    pts = gs._dungeonAllocPts || DUNGEON_PLAYER_PTS[gs.dungeonRankIdx || 0];
+  } else {
+    const cfg = STAGE_CONFIG[gs.stage - 1];
+    pts = cfg.playerPts + skippedBonus;
+  }
+  document.getElementById('gameStageSub').textContent = skippedBonus > 0
+    ? `分配屬性點數（含跳關補點 +${skippedBonus}）`
+    : '分配屬性點數';
+  resetAllocUI(pts, myMem);
+}
+
+
+// ===== PLAYER PROFILE =====
+window.showPlayerProfile = async (uid) => {
+  const titleEl = document.getElementById('profileModalTitle');
+  const bodyEl  = document.getElementById('profileModalBody');
+  titleEl.textContent = '👤 玩家檔案';
+  bodyEl.innerHTML = '<div style="text-align:center;padding:20px;color:var(--text2)">載入中...</div>';
+  openModal('playerProfileModal');
+
+  try {
+    const snap = await get(ref(db, `players/${uid}`));
+    if (!snap.exists()) {
+      bodyEl.innerHTML = '<div style="color:var(--red)">找不到玩家資料</div>';
+      return;
+    }
+    const p = snap.val();
+    const rank = getRank(p.exp || 0);
+    const rankColor = getRankColor(rank.key);
+
+    titleEl.innerHTML = `👤 ${p.name} 的個人檔案`;
+
+    // ── 裝備 ──
+    const inv = Array.isArray(p.inventory) ? p.inventory : Object.values(p.inventory || {});
+    const eq  = p.equipped || {};
+    const slotDefs = [
+      { slot:'weapon',  label:'⚔ 武器' },
+      { slot:'armor',   label:'🛡 盔甲' },
+      { slot:'trinket', label:'💍 飾品' },
+    ];
+    let eqHtml = '';
+    for (const sd of slotDefs) {
+      const eUid = eq[sd.slot];
+      const item = eUid ? inv.find(i => i && i.uid === eUid) : null;
+      if (item) {
+        eqHtml += `<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid #ffffff11">
+          <span style="color:var(--text2);font-size:11px;width:44px;flex-shrink:0">${sd.label}</span>
+          <span class="${item.rarityClass}" style="font-weight:700">${item.icon} ${item.name}</span>
+          <span class="${item.rarityClass}" style="font-size:10px;border:1px solid currentColor;border-radius:4px;padding:1px 5px">Lv${item.level} ${item.rarity}</span>
+        </div>`;
+      } else {
+        eqHtml += `<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid #ffffff11">
+          <span style="color:var(--text2);font-size:11px;width:44px;flex-shrink:0">${sd.label}</span>
+          <span style="color:var(--text3)">未裝備</span>
+        </div>`;
+      }
+    }
+
+    // ── 技能 ──
+    const skills = p.skills || {};
+    const skillKeys = Object.keys(skills).filter(k => (skills[k] || 0) > 0);
+    let skillHtml = '';
+    if (skillKeys.length) {
+      skillHtml = skillKeys.map(k => {
+        const def = SKILLS_DEF.find(s => s.id === k);
+        const lv  = skills[k];
+        return `<div style="display:flex;align-items:center;justify-content:space-between;padding:5px 0;border-bottom:1px solid #ffffff11">
+          <span style="color:var(--text)">${def ? def.name : k}</span>
+          <span style="background:var(--accent)22;color:var(--accent);border-radius:4px;padding:1px 8px;font-size:11px;font-weight:700">Lv ${lv}</span>
+        </div>`;
+      }).join('');
+    } else {
+      skillHtml = '<div style="color:var(--text3);padding:4px 0">尚無技能</div>';
+    }
+
+    bodyEl.innerHTML = `
+      <div style="margin-bottom:14px;padding-bottom:12px;border-bottom:1px solid var(--border)">
+        <div style="font-size:11px;color:var(--text2);letter-spacing:2px;margin-bottom:4px">玩家暱稱</div>
+        <div style="font-size:20px;font-weight:900;color:${rankColor}">${p.name}</div>
+        <div style="font-size:12px;color:var(--text2);margin-top:2px">${rank.name} &nbsp;·&nbsp; ${fmtBig(p.exp||0)} EXP &nbsp;·&nbsp; 💰 ${(p.gold||0).toLocaleString()}</div>
+      </div>
+      <div style="margin-bottom:14px;padding-bottom:12px;border-bottom:1px solid var(--border)">
+        <div style="font-size:11px;color:var(--text2);letter-spacing:2px;margin-bottom:6px">裝備欄</div>
+        ${eqHtml}
+      </div>
+      <div>
+        <div style="font-size:11px;color:var(--text2);letter-spacing:2px;margin-bottom:6px">擁有技能</div>
+        ${skillHtml}
+      </div>`;
+  } catch(e) {
+    bodyEl.innerHTML = `<div style="color:var(--red)">載入失敗：${e.message}</div>`;
+  }
+};
+
 // ===== EXPOSE ALL ONCLICK HANDLERS TO GLOBAL SCOPE =====
 // Required because <script type="module"> is scoped — onclick= can't find module-local functions
 window.closeModal        = (id) => document.getElementById(id).classList.add('hidden');
@@ -4631,6 +4930,9 @@ window.unequipItem       = unequipItem;
 window.equipDroppedItem  = equipDroppedItem;
 window.exitDungeon       = exitDungeon;
 window.showPlayerProfile = showPlayerProfile;
+window.selectBotJob      = selectBotJob;
+window.confirmBotJob     = confirmBotJob;
+window.skipBotJob        = skipBotJob;
 </script>
 </body>
 </html>
