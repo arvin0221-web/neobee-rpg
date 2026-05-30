@@ -481,6 +481,8 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
           <div style="display:flex;flex-direction:column;gap:16px">
             <button class="btn btn-primary" style="padding:16px;font-size:16px" onclick="showCreateTeam()">⚔️ 建立小隊</button>
             <button class="btn btn-secondary" style="padding:16px;font-size:16px;border-color:var(--accent2);color:var(--accent2)" onclick="showSearchRooms()">🔍 搜尋/加入房間</button>
+            <button class="btn btn-secondary" style="padding:16px;font-size:16px;border-color:#e74c3c;color:#e74c3c" onclick="showCreatePvp()">⚔ PVP 對戰</button>
+            <button class="btn btn-secondary" style="padding:16px;font-size:16px;border-color:#e74c3c;color:#e74c3c" onclick="showSearchPvp()">🔍 搜尋 PVP 房間</button>
           </div>
         </div>
       </div>
@@ -602,6 +604,63 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
   </div>
 </div>
 
+<!-- PVP CREATE MODAL -->
+<div id="createPvpModal" class="modal-overlay hidden">
+  <div class="modal-card" style="max-width:480px;width:95%">
+    <div class="modal-title" style="color:#e74c3c">⚔ 建立 PVP 房間</div>
+    <div class="form-group">
+      <div class="form-label">房間代碼（2~8 字元，英數字）</div>
+      <input class="form-input" id="pvpRoomCode" placeholder="自訂代碼" maxlength="8">
+    </div>
+    <div class="form-group" style="margin-top:12px">
+      <div class="form-label">每隊人數（含人機）</div>
+      <select class="form-input" id="pvpTeamSize" style="background:var(--bg2);color:var(--text)">
+        <option value="1">1 對 1</option>
+        <option value="2">2 對 2</option>
+        <option value="3" selected>3 對 3</option>
+      </select>
+    </div>
+    <div class="form-group" style="margin-top:12px">
+      <div class="form-label">每人屬性點（0 = 不分配，1~50）</div>
+      <input class="form-input" id="pvpAllocPts" type="number" min="0" max="50" value="10" placeholder="0~50">
+    </div>
+    <div id="createPvpMsg" style="font-size:12px;color:var(--red);margin-top:4px"></div>
+    <div class="modal-actions">
+      <button class="btn btn-danger" onclick="doCreatePvp()">建立</button>
+      <button class="btn btn-secondary" onclick="closeModal('createPvpModal')">取消</button>
+    </div>
+  </div>
+</div>
+
+<!-- PVP SEARCH MODAL -->
+<div id="searchPvpModal" class="modal-overlay hidden">
+  <div class="modal-card" style="max-width:480px;width:95%">
+    <div class="modal-title" style="color:#e74c3c">🔍 搜尋 PVP 房間</div>
+    <div style="display:flex;gap:8px;margin-bottom:12px">
+      <input class="form-input" id="joinPvpCodeInput" placeholder="輸入房間代碼" maxlength="8" style="flex:1">
+      <button class="btn btn-danger btn-sm" onclick="joinPvpByCode()">加入</button>
+    </div>
+    <div id="joinPvpCodeMsg" style="font-size:12px;color:var(--red);margin-bottom:8px"></div>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+      <div style="font-size:12px;color:var(--text2);letter-spacing:2px">公開等待中的 PVP 房間</div>
+      <button class="btn btn-secondary btn-sm" onclick="loadOpenPvpRooms()">🔄 重新整理</button>
+    </div>
+    <div id="openPvpRoomsList" style="max-height:260px;overflow-y:auto"></div>
+    <div class="modal-actions" style="margin-top:12px">
+      <button class="btn btn-secondary" onclick="closeModal('searchPvpModal')">關閉</button>
+    </div>
+  </div>
+</div>
+
+<!-- PVP RESULT OVERLAY -->
+<div id="pvpResultOverlay" class="result-overlay hidden">
+  <div style="background:var(--surface);border:1px solid var(--border);border-radius:20px;padding:40px;max-width:420px;width:95%;text-align:center">
+    <div class="result-title" id="pvpResultTitle"></div>
+    <div id="pvpResultRewards" style="margin:16px 0;font-size:15px"></div>
+    <button class="btn btn-secondary" onclick="exitPvp()">離開</button>
+  </div>
+</div>
+
 <!-- PLAYER PROFILE MODAL -->
 <div id="playerProfileModal" class="modal-overlay hidden">
   <div class="modal-card" style="max-width:420px;width:95%">
@@ -624,6 +683,17 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
     <div class="spinner" id="matchSpinner"></div>
     <div style="margin-top:16px;display:flex;flex-direction:column;gap:10px" id="matchBtns">
       <button class="btn btn-danger" onclick="cancelMatchmaking()">取消匹配</button>
+    </div>
+    <!-- PVP Team Setup Panel (leader only) -->
+    <div id="pvpSetupPanel" style="display:none;margin-top:16px;width:100%;max-width:560px">
+      <div style="font-size:12px;color:var(--text2);letter-spacing:2px;margin-bottom:10px">⚔ 隊伍分配（房主設定）</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px" id="pvpTeamGrid"></div>
+      <div style="margin-top:12px;font-size:12px;color:var(--text2)">屬性點：<span id="pvpPtsDisplay" style="color:var(--gold)">10</span> 點／人</div>
+    </div>
+    <!-- PVP Unassigned Players -->
+    <div id="pvpUnassignedPanel" style="display:none;margin-top:10px;width:100%;max-width:560px">
+      <div style="font-size:11px;color:var(--text2);margin-bottom:6px">未分配玩家</div>
+      <div id="pvpUnassignedList" style="display:flex;flex-wrap:wrap;gap:6px"></div>
     </div>
     <!-- Lobby Team Chat -->
     <div id="lobbyChatWrap" class="hidden" style="margin-top:20px;width:100%;max-width:420px">
@@ -2107,6 +2177,8 @@ async function startGameFromRoom(room, code) {
 
   if (room.isDungeon) {
     await initDungeon(members, code, room.dungeonRankIdx || 0);
+  } else if (room.isPvp) {
+    await initPvp(room, code);
   } else {
     await initGame(members, code, room.startStage || 1);
   }
@@ -2320,11 +2392,18 @@ window.confirmJob = () => {
     return;
   }
   document.getElementById('jobSelectPanel').style.display = 'none';
+  // PVP with 0 pts: skip alloc
+  if (gs.isPvp && (gs._pvpAllocPts || 0) === 0) {
+    finishBotJobSelect(); // reuse finish logic to advance past alloc
+    return;
+  }
   document.getElementById('allocPanel').classList.remove('hidden');
   let pts;
-  const skippedBonus = (!gs.isDungeon && myMem?.skippedPts > 0) ? myMem.skippedPts : 0;
+  const skippedBonus = (!gs.isDungeon && !gs.isPvp && myMem?.skippedPts > 0) ? myMem.skippedPts : 0;
   if (gs.isDungeon) {
     pts = gs._dungeonAllocPts || DUNGEON_PLAYER_PTS[gs.dungeonRankIdx || 0];
+  } else if (gs.isPvp) {
+    pts = gs._pvpAllocPts || 0;
   } else {
     const cfg = STAGE_CONFIG[gs.stage - 1];
     pts = cfg.playerPts + skippedBonus;
@@ -3272,12 +3351,14 @@ function applyBattleState(state) {
 
   // Stage result
   if (state.stageResult === 'win') {
-    if (G.gameState?.isDungeon) setTimeout(() => showDungeonResult(true),  300);
-    else                         setTimeout(() => showStageResult(true),    300);
+    if (G.gameState?.isDungeon)    setTimeout(() => showDungeonResult(true),  300);
+    else if (G.gameState?.isPvp)   setTimeout(() => showPvpResult(true),      300);
+    else                            setTimeout(() => showStageResult(true),    300);
   }
   if (state.stageResult === 'lose') {
-    if (G.gameState?.isDungeon) setTimeout(() => showDungeonResult(false), 300);
-    else                         setTimeout(() => showStageResult(false),   300);
+    if (G.gameState?.isDungeon)    setTimeout(() => showDungeonResult(false), 300);
+    else if (G.gameState?.isPvp)   setTimeout(() => showPvpResult(false),     300);
+    else                            setTimeout(() => showStageResult(false),   300);
   }
 }
 
@@ -3513,20 +3594,16 @@ function hostCheckBattleEnd() {
   const enemiesAlive = gs.enemies.some(e => e.hp > 0);
   if (!enemiesAlive) {
     set(ref(db, `rooms/${gs.roomId}/battle/stageResult`), 'win');
-    if (gs.isDungeon) {
-      setTimeout(() => showDungeonResult(true), 600);
-    } else {
-      setTimeout(() => showStageResult(true), 600);
-    }
+    if (gs.isDungeon) setTimeout(() => showDungeonResult(true), 600);
+    else if (gs.isPvp) setTimeout(() => showPvpResult(true), 600);
+    else setTimeout(() => showStageResult(true), 600);
     return true;
   }
   if (!teamAlive) {
     set(ref(db, `rooms/${gs.roomId}/battle/stageResult`), 'lose');
-    if (gs.isDungeon) {
-      setTimeout(() => showDungeonResult(false), 600);
-    } else {
-      setTimeout(() => showStageResult(false), 600);
-    }
+    if (gs.isDungeon) setTimeout(() => showDungeonResult(false), 600);
+    else if (gs.isPvp) setTimeout(() => showPvpResult(false), 600);
+    else setTimeout(() => showStageResult(false), 600);
     return true;
   }
   return false;
@@ -4050,10 +4127,14 @@ function renderBattle() {
     const isSelected = gs.selectedEnemy === i;
     const hpPct = e.maxHp > 0 ? (e.hp/e.maxHp*100) : 0;
     const hpClass = hpPct > 60 ? 'high' : hpPct > 30 ? 'mid' : 'low';
+    const isPvpEnemy = gs.isPvp;
+    const enemyRankColor = isPvpEnemy ? getRankColor(e.rankKey||'鐵') : 'var(--text2)';
+    const enemyIcon = isPvpEnemy ? (e.isBot ? '🤖' : '👤') : '👾';
+    const jobIcon = isPvpEnemy && e.job ? ` ${JOBS_DEF.find(j=>j.id===e.job)?.icon||''}` : '';
     ePanel.innerHTML += `<div class="fighter-card enemy ${e.hp>0?'alive':'dead'} ${isActive?'active-turn':''} ${isSelected?'target-selected':''}" id="fc-enemy-${i}" style="position:relative" onclick="clickEnemy(${i})">
       <div class="fx-overlay" id="fx-enemy-${i}"></div>
       <div class="fighter-name">
-        <span>👾 ${e.name}</span>
+        <span style="color:${enemyRankColor}">${enemyIcon} ${e.name}${jobIcon}</span>
         ${e.hp>0?'<span style="font-size:10px;color:var(--text3)">點擊攻擊</span>':'<span style="font-size:10px;color:var(--red)">已擊敗</span>'}
       </div>
       <div class="hp-bar"><div class="hp-fill ${hpClass}" style="width:${hpPct}%"></div></div>
@@ -4791,9 +4872,11 @@ function finishBotJobSelect() {
   const gs = G.gameState;
   const myMem = gs.team.find(m => m.isMe);
   let pts;
-  const skippedBonus = (!gs.isDungeon && myMem?.skippedPts > 0) ? myMem.skippedPts : 0;
+  const skippedBonus = (!gs.isDungeon && !gs.isPvp && myMem?.skippedPts > 0) ? myMem.skippedPts : 0;
   if (gs.isDungeon) {
     pts = gs._dungeonAllocPts || DUNGEON_PLAYER_PTS[gs.dungeonRankIdx || 0];
+  } else if (gs.isPvp) {
+    pts = gs._pvpAllocPts || 0;
   } else {
     const cfg = STAGE_CONFIG[gs.stage - 1];
     pts = cfg.playerPts + skippedBonus;
@@ -4887,6 +4970,391 @@ window.showPlayerProfile = async (uid) => {
   }
 };
 
+
+// ===== PVP SYSTEM =====
+window.showCreatePvp = () => {
+  document.getElementById('pvpRoomCode').value = '';
+  document.getElementById('createPvpMsg').textContent = '';
+  document.getElementById('pvpAllocPts').value = '10';
+  document.getElementById('pvpTeamSize').value = '3';
+  openModal('createPvpModal');
+  setTimeout(() => document.getElementById('pvpRoomCode').focus(), 100);
+};
+
+window.showSearchPvp = () => {
+  document.getElementById('joinPvpCodeInput').value = '';
+  document.getElementById('joinPvpCodeMsg').textContent = '';
+  document.getElementById('openPvpRoomsList').innerHTML = '<div style="text-align:center;color:var(--text2);padding:16px">載入中...</div>';
+  openModal('searchPvpModal');
+  loadOpenPvpRooms();
+};
+
+window.loadOpenPvpRooms = async () => {
+  const listEl = document.getElementById('openPvpRoomsList');
+  try {
+    const snap = await get(ref(db, 'rooms'));
+    if (!snap.exists()) { listEl.innerHTML = '<div style="color:var(--text2);font-size:13px;padding:8px">目前沒有 PVP 房間</div>'; return; }
+    const rooms = snap.val();
+    const open = Object.entries(rooms)
+      .filter(([id, r]) => r.status === 'waiting' && r.isPvp === true && r.public === true)
+      .sort((a, b) => (b[1].createdAt||0) - (a[1].createdAt||0));
+    if (!open.length) { listEl.innerHTML = '<div style="color:var(--text2);font-size:13px;padding:8px">目前沒有公開 PVP 房間</div>'; return; }
+    listEl.innerHTML = open.map(([id, r]) => {
+      const members = Object.values(r.members||{}).filter(m=>!m.isBot);
+      const count = members.length;
+      const size = r.teamSize || 3;
+      const full = count >= size * 2;
+      return `<div style="display:flex;align-items:center;justify-content:space-between;background:var(--bg2);border-radius:8px;padding:10px 12px;margin-bottom:8px;gap:8px">
+        <div>
+          <div style="font-weight:700;color:#e74c3c;font-size:13px">${id}</div>
+          <div style="font-size:11px;color:var(--text2);margin-top:2px">${size}v${size} · ${count} 人已加入${r.pvpPts?` · ${r.pvpPts} 屬性點`:''}</div>
+        </div>
+        ${full ? `<button class="btn btn-secondary btn-sm" disabled>已滿</button>`
+               : `<button class="btn btn-danger btn-sm" onclick="requestJoinPvp('${id}')">申請加入</button>`}
+      </div>`;
+    }).join('');
+  } catch(e) { listEl.innerHTML = `<div style="color:var(--red)">載入失敗</div>`; }
+};
+
+window.joinPvpByCode = async () => {
+  const code = document.getElementById('joinPvpCodeInput').value.trim().toUpperCase();
+  const msgEl = document.getElementById('joinPvpCodeMsg');
+  if (!code) { msgEl.textContent = '請輸入代碼'; return; }
+  const snap = await get(ref(db, `rooms/${code}`));
+  if (!snap.exists()) { msgEl.textContent = '找不到此房間'; return; }
+  const room = snap.val();
+  if (!room.isPvp) { msgEl.textContent = '這不是 PVP 房間'; return; }
+  if (room.status !== 'waiting') { msgEl.textContent = '房間已開始'; return; }
+  const cnt = Object.values(room.members||{}).filter(m=>!m.isBot).length;
+  if (cnt >= (room.teamSize||3)*2) { msgEl.textContent = '房間已滿'; return; }
+  closeModal('searchPvpModal');
+  requestJoinPvp(code);
+};
+
+window.requestJoinPvp = async (roomId) => {
+  closeModal('searchPvpModal');
+  G.isPvp = true;
+  G.teamId = roomId;
+  await requestJoinRoom(roomId); // reuse existing join request system
+};
+
+window.doCreatePvp = async () => {
+  let code = document.getElementById('pvpRoomCode').value.trim().toUpperCase();
+  const msgEl  = document.getElementById('createPvpMsg');
+  const size   = parseInt(document.getElementById('pvpTeamSize').value) || 3;
+  const pts    = Math.min(50, Math.max(0, parseInt(document.getElementById('pvpAllocPts').value) || 0));
+  if (!code || code.length < 2) { msgEl.textContent = '請輸入至少 2 字元的代碼'; return; }
+  if (!/^[A-Z0-9]+$/.test(code)) { msgEl.textContent = '代碼只能使用英文字母和數字'; return; }
+  const snap = await get(ref(db, `rooms/${code}`));
+  if (snap.exists()) { msgEl.textContent = '此代碼已被使用'; return; }
+  closeModal('createPvpModal');
+  G.isPvp = true;
+  G.teamId = code;
+  await setupPvpRoom(code, size, pts);
+};
+
+async function setupPvpRoom(code, size, pts) {
+  const rank = getRank(G.player.exp||0);
+  const room = {
+    status: 'waiting', public: true, isPvp: true,
+    teamSize: size, pvpPts: pts,
+    createdAt: Date.now(), leader: G.uid,
+    members: { [G.uid]: { name:G.player.name, uid:G.uid, rankKey:rank.key, rankName:rank.name, isBot:false, ready:false } },
+    teamA: [], teamB: []
+  };
+  await set(ref(db, `rooms/${code}`), room);
+  listenToRoom(code);
+  showPvpWaiting(code, true, size, pts);
+}
+
+function showPvpWaiting(code, isLeader, size, pts) {
+  document.getElementById('matchScreen').classList.remove('hidden');
+  document.getElementById('matchTitle').innerHTML = '<span style="color:#e74c3c">⚔ PVP 等待室</span>';
+  document.getElementById('matchSub').textContent = `房間代碼：${code}`;
+  document.getElementById('matchTimer').textContent = '';
+  document.getElementById('matchSpinner').classList.add('hidden');
+  document.getElementById('matchStatus').textContent = '等待玩家加入...';
+  document.getElementById('pvpPtsDisplay').textContent = pts;
+
+  const friendsHtml = buildWaitingRoomFriendsHtml();
+  if (isLeader) {
+    document.getElementById('pvpSetupPanel').style.display = '';
+    document.getElementById('pvpUnassignedPanel').style.display = '';
+    document.getElementById('matchBtns').innerHTML = `
+      <button class="btn btn-danger" onclick="startPvp('${code}')" id="pvpStartBtn" disabled>開始對戰</button>
+      <button class="btn btn-secondary" onclick="addPvpBot('${code}','A')" style="font-size:12px">＋ 人機到隊A</button>
+      <button class="btn btn-secondary" onclick="addPvpBot('${code}','B')" style="font-size:12px">＋ 人機到隊B</button>
+      <button class="btn btn-danger" onclick="leaveRoom()">解散房間</button>
+      ${friendsHtml}`;
+    listenForJoinRequests(code);
+    renderPvpTeams(code);
+  } else {
+    document.getElementById('pvpSetupPanel').style.display = 'none';
+    document.getElementById('pvpUnassignedPanel').style.display = 'none';
+    document.getElementById('matchBtns').innerHTML = `
+      <div style="font-size:12px;color:var(--text2);margin-bottom:4px">等待房主分配隊伍...</div>
+      <button class="btn btn-danger" onclick="readyPvp('${code}')" id="pvpReadyBtn">準備</button>
+      <button class="btn btn-danger" onclick="leaveRoom()">離開</button>
+      ${friendsHtml}`;
+  }
+  renderMatchTeam();
+  showLobbyChat();
+  setTimeout(populateWaitingRoomFriends, 100);
+}
+
+async function renderPvpTeams(code) {
+  const snap = await get(ref(db, `rooms/${code}`));
+  if (!snap.exists()) return;
+  const room = snap.val();
+  const members = room.members || {};
+  const teamA = room.teamA || [];
+  const teamB = room.teamB || [];
+  const size = room.teamSize || 3;
+  const allMembers = Object.values(members);
+
+  // Unassigned
+  const assignedUids = new Set([...teamA, ...teamB]);
+  const unassigned = allMembers.filter(m => !assignedUids.has(m.uid||m.name));
+
+  const renderSlot = (uid, team) => {
+    const m = allMembers.find(x => (x.uid||x.name) === uid);
+    if (!m) return '';
+    const col = m.isBot ? 'var(--text2)' : getRankColor(m.rankKey||'鐵');
+    return `<div style="display:flex;align-items:center;justify-content:space-between;background:var(--bg2);border-radius:6px;padding:5px 8px;margin-bottom:4px;font-size:12px">
+      <span style="color:${col}">${m.isBot?'🤖':m.ready?'✅':'⏳'} ${m.name}</span>
+      <button class="btn btn-secondary btn-sm" style="padding:1px 6px;font-size:10px" onclick="pvpMovePlayer('${code}','${uid}','${team}','remove')">移出</button>
+    </div>`;
+  };
+
+  const teamAHtml = teamA.map(uid => renderSlot(uid, 'A')).join('') +
+    (teamA.length < size ? `<div style="font-size:11px;color:var(--text3);padding:4px 0">${size - teamA.length} 個空位</div>` : '');
+  const teamBHtml = teamB.map(uid => renderSlot(uid, 'B')).join('') +
+    (teamB.length < size ? `<div style="font-size:11px;color:var(--text3);padding:4px 0">${size - teamB.length} 個空位</div>` : '');
+
+  document.getElementById('pvpTeamGrid').innerHTML = `
+    <div style="background:var(--surface);border:1px solid #4f8ef744;border-radius:10px;padding:10px">
+      <div style="font-weight:700;color:#4f8ef7;margin-bottom:8px;font-size:13px">🔵 隊伍 A</div>
+      ${teamAHtml}
+    </div>
+    <div style="background:var(--surface);border:1px solid #e74c3c44;border-radius:10px;padding:10px">
+      <div style="font-weight:700;color:#e74c3c;margin-bottom:8px;font-size:13px">🔴 隊伍 B</div>
+      ${teamBHtml}
+    </div>`;
+
+  document.getElementById('pvpUnassignedList').innerHTML = unassigned.map(m =>
+    `<div style="display:flex;gap:4px;align-items:center">
+      <span style="font-size:12px;color:var(--text2)">${m.name}</span>
+      <button class="btn btn-primary btn-sm" style="padding:2px 7px;font-size:10px" onclick="pvpMovePlayer('${code}','${m.uid||m.name}','A','add')">→A</button>
+      <button class="btn btn-danger btn-sm" style="padding:2px 7px;font-size:10px" onclick="pvpMovePlayer('${code}','${m.uid||m.name}','B','add')">→B</button>
+    </div>`).join('');
+
+  // Enable start button if both teams full and all ready
+  const allReady = allMembers.filter(m=>!m.isBot).every(m => m.ready || m.uid === G.uid);
+  const teamsValid = teamA.length === size && teamB.length === size;
+  const startBtn = document.getElementById('pvpStartBtn');
+  if (startBtn) startBtn.disabled = !(allReady && teamsValid);
+}
+
+window.pvpMovePlayer = async (code, uid, team, action) => {
+  const snap = await get(ref(db, `rooms/${code}`));
+  if (!snap.exists()) return;
+  const room = snap.val();
+  let teamA = [...(room.teamA||[])];
+  let teamB = [...(room.teamB||[])];
+  const size = room.teamSize || 3;
+  if (action === 'remove') {
+    teamA = teamA.filter(x => x !== uid);
+    teamB = teamB.filter(x => x !== uid);
+  } else {
+    // add to team
+    teamA = teamA.filter(x => x !== uid);
+    teamB = teamB.filter(x => x !== uid);
+    if (team === 'A' && teamA.length < size) teamA.push(uid);
+    else if (team === 'B' && teamB.length < size) teamB.push(uid);
+    else { notify(`隊伍 ${team} 已滿（${size} 人）`, 'err'); return; }
+  }
+  await update(ref(db, `rooms/${code}`), { teamA, teamB });
+  renderPvpTeams(code);
+};
+
+window.addPvpBot = async (code, team) => {
+  const snap = await get(ref(db, `rooms/${code}`));
+  if (!snap.exists()) return;
+  const room = snap.val();
+  const size = room.teamSize || 3;
+  const teamArr = team === 'A' ? [...(room.teamA||[])] : [...(room.teamB||[])];
+  if (teamArr.length >= size) { notify(`隊伍 ${team} 已滿`, 'err'); return; }
+  const botId = `Bot_${Date.now().toString(36)}`;
+  const highExp = Math.max(...Object.values(room.members||{}).map(m => {
+    const r = RANKS.findIndex(x => x.key === m.rankKey); return r >= 0 ? RANKS[r].exp : 0;
+  }), 0);
+  const bs = botStats(0, highExp);
+  const mems = { ...(room.members||{}), [botId]: { name:`人機`, uid:botId, rankKey:bs.rankKey, rankName:bs.rankName, isBot:true, ready:true }};
+  const update_ = { members: mems };
+  update_[team === 'A' ? 'teamA' : 'teamB'] = [...teamArr, botId];
+  await update(ref(db, `rooms/${code}`), update_);
+  renderPvpTeams(code);
+};
+
+window.readyPvp = async (code) => {
+  await update(ref(db, `rooms/${code}/members/${G.uid}`), { ready: true });
+  document.getElementById('pvpReadyBtn').disabled = true;
+  document.getElementById('pvpReadyBtn').textContent = '已準備';
+  notify('已準備！等待房主開始', 'ok');
+};
+
+window.startPvp = async (code) => {
+  const snap = await get(ref(db, `rooms/${code}`));
+  if (!snap.exists()) return;
+  const room = snap.val();
+  const size = room.teamSize || 3;
+  if ((room.teamA||[]).length !== size || (room.teamB||[]).length !== size) {
+    notify('雙方隊伍人數未達標', 'err'); return;
+  }
+  await update(ref(db, `rooms/${code}`), { status: 'starting' });
+};
+
+// listenToRoom already calls startGameFromRoom on status==='starting'
+// startGameFromRoom will call initPvp for pvp rooms
+
+async function initPvp(room, roomId) {
+  const members = room.members || {};
+  const teamA = room.teamA || [];
+  const teamB = room.teamB || [];
+  const pvpPts = room.pvpPts || 0;
+
+  const realMems = Object.values(members).filter(m => !m.isBot);
+  const hostUid = realMems[0]?.uid || G.uid;
+  const iAmHost = hostUid === G.uid;
+
+  // Load skills for real players
+  const skillsMap = {};
+  await Promise.all(realMems.map(async m => {
+    const uid = m.uid||m.name;
+    try { const s = await get(ref(db,`players/${uid}/skills`)); skillsMap[uid] = s.exists()?(s.val()||{}):{};} catch(e){skillsMap[uid]={};}
+  }));
+
+  const buildFighter = (uid, isPvpEnemy) => {
+    const m = members[uid];
+    if (!m) return null;
+    if (m.isBot) {
+      const botR = RANKS[RANKS.findIndex(r=>r.key===m.rankKey)] || RANKS[0];
+      return { name:m.name, uid, isBot:true, isMe:false, isPvpEnemy,
+        hp:botR.hp, maxHp:botR.hp, atk:botR.atk, def:botR.def,
+        rankKey:botR.key, rankName:botR.name, skills:{}, allocDone: pvpPts===0,
+        pvpPts, allocExtra:{hp:0,atk:0,def:0}, equippedItems:{} };
+    }
+    const rankDef = RANKS[RANKS.findIndex(r=>r.key===m.rankKey)] || RANKS[0];
+    const isMe = m.uid === G.uid;
+    return { name:m.name, uid:m.uid, isBot:false, isMe, isPvpEnemy,
+      hp:rankDef.hp, maxHp:rankDef.hp, atk:rankDef.atk, def:rankDef.def,
+      rankKey:m.rankKey, rankName:m.rankName,
+      skills: isMe ? (G.player.skills||{}) : (skillsMap[m.uid]||{}),
+      allocDone: pvpPts===0, pvpPts, allocExtra:{hp:0,atk:0,def:0}, equippedItems:{} };
+  };
+
+  // Determine which team current player is on
+  const myTeam = teamA.includes(G.uid) ? 'A' : 'B';
+  const myTeamUids  = myTeam === 'A' ? teamA : teamB;
+  const foeTeamUids = myTeam === 'A' ? teamB : teamA;
+
+  const team    = myTeamUids.map(uid => buildFighter(uid, false)).filter(Boolean);
+  const enemies = foeTeamUids.map(uid => buildFighter(uid, true)).filter(Boolean);
+
+  // Load equipment onto self
+  const me = team.find(m => m.isMe);
+  if (me) loadEquipmentOntoFighter(me);
+
+  G.gameState = {
+    stage:1, team, enemies, currentTurn:0, turnOrder:[],
+    battleActive:false, roomId, pendingAlloc:true, log:[],
+    selectedEnemy:-1, isHost:iAmHost, hostName:hostUid,
+    roundNum:1, startStage:1, isPvp:true, pvpPts,
+    myTeam, teamA, teamB
+  };
+  if (iAmHost) set(ref(db,`rooms/${roomId}/host`), G.uid);
+  document.getElementById('gameScreen').classList.remove('hidden');
+  startPvpStage(pvpPts);
+}
+
+function startPvpStage(pvpPts) {
+  const gs = G.gameState;
+  gs.pendingAlloc = true;
+  gs.log = [];
+  gs._phoenixCount = {};
+  resetJobState(gs);
+  // Reset per-stage state for all
+  gs.team.forEach(m => { if(m.isBot) m.botJobUsedThisStage=false; });
+
+  document.getElementById('gameStageText').textContent = '⚔ PVP 對戰';
+  document.getElementById('gameStageSub').textContent = '選擇職業';
+  document.getElementById('allocPanel').classList.add('hidden');
+  document.getElementById('battleSection').classList.add('hidden');
+  document.getElementById('resultOverlay').classList.add('hidden');
+  document.getElementById('pvpResultOverlay').classList.add('hidden');
+  document.getElementById('jobSelectPanel').style.display = 'none';
+
+  const myMem = gs.team.find(m => m.isMe);
+  if (myMem) { myMem.allocExtra={hp:0,atk:0,def:0}; myMem.allocDone = pvpPts===0; }
+  // Bots auto-alloc
+  gs.team.filter(m=>m.isBot).forEach(m => {
+    if (pvpPts > 0) {
+      const extra = rollMonsterStats(pvpPts, 5);
+      m.hp += extra.hp; m.maxHp += extra.hp; m.atk += extra.atk; m.def += extra.def;
+    }
+    m.allocDone = true;
+  });
+  gs.enemies.filter(m=>m.isBot).forEach(m => {
+    if (pvpPts > 0) {
+      const extra = rollMonsterStats(pvpPts, 5);
+      m.hp += extra.hp; m.maxHp += extra.hp; m.atk += extra.atk; m.def += extra.def;
+    }
+    m.allocDone = true;
+  });
+
+  gs._pvpAllocPts = pvpPts;
+  showJobSelect();
+}
+
+function showPvpResult(win) {
+  const gs = G.gameState;
+  gs.battleActive = false;
+  const overlay = document.getElementById('pvpResultOverlay');
+  const titleEl  = document.getElementById('pvpResultTitle');
+  const rewardsEl= document.getElementById('pvpResultRewards');
+  overlay.classList.remove('hidden');
+  if (win) {
+    titleEl.textContent = '🏆 勝利！';
+    titleEl.className = 'result-title result-win';
+    rewardsEl.innerHTML = `獲得 <span class="gold">100</span> 金幣`;
+    awardRewards(0, 100);
+  } else {
+    titleEl.textContent = '💀 落敗...';
+    titleEl.className = 'result-title result-lose';
+    rewardsEl.innerHTML = `獲得 <span class="gold">50</span> 金幣（安慰獎）`;
+    awardRewards(0, 50);
+  }
+}
+
+window.exitPvp = async () => {
+  document.getElementById('pvpResultOverlay').classList.add('hidden');
+  document.getElementById('gameScreen').classList.add('hidden');
+  document.getElementById('resultOverlay').classList.add('hidden');
+  hideGameChat();
+  G.isPvp = false;
+  const tid = G.teamId;
+  if (tid) {
+    for (const key of ['alloc','presence','battle','battleLog','nextStage','actions','joinRequests']) {
+      try { if(G.listeners[key]) off(ref(db,`rooms/${tid}/${key.replace('gameMembers','presence')}`)); } catch(e){}
+      G.listeners[key] = null;
+    }
+    try { await remove(ref(db,`rooms/${tid}`)); } catch(e){}
+    G.teamId = null;
+  }
+  G.gameState = null;
+  switchTab('play');
+};
+
 // ===== EXPOSE ALL ONCLICK HANDLERS TO GLOBAL SCOPE =====
 // Required because <script type="module"> is scoped — onclick= can't find module-local functions
 window.closeModal        = (id) => document.getElementById(id).classList.add('hidden');
@@ -4931,6 +5399,17 @@ window.equipDroppedItem  = equipDroppedItem;
 window.exitDungeon       = exitDungeon;
 window.showPlayerProfile = showPlayerProfile;
 window.selectBotJob      = selectBotJob;
+window.showCreatePvp     = showCreatePvp;
+window.showSearchPvp     = showSearchPvp;
+window.loadOpenPvpRooms  = loadOpenPvpRooms;
+window.joinPvpByCode     = joinPvpByCode;
+window.requestJoinPvp    = requestJoinPvp;
+window.doCreatePvp       = doCreatePvp;
+window.pvpMovePlayer     = pvpMovePlayer;
+window.addPvpBot         = addPvpBot;
+window.readyPvp          = readyPvp;
+window.startPvp          = startPvp;
+window.exitPvp           = exitPvp;
 window.confirmBotJob     = confirmBotJob;
 window.skipBotJob        = skipBotJob;
 </script>
