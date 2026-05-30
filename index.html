@@ -720,6 +720,8 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
         <option value="6">第 6 關</option>
         <option value="7">第 7 關</option>
         <option value="8">第 8 關</option>
+        <option value="9">第 9 關</option>
+        <option value="10">第 10 關</option>
       </select>
     </div>
     <div id="createTeamMsg" style="font-size:12px;color:var(--red);margin-top:4px"></div>
@@ -818,14 +820,16 @@ const RANKS = [
   {name:'星岩',key:'岩',exp:100000000000,    hp:300,atk:18, def:18}
 ];
 const STAGE_CONFIG = [
-  {stage:1,playerPts:10,monsterPts:10,exp:100,gold:100},
-  {stage:2,playerPts:5,monsterPts:16,exp:250,gold:300},
-  {stage:3,playerPts:5,monsterPts:22,exp:500,gold:650},
-  {stage:4,playerPts:10,monsterPts:35,exp:1500,gold:2500},
-  {stage:5,playerPts:10,monsterPts:50,exp:5000,gold:9000},
-  {stage:6,playerPts:10,monsterPts:70,exp:10000,gold:20000},
-  {stage:7,playerPts:10,monsterPts:90,exp:35000,gold:80000},
-  {stage:8,playerPts:10,monsterPts:120,exp:90000,gold:200000}
+  {stage:1,playerPts:10,monsterPts:10, exp:100,   gold:100},
+  {stage:2,playerPts:5, monsterPts:16, exp:250,   gold:300},
+  {stage:3,playerPts:5, monsterPts:22, exp:500,   gold:650},
+  {stage:4,playerPts:10,monsterPts:35, exp:1500,  gold:2500},
+  {stage:5,playerPts:10,monsterPts:50, exp:5000,  gold:9000},
+  {stage:6,playerPts:10,monsterPts:70, exp:10000, gold:20000},
+  {stage:7,playerPts:10,monsterPts:90, exp:35000, gold:80000},
+  {stage:8,playerPts:10,monsterPts:120,exp:90000, gold:200000},
+  {stage:9,playerPts:10,monsterPts:180,exp:200000,gold:500000},
+  {stage:10,playerPts:10,monsterPts:270,exp:500000,gold:1200000}
 ];
 const SKILLS_DEF = [
   {id:'反傷',   name:'反傷',   desc:'受到傷害時，將傷害的5%返還給攻擊者（最低1點）。每升1級+7%。',                                  baseCost:1000,  maxLvOverride:null, costMult:15},
@@ -1857,7 +1861,7 @@ function showRoomWaiting(code, isLeader, startStageNum) {
         開始關卡：
         <select id="roomStartStageSelect" style="background:var(--bg2);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:4px 8px"
           onchange="updateRoomStartStage('${code}',this.value)">
-          ${[1,2,3,4,5,6,7,8].map(i=>`<option value="${i}" ${i===startStageNum?'selected':''}>${i===1?'第 '+i+' 關（預設）':'第 '+i+' 關'}</option>`).join('')}
+          ${[1,2,3,4,5,6,7,8,9,10].map(i=>`<option value="${i}" ${i===startStageNum?'selected':''}>${i===1?'第 '+i+' 關（預設）':'第 '+i+' 關'}</option>`).join('')}
         </select>
       </div>`;
     document.getElementById('matchBtns').innerHTML = `
@@ -4626,6 +4630,7 @@ window.equipItem         = equipItem;
 window.unequipItem       = unequipItem;
 window.equipDroppedItem  = equipDroppedItem;
 window.exitDungeon       = exitDungeon;
+window.showPlayerProfile = showPlayerProfile;
 </script>
 </body>
 </html>
