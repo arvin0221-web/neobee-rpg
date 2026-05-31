@@ -1010,7 +1010,7 @@ const DUNGEON_BOSS = [
 ];
 
 // Player attribute points given before dungeon per rank
-const DUNGEON_PLAYER_PTS = [5,10,15,20,25,30,35,40,45,50];
+const DUNGEON_PLAYER_PTS = [5,10,14,17,20,23,26,29,30,30];
 
 function rollRarity() {
   const total = RARITIES.reduce((s,r) => s + r.weight, 0);
@@ -3086,6 +3086,12 @@ function calcSingleHit(attacker, defender) {
     }
   }
 
+  // Boss 狂暴：第八關(rankIdx>=7)且血量低於50%，傷害+50%
+  if (attacker.isDungeonBoss && (attacker.rankIdx||0) >= 7 &&
+      attacker.maxHp > 0 && attacker.hp / attacker.maxHp < 0.5) {
+    dmg = Math.round(dmg * 1.5);
+  }
+
   if (dmg < 1) dmg = 1;
   return { dmg, isCrit };
 }
@@ -3464,6 +3470,13 @@ function hostPerformAttack(attacker, defender, isSlash) {
   // Dungeon boss: randomize def each hit
   if (defender.isDungeonBoss) {
     defender.def = Math.floor(Math.random() * (defender.defMax - defender.defMin + 1)) + defender.defMin;
+  }
+  // Boss berserk warning log (first time entering berserk per battle)
+  if (attacker.isDungeonBoss && (attacker.rankIdx||0) >= 7 &&
+      attacker.maxHp > 0 && attacker.hp / attacker.maxHp < 0.5 &&
+      !attacker._berserkLogged) {
+    attacker._berserkLogged = true;
+    addLog(`<span style="color:#ef4444;font-weight:900">💢 Boss 進入狂暴狀態！傷害提升 50%！</span>`);
   }
   const { dmg, isCrit, isDouble, dmg2, isCrit2 } = calcDamage(attacker, defender);
   const brutish = isBrutishActive(attacker);
@@ -4131,10 +4144,12 @@ function renderBattle() {
     const enemyRankColor = isPvpEnemy ? getRankColor(e.rankKey||'鐵') : 'var(--text2)';
     const enemyIcon = isPvpEnemy ? (e.isBot ? '🤖' : '👤') : '👾';
     const jobIcon = isPvpEnemy && e.job ? ` ${JOBS_DEF.find(j=>j.id===e.job)?.icon||''}` : '';
-    ePanel.innerHTML += `<div class="fighter-card enemy ${e.hp>0?'alive':'dead'} ${isActive?'active-turn':''} ${isSelected?'target-selected':''}" id="fc-enemy-${i}" style="position:relative" onclick="clickEnemy(${i})">
+    const isBerserk = e.isDungeonBoss && (e.rankIdx||0) >= 7 && e.maxHp > 0 && e.hp/e.maxHp < 0.5;
+    const berserkTag = isBerserk ? '<span style="color:#ef4444;font-size:10px;font-weight:900;margin-left:4px">💢狂暴</span>' : '';
+    ePanel.innerHTML += `<div class="fighter-card enemy ${e.hp>0?'alive':'dead'} ${isActive?'active-turn':''} ${isSelected?'target-selected':''} ${isBerserk?'berserk-border':''}" id="fc-enemy-${i}" style="position:relative${isBerserk?';border-color:#ef4444;box-shadow:0 0 10px #ef444466':''}" onclick="clickEnemy(${i})">
       <div class="fx-overlay" id="fx-enemy-${i}"></div>
       <div class="fighter-name">
-        <span style="color:${enemyRankColor}">${enemyIcon} ${e.name}${jobIcon}</span>
+        <span style="color:${enemyRankColor}">${enemyIcon} ${e.name}${jobIcon}${berserkTag}</span>
         ${e.hp>0?'<span style="font-size:10px;color:var(--text3)">點擊攻擊</span>':'<span style="font-size:10px;color:var(--red)">已擊敗</span>'}
       </div>
       <div class="hp-bar"><div class="hp-fill ${hpClass}" style="width:${hpPct}%"></div></div>
