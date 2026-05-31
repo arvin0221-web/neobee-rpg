@@ -2526,6 +2526,7 @@ function sendSkillRequest(jobId, targetIdx) {
   const gs = G.gameState;
   push(ref(db, `rooms/${gs.roomId}/actions`), {
     type: 'skillRequest',
+    uid: G.uid,
     from: G.player.name,
     jobId,
     targetIdx: targetIdx ?? -1,
@@ -2699,7 +2700,8 @@ function processSkillRequest(ev) {
   const t = gs.turnOrder[gs.currentTurn];
   if (!t || t.type !== 'team') return;
   const actor = gs.team[t.i];
-  if (!actor || actor.name !== ev.from) return; // must be their turn
+  const isCorrectSkill = ev.uid ? (actor.uid === ev.uid) : (actor.name === ev.from);
+  if (!actor || !isCorrectSkill) return; // must be their turn
   gs.waitingForPlayer = false;
   executeActiveSkill(actor, ev.targetIdx >= 0 ? ev.targetIdx : null);
   // executeActiveSkill now handles turn advancement
@@ -3066,11 +3068,14 @@ window.clickEnemy = (i) => {
   document.getElementById('battleHint').textContent = '';
 
   if (isHost()) {
+    const turnBefore = gs.currentTurn;
     hostPerformAttack(actor, enemy, true);
-    gs.currentTurn++;
-    renderBattle();
-    writeBattleState();
-    if (!hostCheckBattleEnd()) setTimeout(() => hostProcessNextTurn(), 500);
+    if (gs.currentTurn === turnBefore) {
+      gs.currentTurn++;
+      renderBattle();
+      writeBattleState();
+      if (!hostCheckBattleEnd()) setTimeout(() => hostProcessNextTurn(), 500);
+    }
   } else {
     sendActionRequest(i);
     document.getElementById('battleHint').textContent = '攻擊中...';
@@ -3399,6 +3404,7 @@ function sendActionRequest(enemyIdx) {
   const gs = G.gameState;
   push(ref(db, `rooms/${gs.roomId}/actions`), {
     type: 'actionRequest',
+    uid: G.uid,
     from: G.player.name,
     enemyIdx,
     ts: Date.now()
@@ -3427,15 +3433,19 @@ function processActionRequest(ev) {
   const t = gs.turnOrder[gs.currentTurn];
   if (!t || t.type !== 'team') return;
   const actor = gs.team[t.i];
-  if (!actor || actor.name !== ev.from) return; // not their turn
+  const isCorrect = ev.uid ? (actor.uid === ev.uid) : (actor.name === ev.from);
+  if (!actor || !isCorrect) return; // not their turn
   const enemy = gs.enemies[ev.enemyIdx];
   if (!enemy || enemy.hp <= 0) return;
   gs.waitingForPlayer = false;
+  const turnBefore = gs.currentTurn;
   hostPerformAttack(actor, enemy, true);
-  gs.currentTurn++;
-  if (!hostCheckBattleEnd()) {
-    writeBattleState();
-    setTimeout(() => hostProcessNextTurn(), 500);
+  if (gs.currentTurn === turnBefore) {
+    gs.currentTurn++;
+    if (!hostCheckBattleEnd()) {
+      writeBattleState();
+      setTimeout(() => hostProcessNextTurn(), 500);
+    }
   }
 }
 
@@ -3676,7 +3686,7 @@ function hostProcessNextTurn() {
 
   if (!actor || actor.hp <= 0) {
     gs.currentTurn++;
-    hostProcessNextTurn();
+    setTimeout(() => hostProcessNextTurn(), 0);
     return;
   }
 
@@ -3752,11 +3762,14 @@ function hostProcessNextTurn() {
       }
 
       const target = targets[Math.floor(Math.random() * targets.length)];
+      const botTurnBefore = gs.currentTurn;
       hostPerformAttack(actor, target, false);
-      gs.currentTurn++;
-      renderBattle();
-      writeBattleState();
-      if (!hostCheckBattleEnd()) setTimeout(() => hostProcessNextTurn(), 700);
+      if (gs.currentTurn === botTurnBefore) {
+        gs.currentTurn++;
+        renderBattle();
+        writeBattleState();
+        if (!hostCheckBattleEnd()) setTimeout(() => hostProcessNextTurn(), 700);
+      }
     }, 800);
   }
 }
@@ -5311,6 +5324,7 @@ async function initPvp(room, roomId) {
   // Load equipment onto self
   const me = team.find(m => m.isMe);
   if (me) loadEquipmentOntoFighter(me);
+  await loadTeammateEquipment(team);
 
   G.gameState = {
     stage:1, team, enemies, currentTurn:0, turnOrder:[],
