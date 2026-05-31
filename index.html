@@ -1067,6 +1067,7 @@ window.G = {
   currentTab: 'home',
   matchRef: null,
   matchTimer: null,
+  _lbPlayerCache: {},
   matchCountdown: null,
   teamId: null,
   teamRef: null,
@@ -1216,7 +1217,8 @@ window.doRegister = async () => {
 window.doLogout = async () => {
   if (G.uid) remove(ref(db, `online/${G.uid}`));
   cleanupListeners();
-  if (G.listeners.myFriends) { try { off(ref(db, `friends/${G.uid}`)); } catch(e){} G.listeners.myFriends = null; }
+  if (G.listeners.myFriends)    { try { off(ref(db, `friends/${G.uid}`)); } catch(e){} G.listeners.myFriends = null; }
+  if (G.listeners.friendAccepted) { try { off(ref(db, `friendAccepted/${G.uid}`)); } catch(e){} G.listeners.friendAccepted = null; }
   G.uid = null; G.player = null;
   await signOut(auth);
   document.getElementById('mainScreen').classList.add('hidden');
@@ -1255,6 +1257,18 @@ function enterMain() {
   G.listeners.myFriends = onValue(myFriendsRef, snap => {
     G.player.friends = snap.exists() ? snap.val() : {};
     if (G.currentTab === 'friends') renderFriends();
+  });
+  // Listen for friend accepted notifications (sender's side)
+  const myAcceptedRef = ref(db, `friendAccepted/${G.uid}`);
+  if (G.listeners.friendAccepted) { try { off(myAcceptedRef); } catch(e){} }
+  G.listeners.friendAccepted = onValue(myAcceptedRef, async snap => {
+    if (!snap.exists()) return;
+    const accepted = snap.val();
+    // For each acceptor, write to our own friends node and delete the notification
+    for (const [acceptorUid] of Object.entries(accepted)) {
+      await set(ref(db, `friends/${G.uid}/${acceptorUid}`), true);
+      await remove(ref(db, `friendAccepted/${G.uid}/${acceptorUid}`));
+    }
   });
   updateUI();
   setupGlobalChat();
@@ -1566,11 +1580,11 @@ window.addFriend = async () => {
 };
 
 window.acceptFriend = async (fromUid) => {
-  // Write to dedicated friends node — each side writes only their own entry
+  // Only write to OUR OWN friends node (security rules forbid writing to others')
   await set(ref(db, `friends/${G.uid}/${fromUid}`), true);
-  await set(ref(db, `friends/${fromUid}/${G.uid}`), true);
+  // Notify the sender via friendAccepted so they can add us themselves
+  await set(ref(db, `friendAccepted/${fromUid}/${G.uid}`), { name: G.player.name, ts: Date.now() });
   await remove(ref(db, `friendRequests/${G.uid}/${fromUid}`));
-  // G.player.friends is updated automatically via the onValue listener in enterMain
   notify('已成為好友！', 'ok');
 };
 
@@ -1591,7 +1605,18 @@ window.loadLeaderboard = async () => {
   try {
     const snap = await get(ref(db, 'players'));
     const data = snap.val() || {};
-    const arr = Object.values(data).sort((a,b) => (b.exp||0) - (a.exp||0));
+    // Cache all player basic data for profile fallback (handles legacy accounts missing uid field)
+    G._lbPlayerCache = {};
+    Object.entries(data).forEach(([uid, p]) => {
+      G._lbPlayerCache[uid] = p;
+      // Ensure uid field exists in cache even if missing from DB
+      if (!G._lbPlayerCache[uid].uid) G._lbPlayerCache[uid].uid = uid;
+    });
+    const arr = Object.values(data).map((p, _, arr2) => {
+      // Inject uid from key if missing
+      const uid = Object.keys(data)[Object.values(data).indexOf(p)];
+      return { ...p, uid: p.uid || uid };
+    }).sort((a,b) => (b.exp||0) - (a.exp||0));
     if (arr.length === 0) {
       document.getElementById('lbList').innerHTML = '<div style="text-align:center;color:var(--text2);padding:20px">尚無玩家資料</div>';
       return;
@@ -4913,11 +4938,17 @@ window.showPlayerProfile = async (uid) => {
 
   try {
     const snap = await get(ref(db, `players/${uid}`));
-    if (!snap.exists()) {
-      bodyEl.innerHTML = '<div style="color:var(--red)">找不到玩家資料</div>';
+    // Legacy accounts may not have players/{uid} node; fall back to leaderboard cache
+    let p;
+    if (snap.exists()) {
+      p = snap.val();
+      if (!p.uid) p.uid = uid; // ensure uid field
+    } else if (G._lbPlayerCache && G._lbPlayerCache[uid]) {
+      p = { ...G._lbPlayerCache[uid], uid };
+    } else {
+      bodyEl.innerHTML = '<div style="color:var(--text2);font-size:13px">此玩家資料不完整或已刪除</div>';
       return;
     }
-    const p = snap.val();
     const rank = getRank(p.exp || 0);
     const rankColor = getRankColor(rank.key);
 
