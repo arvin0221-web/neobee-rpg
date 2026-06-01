@@ -978,22 +978,44 @@ const RARITIES = [
 ];
 
 // 裝備模板：每個等級基礎值（index 0=Lv1 ~ 9=Lv10）
+// 每個 slot 有多件裝備，rollEquipItem 會隨機選一件
 const EQ_TEMPLATES = {
-  weapon: {
-    id:'weapon', name:'電刀', icon:'⚡', slot:'weapon',
-    desc: lv => `每次攻擊會讓其餘存活敵人受到原傷害 ${[3,6,10,13,16,20,23,26,30,34][lv-1]}% 的傷害`,
-    baseVals: [3,6,10,13,16,20,23,26,30,34],  // splash % per level
-  },
-  armor: {
-    id:'armor', name:'天使聖鎧', icon:'😇', slot:'armor',
-    desc: lv => `每次受到攻擊有 ${[0.5,1,1.5,2,2.5,3,3.5,4,4.5,5][lv-1]}% 機率恢復已損失血量的 60%`,
-    baseVals: [0.5,1,1.5,2,2.5,3,3.5,4,4.5,5],  // heal chance %
-  },
-  trinket: {
-    id:'trinket', name:'心臟炸藥', icon:'💣', slot:'trinket',
-    desc: lv => `死亡時對所有敵人造成最大血量 ${[5,10,15,20,25,30,35,40,45,50][lv-1]}% 的傷害（扣除對方防禦）`,
-    baseVals: [5,10,15,20,25,30,35,40,45,50],  // death dmg %
-  }
+  weapon: [
+    {
+      id:'weapon_blade', name:'電刀', icon:'⚡', slot:'weapon',
+      desc: lv => `每次攻擊會讓其餘存活敵人受到原傷害 ${[3,6,10,13,16,20,23,26,30,34][lv-1]}% 的傷害`,
+      baseVals: [3,6,10,13,16,20,23,26,30,34],
+    },
+    {
+      id:'weapon_sickle', name:'赤血鐮刀', icon:'🩸', slot:'weapon',
+      desc: lv => `每次攻擊若造成 2 以上傷害，恢復傷害量的 ${[7,15,23,30,38,45,53,60,67,75][lv-1]}%`,
+      baseVals: [7,15,23,30,38,45,53,60,67,75],
+    },
+  ],
+  armor: [
+    {
+      id:'armor_angel', name:'天使聖鎧', icon:'😇', slot:'armor',
+      desc: lv => `每次受到攻擊有 ${[0.5,1,1.5,2,2.5,3,3.5,4,4.5,5][lv-1]}% 機率恢復已損失血量的 60%`,
+      baseVals: [0.5,1,1.5,2,2.5,3,3.5,4,4.5,5],
+    },
+    {
+      id:'armor_curse', name:'詛咒妖巫藤甲', icon:'🌿', slot:'armor',
+      desc: lv => `每關第 10 次攻擊永久減少目標 ${[4,7,10,13,16,20,23,26,30,33][lv-1]}% 攻擊（Boss 模式最多 -10%）`,
+      baseVals: [4,7,10,13,16,20,23,26,30,33],
+    },
+  ],
+  trinket: [
+    {
+      id:'trinket_bomb', name:'心臟炸藥', icon:'💣', slot:'trinket',
+      desc: lv => `死亡時對所有敵人造成最大血量 ${[5,10,15,20,25,30,35,40,45,50][lv-1]}% 的傷害（扣除對方防禦）`,
+      baseVals: [5,10,15,20,25,30,35,40,45,50],
+    },
+    {
+      id:'trinket_ring', name:'爆擊指環', icon:'💍', slot:'trinket',
+      desc: lv => `爆擊技能的爆擊機率額外 +${[4,8,12,16,20,24,28,32,36,40][lv-1]}%（上限 100%）`,
+      baseVals: [4,8,12,16,20,24,28,32,36,40],
+    },
+  ]
 };
 
 // Boss stats per rank (index 0=黑鐵 ~ 9=星岩)
@@ -1027,13 +1049,16 @@ function rollEquipItem(rankIdx) {
   const rarity = rollRarity();
   const slots = ['weapon','armor','trinket'];
   const slotId = slots[Math.floor(Math.random() * 3)];
-  const tmpl = EQ_TEMPLATES[slotId];
+  const tmplArr = EQ_TEMPLATES[slotId];
+  // Pick random template from the slot's array
+  const tmpl = tmplArr[Math.floor(Math.random() * tmplArr.length)];
   // Equipment level = rank index + 1 (Lv1~10)
   const lv = rankIdx + 1;
   const baseVal = tmpl.baseVals[lv-1];
   const finalVal = Math.round(baseVal * rarity.mult * 10) / 10;
   return {
     uid: Date.now().toString(36) + Math.random().toString(36).slice(2,6),
+    templateId: tmpl.id,
     slot: slotId,
     name: tmpl.name,
     icon: tmpl.icon,
@@ -2588,8 +2613,9 @@ function executeActiveSkill(actor, targetIdx) {
     addLog(`🗡 <span style="color:#a855f7">${actor.name}</span> 必殺！無視全部防禦，對 ${target.name} 造成 <span class="red">${dmg}</span>${isCrit?' <span class="gold">爆擊！</span>':''}${dying?' 💀':''}`);
     // 反傷
     applyThorns(target, actor, dmg, defIsEnemy, defIdx, false, gs.team.indexOf(actor));
-    // 電刀 splash
     if (!actor.isBot && !actor.isMonster) applyWeaponSplash(actor, target, dmg);
+    if (!actor.isBot && !actor.isMonster) applySickleHeal(actor, dmg);
+    if (!actor.isBot && !actor.isMonster) applyCurseArmor(actor, target, defIsEnemy, defIdx);
     writeBattleEvent({ type:'attack', attIsEnemy:false, attIdx:gs.team.indexOf(actor), defIsEnemy, defIdx, dmg, isCrit, isSlash:true, slashColor: brutish?'red':'#a855f7', dying });
     requestAnimationFrame(() => {
       const fxEl = getFxEl(defIsEnemy, defIdx);
@@ -2709,9 +2735,10 @@ function processSkillRequest(ev) {
 
 function resetJobState(gs) {
   gs.team.forEach(m => { m.activeUsed = 0; });
-  gs._silenced     = {};
+  gs._silenced       = {};
   gs._frozenThisRound = 0;
-  gs._targetingSkill = null;
+  gs._targetingSkill  = null;
+  gs._hitCount        = {};  // 詛咒妖巫藤甲：每關攻擊次數 per attacker uid
 }
 
 function getShieldTankIdx(gs) {
@@ -3101,7 +3128,11 @@ function calcSingleHit(attacker, defender) {
   // 爆擊
   const critLv = (attacker.skills||{})['爆擊'] || 0;
   if (critLv > 0) {
-    const critChance = 10 + (critLv - 1) * 5;
+    const baseCritChance = 10 + (critLv - 1) * 5;
+    // 爆擊指環：額外爆擊機率
+    const ringItem = attacker.equippedItems?.trinket;
+    const ringBonus = (ringItem?.templateId === 'trinket_ring') ? ringItem.val : 0;
+    const critChance = Math.min(100, baseCritChance + ringBonus);
     const critMult  = 120 + (critLv - 1) * 5;
     if (Math.random() * 100 < critChance) {
       dmg = Math.round(dmg * critMult / 100);
@@ -3197,20 +3228,24 @@ function writeBattleState() {
   if (!isHost()) return;
   const gs = G.gameState;
 
-  // Find who we're waiting for — must be the ACTUAL current actor, not "isMe"
+  // Use uid for precise identity matching
   let waitingFor = null;
+  let waitingForName = null;
   if (gs.waitingForPlayer && gs.turnOrder && gs.currentTurn < gs.turnOrder.length) {
     const t = gs.turnOrder[gs.currentTurn];
     if (t && t.type === 'team') {
       const actor = gs.team[t.i];
-      if (actor && !actor.isBot) waitingFor = actor.name;
+      if (actor && !actor.isBot) {
+        waitingFor     = actor.uid || actor.name;
+        waitingForName = actor.name;
+      }
     }
   }
 
   const state = {
     stage: gs.stage,
     team: gs.team.map(m => ({
-      name: m.name, isBot: m.isBot||false,
+      name: m.name, uid: m.uid||null, isBot: m.isBot||false,
       hp: m.hp, maxHp: m.maxHp, atk: m.atk, def: m.def,
       rankKey: m.rankKey||'鐵', rankName: m.rankName||'黑鐵',
       skills: m.skills||{}, allocDone: m.allocDone||false, dead: m.hp<=0,
@@ -3218,14 +3253,19 @@ function writeBattleState() {
     })),
     enemies: gs.enemies.map(e => ({
       name: e.name, hp: e.hp, maxHp: e.maxHp,
-      atk: e.atk, def: e.def, skills: e.skills||{}, dead: e.hp<=0
+      atk: e.atk, def: e.def, skills: e.skills||{}, dead: e.hp<=0,
+      isDungeonBoss: e.isDungeonBoss||false, rankIdx: e.rankIdx||0,
+      defMin: e.defMin||0, defMax: e.defMax||0
     })),
     currentTurnIdx: gs.currentTurn,
     turnOrder: gs.turnOrder,
     battleActive: gs.battleActive,
     pendingAlloc: gs.pendingAlloc,
-    waitingFor,
+    waitingFor, waitingForName,
     roundNum: gs.roundNum || 1,
+    silenced: gs._silenced || {},
+    frozenThisRound: gs._frozenThisRound || 0,
+    hitCount: gs._hitCount || {},
     ts: Date.now()
   };
   set(ref(db, `rooms/${gs.roomId}/battle`), state);
@@ -3351,6 +3391,9 @@ function applyBattleState(state) {
   gs.turnOrder      = state.turnOrder  || gs.turnOrder;
   gs.currentTurn    = state.currentTurnIdx ?? 0;
   gs.roundNum       = state.roundNum   || 1;
+  if (state.silenced !== undefined)      gs._silenced      = state.silenced;
+  if (state.frozenThisRound !== undefined) gs._frozenThisRound = state.frozenThisRound;
+  if (state.hitCount !== undefined)      gs._hitCount      = state.hitCount;
 
   // Make sure battle section is visible for non-host
   if (state.battleActive) {
@@ -3364,7 +3407,9 @@ function applyBattleState(state) {
   const t = gs.turnOrder ? gs.turnOrder[gs.currentTurn] : null;
   const actor = t ? (t.type === 'team' ? gs.team[t.i] : gs.enemies[t.i]) : null;
 
-  if (state.waitingFor === G.player.name) {
+  const isMyTurnNow = state.waitingFor &&
+    (state.waitingFor === G.uid || state.waitingFor === G.player?.name);
+  if (isMyTurnNow) {
     gs.waitingForPlayer = true;
     buildActiveSkillBar();
     document.getElementById('battleHint').innerHTML = '⚔️ <strong>輪到你！點擊右側任意敵人發起攻擊，或使用主動技能</strong>';
@@ -3372,7 +3417,7 @@ function applyBattleState(state) {
   } else if (state.waitingFor) {
     gs.waitingForPlayer = false;
     document.getElementById('battleHint').textContent = '';
-    document.getElementById('turnIndicator').textContent = `等待 ${state.waitingFor} 攻擊...`;
+    document.getElementById('turnIndicator').textContent = `等待 ${state.waitingForName || state.waitingFor} 攻擊...`;
   } else {
     gs.waitingForPlayer = false;
     document.getElementById('battleHint').textContent = '';
@@ -3554,6 +3599,8 @@ function hostPerformAttack(attacker, defender, isSlash) {
         dmg: dmg2, isCrit: isCrit2, isSlash: true, slashColor, dying: dying2 && !saved2 });
       applyThorns(defender, attacker, dmg2, defIsEnemy, defIdx, attIsEnemy, attIdx);
       if (!attIsEnemy) applyWeaponSplash(attacker, defender, dmg2);
+      if (!attIsEnemy) applySickleHeal(attacker, dmg2);
+      if (!attIsEnemy) applyCurseArmor(attacker, defender, defIsEnemy, defIdx);
       renderBattle(); writeBattleState();
       // 二連斬打死後檢查戰鬥結束，避免死機
       if (dying2 && !saved2 && !defIsEnemy && !attacker.isMonster) {
@@ -3567,6 +3614,8 @@ function hostPerformAttack(attacker, defender, isSlash) {
   } else {
     applyThorns(defender, attacker, dmg, defIsEnemy, defIdx, attIsEnemy, attIdx);
     if (!attIsEnemy) applyWeaponSplash(attacker, defender, dmg);
+    if (!attIsEnemy) applySickleHeal(attacker, dmg);
+    if (!attIsEnemy) applyCurseArmor(attacker, defender, defIsEnemy, defIdx);
     // Non-double-hit: advance turn here inside hostPerformAttack
     renderBattle(); writeBattleState();
     if (isHost() && !hostCheckBattleEnd()) { gs.currentTurn++; setTimeout(() => hostProcessNextTurn(), 500); }
