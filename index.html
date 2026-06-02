@@ -167,6 +167,20 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
 .dungeon-diff-btn{border-radius:10px;padding:12px 16px;cursor:pointer;text-align:center;transition:.15s;width:100%;border:1px solid var(--border2);background:var(--surface2)}
 .dungeon-diff-btn:hover{filter:brightness(1.15)}
 
+/* ===== NEW EQUIPMENT FX ===== */
+@keyframes poisonPulse {
+  0%,100% { box-shadow: 0 0 0px #4ade8000; }
+  50%      { box-shadow: 0 0 14px 4px #4ade80cc; }
+}
+@keyframes sacrificePulse {
+  0%,100% { box-shadow: 0 0 0px #ef444400; }
+  50%      { box-shadow: 0 0 16px 5px #ef4444bb; }
+}
+.poisoned-card  { animation: poisonPulse 1.4s ease-in-out infinite; border-color: #4ade80 !important; }
+.sacrifice-card { animation: sacrificePulse 1.2s ease-in-out infinite; border-color: #ef4444 !important; }
+.summon-card    { border-color: #c084fc !important; background: #c084fc11 !important; }
+.poison-dot-tag { font-size:10px; color:#4ade80; font-weight:700; margin-left:4px; }
+
 /* ===== FRIENDS TAB ===== */
 .friend-list{display:flex;flex-direction:column;gap:8px}
 .friend-item{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:12px 16px;display:flex;align-items:center;justify-content:space-between}
@@ -991,6 +1005,11 @@ const EQ_TEMPLATES = {
       desc: lv => `每次攻擊若造成 2 以上傷害，恢復傷害量的 ${[7,15,23,30,38,45,53,60,67,75][lv-1]}%`,
       baseVals: [7,15,23,30,38,45,53,60,67,75],
     },
+    {
+      id:'weapon_staff', name:'召喚師法杖', icon:'🔮', slot:'weapon',
+      desc: lv => `每次攻擊有 ${[5,10,15,20,25,30,35,40,45,50][lv-1]}% 機率召喚出一個召喚物（1血/67防/1攻）`,
+      baseVals: [5,10,15,20,25,30,35,40,45,50],
+    },
   ],
   armor: [
     {
@@ -1003,6 +1022,11 @@ const EQ_TEMPLATES = {
       desc: lv => `每關第 10 次攻擊永久減少目標 ${[4,7,10,13,16,20,23,26,30,33][lv-1]}% 攻擊（Boss 模式最多 -10%）`,
       baseVals: [4,7,10,13,16,20,23,26,30,33],
     },
+    {
+      id:'armor_sacrifice', name:'祭獻胸甲', icon:'⚰️', slot:'armor',
+      desc: lv => `友軍全數死亡時，自身攻擊與防禦提升 ${[7,14,21,28,35,42,49,56,63,70][lv-1]}%`,
+      baseVals: [7,14,21,28,35,42,49,56,63,70],
+    },
   ],
   trinket: [
     {
@@ -1014,6 +1038,11 @@ const EQ_TEMPLATES = {
       id:'trinket_ring', name:'爆擊指環', icon:'💍', slot:'trinket',
       desc: lv => `爆擊技能的爆擊機率額外 +${[4,8,12,16,20,24,28,32,36,40][lv-1]}%（上限 100%）`,
       baseVals: [4,8,12,16,20,24,28,32,36,40],
+    },
+    {
+      id:'trinket_poison', name:'劇毒手鐲', icon:'🧪', slot:'trinket',
+      desc: lv => `每次攻擊有 ${[1,2,3,4,5,6,7,8,9,10][lv-1]}% 機率使敵人中毒，每回合扣除其 2% 血量`,
+      baseVals: [1,2,3,4,5,6,7,8,9,10],
     },
   ]
 };
@@ -2616,6 +2645,8 @@ function executeActiveSkill(actor, targetIdx) {
     if (!actor.isBot && !actor.isMonster) applyWeaponSplash(actor, target, dmg);
     if (!actor.isBot && !actor.isMonster) applySickleHeal(actor, dmg);
     if (!actor.isBot && !actor.isMonster) applyCurseArmor(actor, target, defIsEnemy, defIdx);
+    if (!actor.isBot && !actor.isMonster) applyPoisonBracelet(actor, target);
+    if (!actor.isBot && !actor.isMonster) applyStaffSummon(actor, gs);
     writeBattleEvent({ type:'attack', attIsEnemy:false, attIdx:gs.team.indexOf(actor), defIsEnemy, defIdx, dmg, isCrit, isSlash:true, slashColor: brutish?'red':'#a855f7', dying });
     requestAnimationFrame(() => {
       const fxEl = getFxEl(defIsEnemy, defIdx);
@@ -2734,11 +2765,14 @@ function processSkillRequest(ev) {
 }
 
 function resetJobState(gs) {
-  gs.team.forEach(m => { m.activeUsed = 0; });
-  gs._silenced       = {};
+  // Remove dead summons from team at stage transition
+  gs.team = gs.team.filter(m => !m.isSummon || m.hp > 0);
+  gs.team.forEach(m => { m.activeUsed = 0; m.poisoned = m.poisoned||0; m._sacrificeApplied = false; });
+  gs.enemies.forEach(e => { e.poisoned = e.poisoned||0; });
+  gs._silenced        = {};
   gs._frozenThisRound = 0;
   gs._targetingSkill  = null;
-  gs._hitCount        = {};  // 詛咒妖巫藤甲：每關攻擊次數 per attacker uid
+  gs._hitCount        = {};
 }
 
 function getShieldTankIdx(gs) {
@@ -3054,8 +3088,17 @@ function startBattle() {
 
 function buildTurnOrder() {
   const gs = G.gameState;
-  // Decrement freeze at start of each new round
   // _frozenThisRound uses roundNum comparison — no decrement needed
+
+  // Apply poison damage at start of each new round (except round 1)
+  if ((gs.roundNum || 1) > 1) {
+    applyPoisonTick(gs);
+    if (hostCheckBattleEnd()) return;
+  }
+
+  // Update sacrifice armor buffs
+  updateSacrificeArmor(gs);
+
   const teamTurns = gs.team
     .map((m, i) => ({ type: 'team', i }))
     .filter(t => gs.team[t.i].hp > 0);
@@ -3249,13 +3292,18 @@ function writeBattleState() {
       hp: m.hp, maxHp: m.maxHp, atk: m.atk, def: m.def,
       rankKey: m.rankKey||'鐵', rankName: m.rankName||'黑鐵',
       skills: m.skills||{}, allocDone: m.allocDone||false, dead: m.hp<=0,
-      job: m.job||null, activeUsed: m.activeUsed||0, activeMax: m.activeMax||0
+      job: m.job||null, activeUsed: m.activeUsed||0, activeMax: m.activeMax||0,
+      isSummon: m.isSummon||false, summonerUid: m.summonerUid||null,
+      summonRevives: m.summonRevives||0,
+      poisoned: m.poisoned||0, _sacrificeApplied: m._sacrificeApplied||false,
+      _baseAtk: m._baseAtk||null, _baseDef: m._baseDef||null
     })),
     enemies: gs.enemies.map(e => ({
       name: e.name, hp: e.hp, maxHp: e.maxHp,
       atk: e.atk, def: e.def, skills: e.skills||{}, dead: e.hp<=0,
       isDungeonBoss: e.isDungeonBoss||false, rankIdx: e.rankIdx||0,
-      defMin: e.defMin||0, defMax: e.defMax||0
+      defMin: e.defMin||0, defMax: e.defMax||0,
+      poisoned: e.poisoned||0
     })),
     currentTurnIdx: gs.currentTurn,
     turnOrder: gs.turnOrder,
@@ -3601,6 +3649,8 @@ function hostPerformAttack(attacker, defender, isSlash) {
       if (!attIsEnemy) applyWeaponSplash(attacker, defender, dmg2);
       if (!attIsEnemy) applySickleHeal(attacker, dmg2);
       if (!attIsEnemy) applyCurseArmor(attacker, defender, defIsEnemy, defIdx);
+      if (!attIsEnemy) applyPoisonBracelet(attacker, defender);
+      if (!attIsEnemy) applyStaffSummon(attacker, gs);
       renderBattle(); writeBattleState();
       // 二連斬打死後檢查戰鬥結束，避免死機
       if (dying2 && !saved2 && !defIsEnemy && !attacker.isMonster) {
@@ -3616,6 +3666,8 @@ function hostPerformAttack(attacker, defender, isSlash) {
     if (!attIsEnemy) applyWeaponSplash(attacker, defender, dmg);
     if (!attIsEnemy) applySickleHeal(attacker, dmg);
     if (!attIsEnemy) applyCurseArmor(attacker, defender, defIsEnemy, defIdx);
+    if (!attIsEnemy) applyPoisonBracelet(attacker, defender);
+    if (!attIsEnemy) applyStaffSummon(attacker, gs);
     // Non-double-hit: advance turn here inside hostPerformAttack
     renderBattle(); writeBattleState();
     if (isHost() && !hostCheckBattleEnd()) { gs.currentTurn++; setTimeout(() => hostProcessNextTurn(), 500); }
@@ -3636,8 +3688,13 @@ function hostPerformAttack(attacker, defender, isSlash) {
         if (defDying && !isDouble && !savedByPhoenix) {
           if (defIsEnemy) setTimeout(() => fxExplosion(defFxEl, defCard), 200);
           else {
-            setTimeout(() => { fxGhost(defFxEl); setTimeout(() => fxTombstone(defFxEl), 800); }, 150);
-            setTimeout(() => applyTrinketDeath(defender, G.gameState), 200);
+            if (defender.isSummon && checkSummonRevive(defender)) {
+              renderBattle(); writeBattleState();
+            } else {
+              setTimeout(() => { fxGhost(defFxEl); setTimeout(() => fxTombstone(defFxEl), 800); }, 150);
+              setTimeout(() => applyTrinketDeath(defender, G.gameState), 200);
+              if (defender.isSummon) { const sIdx = G.gameState.team.indexOf(defender); removeSummonAfterDelay(G.gameState, sIdx); }
+            }
           }
         }
       }, 120);
@@ -3649,8 +3706,13 @@ function hostPerformAttack(attacker, defender, isSlash) {
       if (defDying && !isDouble && !savedByPhoenix) {
         if (defIsEnemy) setTimeout(() => fxExplosion(defFxEl, defCard), 200);
         else {
-          setTimeout(() => { fxGhost(defFxEl); setTimeout(() => fxTombstone(defFxEl), 800); }, 150);
-          setTimeout(() => applyTrinketDeath(defender, G.gameState), 200);
+          if (defender.isSummon && checkSummonRevive(defender)) {
+            renderBattle(); writeBattleState();
+          } else {
+            setTimeout(() => { fxGhost(defFxEl); setTimeout(() => fxTombstone(defFxEl), 800); }, 150);
+            setTimeout(() => applyTrinketDeath(defender, G.gameState), 200);
+            if (defender.isSummon) { const sIdx = G.gameState.team.indexOf(defender); removeSummonAfterDelay(G.gameState, sIdx); }
+          }
         }
       }
     }
@@ -3681,7 +3743,7 @@ function applyThorns(defender, attacker, dmg, defIsEnemy, defIdx, attIsEnemy, at
 
 function hostCheckBattleEnd() {
   const gs = G.gameState;
-  const teamAlive = gs.team.some(m => m.hp > 0);
+  const teamAlive = gs.team.some(m => m.hp > 0 && !m.isSummon);
   const enemiesAlive = gs.enemies.some(e => e.hp > 0);
   if (!enemiesAlive) {
     set(ref(db, `rooms/${gs.roomId}/battle/stageResult`), 'win');
@@ -4188,18 +4250,27 @@ function renderBattle() {
     const isActive = curT && curT.type === 'team' && curT.i === i;
     const hpPct = m.maxHp > 0 ? (m.hp/m.maxHp*100) : 0;
     const hpClass = hpPct > 60 ? 'high' : hpPct > 30 ? 'mid' : 'low';
-    const rankColor = getRankColor(m.rankKey || '鐵');
-    pPanel.innerHTML += `<div class="fighter-card ${m.hp>0?'alive':'dead'} ${isActive?'active-turn':''}" id="fc-team-${i}" style="position:relative">
+    const rankColor = m.isSummon ? '#c084fc' : getRankColor(m.rankKey || '鐵');
+    // Extra CSS classes
+    const isPoisoned   = m.poisoned > 0;
+    const isSacrifice  = isSacrificeActive(m, gs);
+    const isSummonCard = m.isSummon;
+    const extraClass   = isSummonCard ? 'summon-card' : isPoisoned ? 'poisoned-card' : isSacrifice ? 'sacrifice-card' : '';
+    // Name tags
+    const poisonTag    = isPoisoned ? `<span class="poison-dot-tag">☠中毒(${m.poisoned})</span>` : '';
+    const reviveTag    = m.isSummon && m.summonRevives > 0 ? `<span style="font-size:9px;color:#c084fc;margin-left:3px">（可復活${m.summonRevives}次）</span>` : '';
+    const summonIcon   = m.isSummon ? '🔮 ' : '';
+    pPanel.innerHTML += `<div class="fighter-card ${m.hp>0?'alive':'dead'} ${isActive?'active-turn':''} ${extraClass}" id="fc-team-${i}" style="position:relative">
       <div class="fx-overlay" id="fx-team-${i}"></div>
       <div class="fighter-name">
-        <span>${m.isMe?'★ ':''}<span style="color:${rankColor}">${m.name}</span>${m.job ? ` <span title="${m.job}">${JOBS_DEF.find(j=>j.id===m.job)?.icon||''}</span>` : ''}</span>
-        <span style="font-size:10px;color:var(--text3)">${m.rankName||''}</span>
+        <span>${m.isMe&&!m.isSummon?'★ ':''}<span style="color:${rankColor}">${summonIcon}${m.name}</span>${m.job&&!m.isSummon ? ` <span title="${m.job}">${JOBS_DEF.find(j=>j.id===m.job)?.icon||''}</span>` : ''}${poisonTag}${reviveTag}</span>
+        <span style="font-size:10px;color:var(--text3)">${m.isSummon?'召喚物':(m.rankName||'')}</span>
       </div>
       <div class="hp-bar"><div class="hp-fill ${hpClass}" style="width:${hpPct}%"></div></div>
       <div class="fighter-stats">
         <span class="fs-hp">HP ${m.hp}/${m.maxHp}</span>
-        <span class="fs-atk">ATK ${m.atk}</span>
-        <span class="fs-def">DEF ${m.def}</span>
+        <span class="fs-atk">ATK ${m.atk}${isSacrifice?' 🔥':''}</span>
+        <span class="fs-def">DEF ${m.def}${isSacrifice?' 🔥':''}</span>
       </div>
     </div>`;
   });
@@ -4214,10 +4285,11 @@ function renderBattle() {
     const jobIcon = isPvpEnemy && e.job ? ` ${JOBS_DEF.find(j=>j.id===e.job)?.icon||''}` : '';
     const isBerserk = e.isDungeonBoss && (e.rankIdx||0) >= 7 && e.maxHp > 0 && e.hp/e.maxHp < 0.5;
     const berserkTag = isBerserk ? '<span style="color:#ef4444;font-size:10px;font-weight:900;margin-left:4px">💢狂暴</span>' : '';
-    ePanel.innerHTML += `<div class="fighter-card enemy ${e.hp>0?'alive':'dead'} ${isActive?'active-turn':''} ${isSelected?'target-selected':''} ${isBerserk?'berserk-border':''}" id="fc-enemy-${i}" style="position:relative${isBerserk?';border-color:#ef4444;box-shadow:0 0 10px #ef444466':''}" onclick="clickEnemy(${i})">
+    const ePoisoned = e.poisoned > 0;
+    ePanel.innerHTML += `<div class="fighter-card enemy ${e.hp>0?'alive':'dead'} ${isActive?'active-turn':''} ${isSelected?'target-selected':''} ${isBerserk?'berserk-border':''} ${ePoisoned?'poisoned-card':''}" id="fc-enemy-${i}" style="position:relative${isBerserk?';border-color:#ef4444;box-shadow:0 0 10px #ef444466':''}" onclick="clickEnemy(${i})">
       <div class="fx-overlay" id="fx-enemy-${i}"></div>
       <div class="fighter-name">
-        <span style="color:${enemyRankColor}">${enemyIcon} ${e.name}${jobIcon}${berserkTag}</span>
+        <span style="color:${enemyRankColor}">${enemyIcon} ${e.name}${jobIcon}${berserkTag}${e.poisoned>0?`<span class="poison-dot-tag">☠中毒(${e.poisoned})</span>`:''}</span>
         ${e.hp>0?'<span style="font-size:10px;color:var(--text3)">點擊攻擊</span>':'<span style="font-size:10px;color:var(--red)">已擊敗</span>'}
       </div>
       <div class="hp-bar"><div class="hp-fill ${hpClass}" style="width:${hpPct}%"></div></div>
@@ -5617,6 +5689,151 @@ window.simResetAll = async () => {
 };
 
 window.openSimPanel = openSimPanel;
+
+
+// ===== EQUIPMENT: SUMMON STAFF, SACRIFICE ARMOR, POISON BRACELET =====
+
+// ─── 召喚師法杖 ───
+function applyStaffSummon(attacker, gs) {
+  const weapon = attacker.equippedItems?.weapon;
+  if (!weapon || weapon.templateId !== 'weapon_staff') return;
+  const chance = weapon.val; // already final val (% with rarity mult)
+  if (Math.random() * 100 >= chance) return;
+
+  // Check if this player already has a summon alive
+  const uid = attacker.uid || attacker.name;
+  const existingSummon = gs.team.find(m => m.isSummon && m.summonerUid === uid && m.hp > 0);
+  if (existingSummon) {
+    // Grant one revive life if triggered again
+    existingSummon.summonRevives = (existingSummon.summonRevives || 0) + 1;
+    addLog(`🔮 <span style="color:#c084fc">${attacker.name}</span> 的召喚物獲得復活能力！`);
+    renderBattle();
+    return;
+  }
+
+  // Create summon and push into gs.team
+  const summon = {
+    name: `${attacker.name}的召喚物`,
+    isSummon: true,
+    summonerUid: uid,
+    isBot: false, isMe: false,
+    hp: 1, maxHp: 1,
+    atk: 1, def: 67,
+    rankKey: '鐵', rankName: '黑鐵',
+    skills: {}, allocDone: true, equippedItems: {},
+    poisoned: 0, _sacrificeApplied: false,
+    summonRevives: 0
+  };
+  gs.team.push(summon);
+  addLog(`🔮 <span style="color:#c084fc">${attacker.name}</span> 召喚出召喚物！`);
+  renderBattle();
+}
+
+// Called when a summon dies — check if it has revives
+function checkSummonRevive(summon) {
+  if (!summon.isSummon) return false;
+  if ((summon.summonRevives || 0) > 0) {
+    summon.summonRevives--;
+    summon.hp = 1;
+    addLog(`🔮 <span style="color:#c084fc">${summon.name}</span> 復活了！（剩餘復活次數：${summon.summonRevives}）`);
+    return true;
+  }
+  return false;
+}
+
+// Remove dead summon card after 1s
+function removeSummonAfterDelay(gs, summonIdx) {
+  setTimeout(() => {
+    // Mark summon as permanently dead — do NOT splice (would corrupt turnOrder indices)
+    // The summon will be filtered out at next resetJobState (stage transition)
+    // For immediate visual removal, just re-render
+    const s = gs.team[summonIdx];
+    if (s && s.isSummon && s.hp <= 0) {
+      renderBattle();
+      writeBattleState();
+    }
+  }, 1000);
+}
+
+// ─── 祭獻胸甲 ───
+function isSacrificeActive(fighter, gs) {
+  const armor = fighter.equippedItems?.armor;
+  if (!armor || armor.templateId !== 'armor_sacrifice') return false;
+  // All non-summon, non-self allies must be dead
+  const allies = gs.team.filter(m => m !== fighter && !m.isSummon);
+  return allies.length > 0 && allies.every(m => m.hp <= 0);
+}
+
+function updateSacrificeArmor(gs) {
+  gs.team.forEach(m => {
+    if (m.isBot || m.isSummon) return;
+    const armor = m.equippedItems?.armor;
+    if (!armor || armor.templateId !== 'armor_sacrifice') return;
+    const pct = armor.val / 100;
+    const shouldBeActive = isSacrificeActive(m, gs);
+    if (shouldBeActive && !m._sacrificeApplied) {
+      // Apply boost
+      m._baseAtk = m._baseAtk || m.atk;
+      m._baseDef = m._baseDef || m.def;
+      m.atk = Math.round(m._baseAtk * (1 + pct));
+      m.def = Math.round(m._baseDef * (1 + pct));
+      m._sacrificeApplied = true;
+      addLog(`⚰️ <span style="color:#ef4444">${m.name}</span> 祭獻胸甲！攻擊與防禦提升 ${Math.round(pct*100)}%！`);
+    } else if (!shouldBeActive && m._sacrificeApplied) {
+      // Remove boost (ally revived? shouldn't happen but guard anyway)
+      if (m._baseAtk) { m.atk = m._baseAtk; m._baseAtk = null; }
+      if (m._baseDef) { m.def = m._baseDef; m._baseDef = null; }
+      m._sacrificeApplied = false;
+    }
+  });
+}
+
+// ─── 劇毒手鐲 ───
+function applyPoisonBracelet(attacker, defender) {
+  const trinket = attacker.equippedItems?.trinket;
+  if (!trinket || trinket.templateId !== 'trinket_poison') return;
+  if (defender.poisoned > 0) return; // already poisoned
+  if (Math.random() * 100 < trinket.val) {
+    defender.poisoned = 1; // flag: 1 = poisoned
+    addLog(`🧪 <span style="color:#4ade80">${attacker.name}</span> 劇毒手鐲！${defender.name} 中毒！`);
+    renderBattle();
+  }
+}
+
+// Called at start of each round by buildTurnOrder
+function applyPoisonTick(gs) {
+  const poisonDmgPct = 0.02; // 2% max HP per round
+  let anyDied = false;
+
+  // Team poison
+  gs.team.forEach(m => {
+    if (!m.poisoned || m.hp <= 0) return;
+    const dmg = Math.max(1, Math.round(m.maxHp * poisonDmgPct));
+    m.hp = Math.max(0, m.hp - dmg);
+    addLog(`🧪 <span style="color:#4ade80">${m.name}</span> 中毒傷害 <span class="red">-${dmg}</span>`);
+    const { isEnemy: iE, idx } = getTargetIndex(m);
+    requestAnimationFrame(() => fxDamageNumber(getFxEl(iE, idx), dmg, false, false, false, false));
+    if (m.hp <= 0) {
+      if (m.isSummon && checkSummonRevive(m)) return;
+      anyDied = true;
+      // Trinket death
+      setTimeout(() => applyTrinketDeath(m, gs), 100);
+    }
+  });
+
+  // Enemy poison
+  gs.enemies.forEach(e => {
+    if (!e.poisoned || e.hp <= 0) return;
+    const dmg = Math.max(1, Math.round(e.maxHp * poisonDmgPct));
+    e.hp = Math.max(0, e.hp - dmg);
+    addLog(`🧪 <span style="color:#4ade80">${e.name}</span> 中毒傷害 <span class="red">-${dmg}</span>`);
+    const { isEnemy: iE, idx } = getTargetIndex(e);
+    requestAnimationFrame(() => fxDamageNumber(getFxEl(iE, idx), dmg, false, false, false, false));
+    if (e.hp <= 0) anyDied = true;
+  });
+
+  if (anyDied) renderBattle();
+}
 
 // ===== EXPOSE ALL ONCLICK HANDLERS TO GLOBAL SCOPE =====
 // Required because <script type="module"> is scoped — onclick= can't find module-local functions
