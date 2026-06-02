@@ -4776,7 +4776,11 @@ async function initDungeon(members, roomId, rankIdx) {
     selectedEnemy:-1, isHost:iAmHost, hostName:hostUid,
     roundNum:1, startStage:1, isDungeon:true, dungeonRankIdx:rankIdx
   };
-  if (iAmHost) set(ref(db, `rooms/${roomId}/host`), G.uid);
+  if (iAmHost) {
+    set(ref(db, `rooms/${roomId}/host`), G.uid);
+    remove(ref(db, `rooms/${roomId}/battleLog`)).catch(()=>{});
+    remove(ref(db, `rooms/${roomId}/battle`)).catch(()=>{});
+  }
   document.getElementById('gameScreen').classList.remove('hidden');
   startDungeonStage(rankIdx, pts);
 }
@@ -5434,7 +5438,11 @@ async function initPvp(room, roomId) {
     roundNum:1, startStage:1, isPvp:true, pvpPts,
     myTeam, teamA, teamB
   };
-  if (iAmHost) set(ref(db,`rooms/${roomId}/host`), G.uid);
+  if (iAmHost) {
+    set(ref(db,`rooms/${roomId}/host`), G.uid);
+    remove(ref(db, `rooms/${roomId}/battleLog`)).catch(()=>{});
+    remove(ref(db, `rooms/${roomId}/battle`)).catch(()=>{});
+  }
   document.getElementById('gameScreen').classList.remove('hidden');
   startPvpStage(pvpPts);
 }
