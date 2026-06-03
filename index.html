@@ -3071,6 +3071,7 @@ function startBattle() {
   gs.waitingForPlayer = false;
   gs.roundNum = 1;
   gs.log = [];
+  _battleLogIdx = 0; // 每場戰鬥重置，避免跨關 key 偏移
   gs._silenced = gs._silenced || {};
   gs._frozenThisRound = gs._frozenThisRound || 0;
   document.getElementById('battleSection').classList.remove('hidden');
@@ -3319,10 +3320,14 @@ function writeBattleState() {
   set(ref(db, `rooms2/${gs.roomId}/battle`), state);
 }
 
+// battleLog 用循環 key（0~49）避免無限累積
+let _battleLogIdx = 0;
 function writeBattleEvent(event) {
   if (!isHost()) return;
   const gs = G.gameState;
-  push(ref(db, `rooms2/${gs.roomId}/battleLog`), { ...event, ts: Date.now() });
+  const key = String(_battleLogIdx % 50).padStart(2, '0');
+  _battleLogIdx++;
+  set(ref(db, `rooms2/${gs.roomId}/battleLog/${key}`), { ...event, ts: Date.now() });
 }
 
 function addLog(msg) {
@@ -3336,7 +3341,9 @@ function addLog(msg) {
   }
   // Host broadcasts log to Firebase so non-host clients see it too
   if (isHost() && G.gameState) {
-    push(ref(db, `rooms2/${G.gameState.roomId}/battleLog`), {
+    const key = 'L' + String(_battleLogIdx % 50).padStart(2, '0');
+    _battleLogIdx++;
+    set(ref(db, `rooms2/${G.gameState.roomId}/battleLog/${key}`), {
       type: 'log', msg, ts: Date.now()
     });
   }
@@ -3352,50 +3359,57 @@ function listenBattleState() {
     const state = snap.val();
     applyBattleState(state);
   });
-  // Also listen to battle log for effects
-  const logRef = query(ref(db, `rooms2/${gs.roomId}/battleLog`), orderByChild('ts'), limitToLast(1));
-  G.listeners.battleLog = onChildAdded(logRef, snap => {
-    if (!G.gameState) return;
-    const ev = snap.val();
-    if (!ev) return;
-    // Trigger visual effects from log events
-    if (ev.type === 'log') {
-      const el = document.getElementById('battleLog');
-      if (el) {
-        const div = document.createElement('div');
-        div.className = 'log-entry';
-        div.innerHTML = ev.msg;
-        el.appendChild(div);
-        el.scrollTop = el.scrollHeight;
-      }
-    }
-    if (ev.type === 'attack') {
-      setTimeout(() => {
-        const defFxEl = getFxEl(ev.defIsEnemy, ev.defIdx);
-        const defCard = getFxCard(ev.defIsEnemy, ev.defIdx);
-        if (ev.blocked) {
-          fxBlock(defFxEl, defCard);
-        } else if (ev.isInstantKill) {
-          fxInstantKill(defFxEl, defCard, ev.defIsEnemy);
-        } else if (ev.isSlash) {
-          fxSlash(defFxEl, ev.isCrit, false, ev.slashColor);
-          setTimeout(() => {
-            fxHitFlash(defFxEl);
-            fxParticles(defCard, ev.dmg, ev.isCrit, ev.slashColor);
-            fxBloodDrip(defCard, ev.isCrit);
-            fxDamageNumber(defFxEl, ev.dmg, ev.isCrit, false, false, false);
-            if (ev.dying && ev.defIsEnemy) setTimeout(() => fxExplosion(defFxEl, defCard), 200);
-            if (ev.dying && !ev.defIsEnemy) setTimeout(() => { fxGhost(defFxEl); setTimeout(() => fxTombstone(defFxEl), 800); }, 150);
-          }, 120);
-        } else {
-          fxHitFlash(defFxEl);
-          fxParticles(defCard, ev.dmg, ev.isCrit);
-          fxBloodDrip(defCard, ev.isCrit);
-          fxDamageNumber(defFxEl, ev.dmg, ev.isCrit, false, false, false);
-          if (ev.dying && ev.defIsEnemy) setTimeout(() => fxExplosion(defFxEl, defCard), 200);
-          if (ev.dying && !ev.defIsEnemy) setTimeout(() => { fxGhost(defFxEl); setTimeout(() => fxTombstone(defFxEl), 800); }, 150);
+  // 監聽 battleLog（固定 key 覆蓋寫，用 ts 判斷是否為新事件）
+  let _lastLogTs = 0;
+  const logRef = ref(db, `rooms2/${gs.roomId}/battleLog`);
+  G.listeners.battleLog = onValue(logRef, snap => {
+    if (!G.gameState || !snap.exists()) return;
+    const entries = snap.val();
+    // 找出所有比上次更新的事件，按 ts 排序後依序處理
+    const newEvs = Object.values(entries)
+      .filter(ev => ev && ev.ts > _lastLogTs)
+      .sort((a, b) => a.ts - b.ts);
+    for (const ev of newEvs) {
+      _lastLogTs = Math.max(_lastLogTs, ev.ts);
+      if (ev.type === 'log') {
+        const el = document.getElementById('battleLog');
+        if (el) {
+          const div = document.createElement('div');
+          div.className = 'log-entry';
+          div.innerHTML = ev.msg;
+          el.appendChild(div);
+          el.scrollTop = el.scrollHeight;
         }
-      }, 80);
+      }
+      if (ev.type === 'attack') {
+        const evCopy = {...ev};
+        setTimeout(() => {
+          const defFxEl = getFxEl(evCopy.defIsEnemy, evCopy.defIdx);
+          const defCard = getFxCard(evCopy.defIsEnemy, evCopy.defIdx);
+          if (evCopy.blocked) {
+            fxBlock(defFxEl, defCard);
+          } else if (evCopy.isInstantKill) {
+            fxInstantKill(defFxEl, defCard, evCopy.defIsEnemy);
+          } else if (evCopy.isSlash) {
+            fxSlash(defFxEl, evCopy.isCrit, false, evCopy.slashColor);
+            setTimeout(() => {
+              fxHitFlash(defFxEl);
+              fxParticles(defCard, evCopy.dmg, evCopy.isCrit, evCopy.slashColor);
+              fxBloodDrip(defCard, evCopy.isCrit);
+              fxDamageNumber(defFxEl, evCopy.dmg, evCopy.isCrit, false, false, false);
+              if (evCopy.dying && evCopy.defIsEnemy) setTimeout(() => fxExplosion(defFxEl, defCard), 200);
+              if (evCopy.dying && !evCopy.defIsEnemy) setTimeout(() => { fxGhost(defFxEl); setTimeout(() => fxTombstone(defFxEl), 800); }, 150);
+            }, 120);
+          } else {
+            fxHitFlash(defFxEl);
+            fxParticles(defCard, evCopy.dmg, evCopy.isCrit);
+            fxBloodDrip(defCard, evCopy.isCrit);
+            fxDamageNumber(defFxEl, evCopy.dmg, evCopy.isCrit, false, false, false);
+            if (evCopy.dying && evCopy.defIsEnemy) setTimeout(() => fxExplosion(defFxEl, defCard), 200);
+            if (evCopy.dying && !evCopy.defIsEnemy) setTimeout(() => { fxGhost(defFxEl); setTimeout(() => fxTombstone(defFxEl), 800); }, 150);
+          }
+        }, 80);
+      }
     }
   });
 }
@@ -4365,11 +4379,8 @@ window.exitGame = async () => {
   }
   if (tid) {
     try {
-      await remove(ref(db, `rooms2/${tid}/presence/${G.player.name}`));
-      const presSnap = await get(ref(db, `rooms2/${tid}/presence`));
-      if (!presSnap.exists() || Object.keys(presSnap.val()||{}).length === 0) {
-        await remove(ref(db, `rooms2/${tid}`));
-      }
+      // 直接刪整個房間節點，確保不留殘留資料
+      await remove(ref(db, `rooms2/${tid}`));
     } catch(e){}
     G.teamId = null;
   }
@@ -4397,7 +4408,10 @@ window.addEventListener('beforeunload', () => {
   if (G.matchRef) remove(G.matchRef);
   if (G.teamId && G.uid) {
     if (G.gameState) {
+      // Remove presence; if last player, delete entire room
       remove(ref(db, `rooms2/${G.teamId}/presence/${G.player.name}`));
+      // Also attempt full room delete (best-effort on unload)
+      remove(ref(db, `rooms2/${G.teamId}`));
     } else {
       remove(ref(db, `rooms2/${G.teamId}/members/${G.uid}`));
     }
@@ -4864,10 +4878,10 @@ window.exitDungeon = async () => {
   const tid = G.teamId;
   if (tid) {
     for (const [key, lRef] of Object.entries({
-      alloc:`rooms/${tid}/alloc`, gameMembers:`rooms/${tid}/presence`,
-      battle:`rooms/${tid}/battle`, battleLog:`rooms/${tid}/battleLog`,
-      nextStage:`rooms/${tid}/nextStage`, actions:`rooms/${tid}/actions`,
-      joinRequests:`rooms/${tid}/joinRequests`
+      alloc:`rooms2/${tid}/alloc`, gameMembers:`rooms2/${tid}/presence`,
+      battle:`rooms2/${tid}/battle`, battleLog:`rooms2/${tid}/battleLog`,
+      nextStage:`rooms2/${tid}/nextStage`, actions:`rooms2/${tid}/actions`,
+      joinRequests:`rooms2/${tid}/joinRequests`
     })) {
       try { if (G.listeners[key]) off(ref(db, lRef)); } catch(e){}
       G.listeners[key] = null;
