@@ -3268,8 +3268,17 @@ function isHost() {
   return G.gameState && G.gameState.isHost;
 }
 
+function isSolo() {
+  // 單人模式：無真人隊友，不需 Firebase 同步
+  const gs = G.gameState;
+  if (!gs || !gs.roomId) return true;
+  const realTeammates = (gs.team || []).filter(m => !m.isMe && !m.isBot);
+  return realTeammates.length === 0;
+}
+
 function writeBattleState() {
   if (!isHost()) return;
+  if (isSolo()) return; // 單人模式跳過 Firebase 同步
   const gs = G.gameState;
 
   // Use uid for precise identity matching
@@ -3324,6 +3333,7 @@ function writeBattleState() {
 let _battleLogIdx = 0;
 function writeBattleEvent(event) {
   if (!isHost()) return;
+  if (isSolo()) return; // 單人模式跳過
   const gs = G.gameState;
   const key = String(_battleLogIdx % 50).padStart(2, '0');
   _battleLogIdx++;
@@ -3340,7 +3350,7 @@ function addLog(msg) {
     el.scrollTop = el.scrollHeight;
   }
   // Host broadcasts log to Firebase so non-host clients see it too
-  if (isHost() && G.gameState) {
+  if (isHost() && !isSolo() && G.gameState) {
     const key = 'L' + String(_battleLogIdx % 50).padStart(2, '0');
     _battleLogIdx++;
     set(ref(db, `rooms2/${G.gameState.roomId}/battleLog/${key}`), {
@@ -3515,6 +3525,7 @@ function sendActionRequest(enemyIdx) {
 function listenForActions() {
   const gs = G.gameState;
   if (!isHost()) return;
+  if (isSolo()) return; // 單人模式無需監聽 actions
   const actionsRef = ref(db, `rooms2/${gs.roomId}/actions`);
   G.listeners.actions = onChildAdded(actionsRef, snap => {
     if (!G.gameState || !G.gameState.battleActive) return;
@@ -3760,14 +3771,14 @@ function hostCheckBattleEnd() {
   const teamAlive = gs.team.some(m => m.hp > 0 && !m.isSummon);
   const enemiesAlive = gs.enemies.some(e => e.hp > 0);
   if (!enemiesAlive) {
-    set(ref(db, `rooms2/${gs.roomId}/battle/stageResult`), 'win');
+    if (!isSolo()) set(ref(db, `rooms2/${gs.roomId}/battle/stageResult`), 'win');
     if (gs.isDungeon) setTimeout(() => showDungeonResult(true), 600);
     else if (gs.isPvp) setTimeout(() => showPvpResult(true), 600);
     else setTimeout(() => showStageResult(true), 600);
     return true;
   }
   if (!teamAlive) {
-    set(ref(db, `rooms2/${gs.roomId}/battle/stageResult`), 'lose');
+    if (!isSolo()) set(ref(db, `rooms2/${gs.roomId}/battle/stageResult`), 'lose');
     if (gs.isDungeon) setTimeout(() => showDungeonResult(false), 600);
     else if (gs.isPvp) setTimeout(() => showPvpResult(false), 600);
     else setTimeout(() => showStageResult(false), 600);
@@ -4349,8 +4360,8 @@ window.nextStage = () => {
   const gs = G.gameState;
   document.getElementById('resultOverlay').classList.add('hidden');
   if (gs.stage < STAGE_CONFIG.length) {
-    if (isHost()) {
-      // Host clears battle state and signals next stage
+    if (isHost() && !isSolo()) {
+      // Host clears battle state and signals next stage (multiplayer only)
       remove(ref(db, `rooms2/${gs.roomId}/battle`));
       remove(ref(db, `rooms2/${gs.roomId}/battleLog`));
       remove(ref(db, `rooms2/${gs.roomId}/alloc`));
