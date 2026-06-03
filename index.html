@@ -1554,7 +1554,7 @@ function showTeamInviteNotif(from, roomId) {
   document.getElementById(`acceptInvite_${roomId}`).onclick = async () => {
     remove_();
     // Check room still exists and is waiting
-    const snap = await get(ref(db, `rooms/${roomId}`));
+    const snap = await get(ref(db, `rooms2/${roomId}`));
     if (!snap.exists()) { notify('小隊已解散或已開始遊戲', 'err'); return; }
     const room = snap.val();
     if (room.status !== 'waiting') { notify('小隊已開始遊戲，無法加入', 'err'); return; }
@@ -1752,8 +1752,8 @@ window.sendGlobalChat = async () => {
 // ===== TEAM CHAT (unified for lobby + game) =====
 function setupTeamChatListener() {
   if (!G.teamId) return;
-  if (G.listeners.teamChat) { try { off(ref(db, `rooms/${G.teamId}/chat`)); } catch(e){} }
-  const chatRef = query(ref(db, `rooms/${G.teamId}/chat`), orderByChild('ts'), limitToLast(80));
+  if (G.listeners.teamChat) { try { off(ref(db, `rooms2/${G.teamId}/chat`)); } catch(e){} }
+  const chatRef = query(ref(db, `rooms2/${G.teamId}/chat`), orderByChild('ts'), limitToLast(80));
   G.listeners.teamChat = onChildAdded(chatRef, snap => {
     const msg = snap.val();
     if (!msg) return;
@@ -1780,7 +1780,7 @@ window.sendTeamChat = async (source) => {
   if (!text) return;
   input.value = '';
   const rank = getRank(G.player.exp||0);
-  await push(ref(db, `rooms/${G.teamId}/chat`), { name: G.player.name, text, rankKey: rank.key, ts: Date.now() });
+  await push(ref(db, `rooms2/${G.teamId}/chat`), { name: G.player.name, text, rankKey: rank.key, ts: Date.now() });
 };
 
 window.toggleGameChat = () => {
@@ -1837,7 +1837,7 @@ window.doCreateTeam = async () => {
   if (!code || code.length < 2) { msgEl.textContent = '請輸入至少 2 字元的代碼'; return; }
   if (code.length > 8) { msgEl.textContent = '代碼最多 8 字元'; return; }
   if (!/^[A-Z0-9]+$/.test(code)) { msgEl.textContent = '代碼只能使用英文字母和數字'; return; }
-  const snap = await get(ref(db, `rooms/${code}`));
+  const snap = await get(ref(db, `rooms2/${code}`));
   if (snap.exists()) { msgEl.textContent = '此代碼已被使用，請換一個'; return; }
   closeModal('createTeamModal');
   G.teamId = code;
@@ -1859,7 +1859,7 @@ window.loadOpenRooms = async () => {
   listEl.innerHTML = '<div style="text-align:center;color:var(--text2);padding:16px">載入中...</div>';
   msgEl.textContent = '';
   try {
-    const snap = await get(ref(db, 'rooms'));
+    const snap = await get(ref(db, 'rooms2'));
     if (!snap.exists()) { listEl.innerHTML = ''; msgEl.textContent = '目前沒有公開房間'; return; }
     const rooms = snap.val();
     const openRooms = Object.entries(rooms)
@@ -1893,7 +1893,7 @@ window.joinByCode = async () => {
   const code = document.getElementById('joinByCodeInput').value.trim().toUpperCase();
   const msgEl = document.getElementById('joinByCodeMsg');
   if (!code) { msgEl.textContent = '請輸入代碼'; return; }
-  const snap = await get(ref(db, `rooms/${code}`));
+  const snap = await get(ref(db, `rooms2/${code}`));
   if (!snap.exists()) { msgEl.textContent = '找不到此房間'; return; }
   const room = snap.val();
   if (room.status === 'starting' || room.status === 'ingame') { msgEl.textContent = '此房間已開始遊戲'; return; }
@@ -1906,7 +1906,7 @@ window.joinByCode = async () => {
 window.requestJoinRoom = async (roomId) => {
   closeModal('searchRoomsModal');
   // Send join request to room leader
-  await set(ref(db, `rooms/${roomId}/joinRequests/${G.uid}`), {
+  await set(ref(db, `rooms2/${roomId}/joinRequests/${G.uid}`), {
     name: G.player.name, uid: G.uid, ts: Date.now()
   });
   // Show waiting UI
@@ -1943,16 +1943,16 @@ window.cancelJoinRequest = async (roomId) => {
     try { off(ref(db, `joinResponses/${G.uid}`)); } catch(e){}
     G.listeners.joinResp = null;
   }
-  await remove(ref(db, `rooms/${roomId}/joinRequests/${G.uid}`));
+  await remove(ref(db, `rooms2/${roomId}/joinRequests/${G.uid}`));
   document.getElementById('matchScreen').classList.add('hidden');
 };
 
 window.respondJoinRequest = async (roomId, applicantUid, approve) => {
   // Remove the request
-  await remove(ref(db, `rooms/${roomId}/joinRequests/${applicantUid}`));
+  await remove(ref(db, `rooms2/${roomId}/joinRequests/${applicantUid}`));
   if (approve) {
     // Check room still has space
-    const snap = await get(ref(db, `rooms/${roomId}/members`));
+    const snap = await get(ref(db, `rooms2/${roomId}/members`));
     const count = snap.exists() ? Object.values(snap.val()).filter(m => !m.isBot).length : 0;
     if (count >= 3) {
       await set(ref(db, `joinResponses/${applicantUid}`), { approved: false, ts: Date.now() });
@@ -1967,7 +1967,7 @@ window.respondJoinRequest = async (roomId, applicantUid, approve) => {
 };
 
 function listenForJoinRequests(roomId) {
-  const reqRef = ref(db, `rooms/${roomId}/joinRequests`);
+  const reqRef = ref(db, `rooms2/${roomId}/joinRequests`);
   if (G.listeners.joinRequests) { try { off(reqRef); } catch(e){} }
   G.listeners.joinRequests = onValue(reqRef, snap => {
     // Remove old notifications
@@ -2003,17 +2003,17 @@ async function setupRoom(code, startStageNum) {
     members: { [G.uid]: { name: G.player.name, uid: G.uid, rankKey: rank.key, rankName: rank.name, isBot: false, ready: false } },
     leader: G.uid
   };
-  await set(ref(db, `rooms/${code}`), room);
+  await set(ref(db, `rooms2/${code}`), room);
   listenToRoom(code);
   showRoomWaiting(code, true, startStageNum);
 }
 
 async function joinRoom(code) {
   const rank = getRank(G.player.exp||0);
-  await update(ref(db, `rooms/${code}/members/${G.uid}`), { name: G.player.name, uid: G.uid, rankKey: rank.key, rankName: rank.name, isBot: false, ready: false });
+  await update(ref(db, `rooms2/${code}/members/${G.uid}`), { name: G.player.name, uid: G.uid, rankKey: rank.key, rankName: rank.name, isBot: false, ready: false });
   listenToRoom(code);
   // Fetch startStage from room
-  const snap = await get(ref(db, `rooms/${code}`));
+  const snap = await get(ref(db, `rooms2/${code}`));
   const startStageNum = snap.exists() ? (snap.val().startStage || 1) : 1;
   showRoomWaiting(code, false, startStageNum);
 }
@@ -2092,8 +2092,8 @@ async function populateWaitingRoomFriends() {
 }
 
 function listenToRoom(code) {
-  if (G.listeners.room) { try { off(ref(db, `rooms/${G.teamId || code}`)); } catch(e){} }
-  G.listeners.room = onValue(ref(db, `rooms/${code}`), snap => {
+  if (G.listeners.room) { try { off(ref(db, `rooms2/${G.teamId || code}`)); } catch(e){} }
+  G.listeners.room = onValue(ref(db, `rooms2/${code}`), snap => {
     if (!snap.exists()) { leaveRoom(); return; }
     const room = snap.val();
     const members = room.members || {};
@@ -2113,15 +2113,15 @@ function listenToRoom(code) {
 }
 
 window.updateRoomStartStage = async (code, val) => {
-  await update(ref(db, `rooms/${code}`), { startStage: parseInt(val) });
+  await update(ref(db, `rooms2/${code}`), { startStage: parseInt(val) });
 };
 
 window.readyUp = async (code) => {
   code = code || G.teamId;
   // Dungeon has its own readyUp logic
-  const snapCheck = await get(ref(db, `rooms/${code}`));
+  const snapCheck = await get(ref(db, `rooms2/${code}`));
   if (snapCheck.exists() && snapCheck.val().isDungeon) { return readyUpDungeon(code); }
-  const snap = await get(ref(db, `rooms/${code}`));
+  const snap = await get(ref(db, `rooms2/${code}`));
   if (!snap.exists()) return;
   const room = snap.val();
   const mems = room.members || {};
@@ -2143,26 +2143,26 @@ window.readyUp = async (code) => {
   }
   // Mark all real members ready
   realMembers.forEach(m => { if (updated[m.uid]) updated[m.uid].ready = true; });
-  await update(ref(db, `rooms/${code}`), { status: 'starting', members: updated });
+  await update(ref(db, `rooms2/${code}`), { status: 'starting', members: updated });
 };
 
 window.leaveRoom = async () => {
   hideLobbyChat();
-  if (G.listeners.teamChat) { try { off(ref(db, `rooms/${G.teamId}/chat`)); } catch(e){} G.listeners.teamChat = null; }
-  if (G.listeners.joinRequests) { try { off(ref(db, `rooms/${G.teamId}/joinRequests`)); } catch(e){} G.listeners.joinRequests = null; }
+  if (G.listeners.teamChat) { try { off(ref(db, `rooms2/${G.teamId}/chat`)); } catch(e){} G.listeners.teamChat = null; }
+  if (G.listeners.joinRequests) { try { off(ref(db, `rooms2/${G.teamId}/joinRequests`)); } catch(e){} G.listeners.joinRequests = null; }
   if (G.listeners.joinResp) { try { off(ref(db, `joinResponses/${G.uid}`)); } catch(e){} G.listeners.joinResp = null; }
   if (G.teamId) {
-    if (G.listeners.room) { try { off(ref(db, `rooms/${G.teamId}`)); } catch(e){} G.listeners.room = null; }
+    if (G.listeners.room) { try { off(ref(db, `rooms2/${G.teamId}`)); } catch(e){} G.listeners.room = null; }
     try {
-      const snap = await get(ref(db, `rooms/${G.teamId}`));
+      const snap = await get(ref(db, `rooms2/${G.teamId}`));
       if (snap.exists()) {
         const room = snap.val();
         if (room.leader === G.uid) {
           // Leader dissolves the room
-          await update(ref(db, `rooms/${G.teamId}`), { status: 'disbanded' });
-          await remove(ref(db, `rooms/${G.teamId}`));
+          await update(ref(db, `rooms2/${G.teamId}`), { status: 'disbanded' });
+          await remove(ref(db, `rooms2/${G.teamId}`));
         } else {
-          await remove(ref(db, `rooms/${G.teamId}/members/${G.uid}`));
+          await remove(ref(db, `rooms2/${G.teamId}/members/${G.uid}`));
         }
       }
     } catch(e){}
@@ -2173,7 +2173,7 @@ window.leaveRoom = async () => {
 
 function renderMatchTeam(members) {
   if (!members) {
-    get(ref(db, `rooms/${G.teamId}/members`)).then(s => renderMatchTeam(s.val()||{}));
+    get(ref(db, `rooms2/${G.teamId}/members`)).then(s => renderMatchTeam(s.val()||{}));
     return;
   }
   const memVals = Object.values(members);
@@ -2197,7 +2197,7 @@ function renderMatchTeam(members) {
 
 // ===== GAME START FROM ROOM =====
 async function startGameFromRoom(room, code) {
-  if (G.listeners.room) { off(ref(db, `rooms/${code}`)); G.listeners.room = null; }
+  if (G.listeners.room) { off(ref(db, `rooms2/${code}`)); G.listeners.room = null; }
   hideLobbyChat();
   document.getElementById('matchScreen').classList.add('hidden');
   const members = room.members || {};
@@ -2205,18 +2205,18 @@ async function startGameFromRoom(room, code) {
   // Mark room as ingame immediately so no one else can join
   // Then after a short delay, delete the room entry entirely so the code is freed
   if (room.status !== 'ingame') {
-    update(ref(db, `rooms/${code}`), { status: 'ingame' }).then(() => {
+    update(ref(db, `rooms2/${code}`), { status: 'ingame' }).then(() => {
       // Delete the room's members node (keeps battle/alloc subnodes for game sync)
       // The room entry itself can stay for battle sync, but members are cleared
-      remove(ref(db, `rooms/${code}/members`));
+      remove(ref(db, `rooms2/${code}/members`));
     });
   }
 
   // Use onChildRemoved on a separate presence node instead of members
   // (members node is deleted above, so we use a different approach for disconnect detection)
   // Write each real player's presence and watch for removal
-  const presenceRef = ref(db, `rooms/${code}/presence`);
-  const myPresenceRef = ref(db, `rooms/${code}/presence/${G.player.name}`);
+  const presenceRef = ref(db, `rooms2/${code}/presence`);
+  const myPresenceRef = ref(db, `rooms2/${code}/presence/${G.player.name}`);
   set(myPresenceRef, { name: G.player.name, uid: G.uid, ts: Date.now() });
 
   G.listeners.gameMembers = onChildRemoved(presenceRef, snap => {
@@ -2227,26 +2227,26 @@ async function startGameFromRoom(room, code) {
   });
 
   // Listen for next stage signal from host
-  G.listeners.nextStage = onValue(ref(db, `rooms/${code}/nextStage`), snap => {
+  G.listeners.nextStage = onValue(ref(db, `rooms2/${code}/nextStage`), snap => {
     if (!snap.exists() || !G.gameState) return;
     const stageNum = snap.val();
     if (stageNum && stageNum !== G.gameState.stage && !G.gameState.isHost) {
       document.getElementById('resultOverlay').classList.add('hidden');
-      if (G.listeners.battle) { off(ref(db, `rooms/${code}/battle`)); G.listeners.battle = null; }
-      if (G.listeners.battleLog) { off(ref(db, `rooms/${code}/battleLog`)); G.listeners.battleLog = null; }
+      if (G.listeners.battle) { off(ref(db, `rooms2/${code}/battle`)); G.listeners.battle = null; }
+      if (G.listeners.battleLog) { off(ref(db, `rooms2/${code}/battleLog`)); G.listeners.battleLog = null; }
       startStage(stageNum);
     }
   });
 
   // Listen for host transfers
-  G.listeners.hostChange = onValue(ref(db, `rooms/${code}/host`), snap => {
+  G.listeners.hostChange = onValue(ref(db, `rooms2/${code}/host`), snap => {
     if (!snap.exists() || !G.gameState) return;
     const newHostUid = snap.val();
     if (newHostUid === G.uid && !G.gameState.isHost) {
       G.gameState.isHost = true;
       G.gameState.hostName = G.uid;
-      if (G.listeners.battle)    { off(ref(db, `rooms/${code}/battle`));    G.listeners.battle = null; }
-      if (G.listeners.battleLog) { off(ref(db, `rooms/${code}/battleLog`)); G.listeners.battleLog = null; }
+      if (G.listeners.battle)    { off(ref(db, `rooms2/${code}/battle`));    G.listeners.battle = null; }
+      if (G.listeners.battleLog) { off(ref(db, `rooms2/${code}/battleLog`)); G.listeners.battleLog = null; }
       listenForActions();
       if (G.gameState.battleActive) {
         writeBattleState();
@@ -2350,7 +2350,7 @@ async function initGame(members, roomId, startStageNum) {
     startStage: startStageNum
   };
   if (iAmHost) {
-    set(ref(db, `rooms/${roomId}/host`), G.uid);
+    set(ref(db, `rooms2/${roomId}/host`), G.uid);
   }
   document.getElementById('gameScreen').classList.remove('hidden');
   startStage(startStageNum);
@@ -2395,7 +2395,7 @@ function showJobSelect() {
   if (!gs.roomId || realTeammates.length === 0) return;
 
   // Listen for taken jobs in real-time
-  const jobsRef = ref(db, `rooms/${gs.roomId}/jobs`);
+  const jobsRef = ref(db, `rooms2/${gs.roomId}/jobs`);
   if (G.listeners.jobSelect) { try { off(jobsRef); } catch(e){} }
   G.listeners.jobSelect = onValue(jobsRef, snap => {
     const taken = snap.exists() ? snap.val() : {};
@@ -2456,7 +2456,7 @@ window.confirmJob = () => {
   }
   // Stop listening to job select
   if (gs.roomId && G.listeners.jobSelect) {
-    try { off(ref(db, `rooms/${gs.roomId}/jobs`)); } catch(e){}
+    try { off(ref(db, `rooms2/${gs.roomId}/jobs`)); } catch(e){}
     G.listeners.jobSelect = null;
   }
   // Solo mode: allow player to assign jobs to bot teammates
@@ -2494,7 +2494,7 @@ window.confirmJob = () => {
   resetAllocUI(pts, myMem);
   // Write job to Firebase so host and teammates see it
   if (gs.roomId) {
-    set(ref(db, `rooms/${gs.roomId}/jobs/${G.uid}`), G._selectedJob);
+    set(ref(db, `rooms2/${gs.roomId}/jobs/${G.uid}`), G._selectedJob);
   }
 };
 
@@ -2578,7 +2578,7 @@ function handleSkillTargetClick(enemyIdx) {
 
 function sendSkillRequest(jobId, targetIdx) {
   const gs = G.gameState;
-  push(ref(db, `rooms/${gs.roomId}/actions`), {
+  push(ref(db, `rooms2/${gs.roomId}/actions`), {
     type: 'skillRequest',
     uid: G.uid,
     from: G.player.name,
@@ -2916,7 +2916,7 @@ window.confirmAlloc = async () => {
     hp: myMem.maxHp, atk: myMem.atk, def: myMem.def,
     maxHp: myMem.maxHp, done: true, ts: Date.now()
   };
-  await set(ref(db, `rooms/${gs.roomId}/alloc/${G.uid}/stage${gs.stage}`), allocData);
+  await set(ref(db, `rooms2/${gs.roomId}/alloc/${G.uid}/stage${gs.stage}`), allocData);
 
   // Show waiting overlay inside alloc panel
   document.getElementById('allocWaitMsg').classList.remove('hidden');
@@ -2926,7 +2926,7 @@ window.confirmAlloc = async () => {
 };
 
 function listenForAllocReady(gs) {
-  const allocRef = ref(db, `rooms/${gs.roomId}/alloc`);
+  const allocRef = ref(db, `rooms2/${gs.roomId}/alloc`);
   if (G.listeners.alloc) { off(allocRef); }
   G.listeners.alloc = onValue(allocRef, snap => {
     const allocData = snap.val() || {};
@@ -2957,7 +2957,7 @@ function listenForAllocReady(gs) {
     // Load all teammate jobs from Firebase (host needs them for passive calculations)
     const finishAlloc = async () => {
       if (gs.roomId && isHost()) {
-        const jobsSnap = await get(ref(db, `rooms/${gs.roomId}/jobs`));
+        const jobsSnap = await get(ref(db, `rooms2/${gs.roomId}/jobs`));
         const jobsData = jobsSnap.exists() ? jobsSnap.val() : {};
         // jobs keyed by uid
         gs.team.forEach(m => {
@@ -3011,10 +3011,10 @@ function handleTeammateDisconnect(name) {
     gs.isHost = true;
     gs.hostName = G.uid;
     // Write new host to Firebase so others know
-    set(ref(db, `rooms/${gs.roomId}/host`), G.uid);
+    set(ref(db, `rooms2/${gs.roomId}/host`), G.uid);
     // Stop listening as non-host, start driving as host
-    if (G.listeners.battle)    { off(ref(db, `rooms/${gs.roomId}/battle`));    G.listeners.battle = null; }
-    if (G.listeners.battleLog) { off(ref(db, `rooms/${gs.roomId}/battleLog`)); G.listeners.battleLog = null; }
+    if (G.listeners.battle)    { off(ref(db, `rooms2/${gs.roomId}/battle`));    G.listeners.battle = null; }
+    if (G.listeners.battleLog) { off(ref(db, `rooms2/${gs.roomId}/battleLog`)); G.listeners.battleLog = null; }
     listenForActions();
     addLog(`<span class="cyan">已接管戰鬥控制權</span>`);
     // Resume battle from current state
@@ -3034,7 +3034,7 @@ function handleTeammateDisconnect(name) {
       const myMem = gs.team.find(t => t.isMe);
       if (myMem && myMem.allocDone) {
         // Write fake alloc for disconnected player to unblock
-        const fakeAllocRef = ref(db, `rooms/${gs.roomId}/alloc/${name}/stage${gs.stage}`);
+        const fakeAllocRef = ref(db, `rooms2/${gs.roomId}/alloc/${name}/stage${gs.stage}`);
         set(fakeAllocRef, { hp: m.hp, maxHp: m.maxHp, atk: m.atk, def: m.def, done: true, ts: Date.now() });
       }
     }
@@ -3048,7 +3048,7 @@ function handleTeammateDisconnect(name) {
   if (gs.pendingAlloc) {
     const myMem = gs.team.find(t => t.isMe);
     if (myMem && myMem.allocDone) {
-      const fakeAllocRef = ref(db, `rooms/${gs.roomId}/alloc/${name}/stage${gs.stage}`);
+      const fakeAllocRef = ref(db, `rooms2/${gs.roomId}/alloc/${name}/stage${gs.stage}`);
       set(fakeAllocRef, { hp: m.hp, maxHp: m.maxHp, atk: m.atk, def: m.def, done: true, ts: Date.now() });
     }
   }
@@ -3316,13 +3316,13 @@ function writeBattleState() {
     hitCount: gs._hitCount || {},
     ts: Date.now()
   };
-  set(ref(db, `rooms/${gs.roomId}/battle`), state);
+  set(ref(db, `rooms2/${gs.roomId}/battle`), state);
 }
 
 function writeBattleEvent(event) {
   if (!isHost()) return;
   const gs = G.gameState;
-  push(ref(db, `rooms/${gs.roomId}/battleLog`), { ...event, ts: Date.now() });
+  push(ref(db, `rooms2/${gs.roomId}/battleLog`), { ...event, ts: Date.now() });
 }
 
 function addLog(msg) {
@@ -3336,7 +3336,7 @@ function addLog(msg) {
   }
   // Host broadcasts log to Firebase so non-host clients see it too
   if (isHost() && G.gameState) {
-    push(ref(db, `rooms/${G.gameState.roomId}/battleLog`), {
+    push(ref(db, `rooms2/${G.gameState.roomId}/battleLog`), {
       type: 'log', msg, ts: Date.now()
     });
   }
@@ -3346,14 +3346,14 @@ function addLog(msg) {
 function listenBattleState() {
   const gs = G.gameState;
   if (isHost()) return; // host drives, doesn't listen to itself
-  const battleRef = ref(db, `rooms/${gs.roomId}/battle`);
+  const battleRef = ref(db, `rooms2/${gs.roomId}/battle`);
   G.listeners.battle = onValue(battleRef, snap => {
     if (!snap.exists() || !G.gameState) return;
     const state = snap.val();
     applyBattleState(state);
   });
   // Also listen to battle log for effects
-  const logRef = query(ref(db, `rooms/${gs.roomId}/battleLog`), orderByChild('ts'), limitToLast(1));
+  const logRef = query(ref(db, `rooms2/${gs.roomId}/battleLog`), orderByChild('ts'), limitToLast(1));
   G.listeners.battleLog = onChildAdded(logRef, snap => {
     if (!G.gameState) return;
     const ev = snap.val();
@@ -3488,7 +3488,7 @@ function applyBattleState(state) {
 // Non-host sends attack request via dedicated actions node (not battleLog)
 function sendActionRequest(enemyIdx) {
   const gs = G.gameState;
-  push(ref(db, `rooms/${gs.roomId}/actions`), {
+  push(ref(db, `rooms2/${gs.roomId}/actions`), {
     type: 'actionRequest',
     uid: G.uid,
     from: G.player.name,
@@ -3501,7 +3501,7 @@ function sendActionRequest(enemyIdx) {
 function listenForActions() {
   const gs = G.gameState;
   if (!isHost()) return;
-  const actionsRef = ref(db, `rooms/${gs.roomId}/actions`);
+  const actionsRef = ref(db, `rooms2/${gs.roomId}/actions`);
   G.listeners.actions = onChildAdded(actionsRef, snap => {
     if (!G.gameState || !G.gameState.battleActive) return;
     const ev = snap.val();
@@ -3746,14 +3746,14 @@ function hostCheckBattleEnd() {
   const teamAlive = gs.team.some(m => m.hp > 0 && !m.isSummon);
   const enemiesAlive = gs.enemies.some(e => e.hp > 0);
   if (!enemiesAlive) {
-    set(ref(db, `rooms/${gs.roomId}/battle/stageResult`), 'win');
+    set(ref(db, `rooms2/${gs.roomId}/battle/stageResult`), 'win');
     if (gs.isDungeon) setTimeout(() => showDungeonResult(true), 600);
     else if (gs.isPvp) setTimeout(() => showPvpResult(true), 600);
     else setTimeout(() => showStageResult(true), 600);
     return true;
   }
   if (!teamAlive) {
-    set(ref(db, `rooms/${gs.roomId}/battle/stageResult`), 'lose');
+    set(ref(db, `rooms2/${gs.roomId}/battle/stageResult`), 'lose');
     if (gs.isDungeon) setTimeout(() => showDungeonResult(false), 600);
     else if (gs.isPvp) setTimeout(() => showPvpResult(false), 600);
     else setTimeout(() => showStageResult(false), 600);
@@ -4337,10 +4337,10 @@ window.nextStage = () => {
   if (gs.stage < STAGE_CONFIG.length) {
     if (isHost()) {
       // Host clears battle state and signals next stage
-      remove(ref(db, `rooms/${gs.roomId}/battle`));
-      remove(ref(db, `rooms/${gs.roomId}/battleLog`));
-      remove(ref(db, `rooms/${gs.roomId}/alloc`));
-      set(ref(db, `rooms/${gs.roomId}/nextStage`), gs.stage + 1);
+      remove(ref(db, `rooms2/${gs.roomId}/battle`));
+      remove(ref(db, `rooms2/${gs.roomId}/battleLog`));
+      remove(ref(db, `rooms2/${gs.roomId}/alloc`));
+      set(ref(db, `rooms2/${gs.roomId}/nextStage`), gs.stage + 1);
     }
     startStage(gs.stage + 1);
   }
@@ -4353,22 +4353,22 @@ window.exitGame = async () => {
   const tid = G.teamId;
   // Stop all listeners FIRST
   if (tid) {
-    try { if (G.listeners.alloc)       off(ref(db, `rooms/${tid}/alloc`));      } catch(e){} G.listeners.alloc = null;
-    try { if (G.listeners.gameMembers) off(ref(db, `rooms/${tid}/presence`));   } catch(e){} G.listeners.gameMembers = null;
-    try { if (G.listeners.battle)      off(ref(db, `rooms/${tid}/battle`));     } catch(e){} G.listeners.battle = null;
-    try { if (G.listeners.battleLog)   off(ref(db, `rooms/${tid}/battleLog`));  } catch(e){} G.listeners.battleLog = null;
-    try { if (G.listeners.nextStage)   off(ref(db, `rooms/${tid}/nextStage`));  } catch(e){} G.listeners.nextStage = null;
-    try { if (G.listeners.actions)     off(ref(db, `rooms/${tid}/actions`));    } catch(e){} G.listeners.actions = null;
-    try { if (G.listeners.hostChange)  off(ref(db, `rooms/${tid}/host`));       } catch(e){} G.listeners.hostChange = null;
-    try { if (G.listeners.teamChat)    off(ref(db, `rooms/${tid}/chat`));       } catch(e){} G.listeners.teamChat = null;
-    try { if (G.listeners.jobSelect)   off(ref(db, `rooms/${tid}/jobs`));       } catch(e){} G.listeners.jobSelect = null;
+    try { if (G.listeners.alloc)       off(ref(db, `rooms2/${tid}/alloc`));      } catch(e){} G.listeners.alloc = null;
+    try { if (G.listeners.gameMembers) off(ref(db, `rooms2/${tid}/presence`));   } catch(e){} G.listeners.gameMembers = null;
+    try { if (G.listeners.battle)      off(ref(db, `rooms2/${tid}/battle`));     } catch(e){} G.listeners.battle = null;
+    try { if (G.listeners.battleLog)   off(ref(db, `rooms2/${tid}/battleLog`));  } catch(e){} G.listeners.battleLog = null;
+    try { if (G.listeners.nextStage)   off(ref(db, `rooms2/${tid}/nextStage`));  } catch(e){} G.listeners.nextStage = null;
+    try { if (G.listeners.actions)     off(ref(db, `rooms2/${tid}/actions`));    } catch(e){} G.listeners.actions = null;
+    try { if (G.listeners.hostChange)  off(ref(db, `rooms2/${tid}/host`));       } catch(e){} G.listeners.hostChange = null;
+    try { if (G.listeners.teamChat)    off(ref(db, `rooms2/${tid}/chat`));       } catch(e){} G.listeners.teamChat = null;
+    try { if (G.listeners.jobSelect)   off(ref(db, `rooms2/${tid}/jobs`));       } catch(e){} G.listeners.jobSelect = null;
   }
   if (tid) {
     try {
-      await remove(ref(db, `rooms/${tid}/presence/${G.player.name}`));
-      const presSnap = await get(ref(db, `rooms/${tid}/presence`));
+      await remove(ref(db, `rooms2/${tid}/presence/${G.player.name}`));
+      const presSnap = await get(ref(db, `rooms2/${tid}/presence`));
       if (!presSnap.exists() || Object.keys(presSnap.val()||{}).length === 0) {
-        await remove(ref(db, `rooms/${tid}`));
+        await remove(ref(db, `rooms2/${tid}`));
       }
     } catch(e){}
     G.teamId = null;
@@ -4397,9 +4397,9 @@ window.addEventListener('beforeunload', () => {
   if (G.matchRef) remove(G.matchRef);
   if (G.teamId && G.uid) {
     if (G.gameState) {
-      remove(ref(db, `rooms/${G.teamId}/presence/${G.player.name}`));
+      remove(ref(db, `rooms2/${G.teamId}/presence/${G.player.name}`));
     } else {
-      remove(ref(db, `rooms/${G.teamId}/members/${G.uid}`));
+      remove(ref(db, `rooms2/${G.teamId}/members/${G.uid}`));
     }
   }
 });
@@ -4630,7 +4630,7 @@ window.showSearchDungeon = () => {
 
 window.loadOpenDungeons = async () => {
   const listEl = document.getElementById('openDungeonsList');
-  const snap = await get(ref(db, 'rooms'));
+  const snap = await get(ref(db, 'rooms2'));
   if (!snap.exists()) { listEl.innerHTML = '<div style="color:var(--text2);font-size:13px;padding:8px">目前沒有副本房間</div>'; return; }
   const rooms = snap.val();
   const open = Object.entries(rooms)
@@ -4658,7 +4658,7 @@ window.joinDungeonByCode = async () => {
   const code = document.getElementById('joinDungeonCodeInput').value.trim().toUpperCase();
   const msgEl = document.getElementById('joinDungeonCodeMsg');
   if (!code) { msgEl.textContent = '請輸入代碼'; return; }
-  const snap = await get(ref(db, `rooms/${code}`));
+  const snap = await get(ref(db, `rooms2/${code}`));
   if (!snap.exists()) { msgEl.textContent = '找不到此副本房間'; return; }
   const room = snap.val();
   if (!room.isDungeon) { msgEl.textContent = '這不是副本房間'; return; }
@@ -4673,7 +4673,7 @@ window.requestJoinDungeon = async (roomId) => {
   closeModal('searchDungeonModal');
   G.isDungeon = true;
   G.teamId = roomId;
-  const snap = await get(ref(db, `rooms/${roomId}`));
+  const snap = await get(ref(db, `rooms2/${roomId}`));
   G.dungeonRankIdx = snap.exists() ? (snap.val().dungeonRankIdx || 0) : 0;
   await requestJoinRoom(roomId); // reuse existing join request system
 };
@@ -4686,7 +4686,7 @@ async function setupDungeonRoom(code, rankIdx) {
     createdAt: Date.now(), startStage: 1, leader: G.uid,
     members: { [G.uid]: { name:G.player.name, uid:G.uid, rankKey:rank.key, rankName:rank.name, isBot:false, ready:false } }
   };
-  await set(ref(db, `rooms/${code}`), room);
+  await set(ref(db, `rooms2/${code}`), room);
   listenToRoom(code);
   showRoomWaiting(code, true, 1);
   document.getElementById('matchTitle').textContent = '🏰 副本等待室';
@@ -4695,7 +4695,7 @@ async function setupDungeonRoom(code, rankIdx) {
 
 // Override readyUp for dungeon: no startStage skip logic needed
 window.readyUpDungeon = async (code) => {
-  const snap = await get(ref(db, `rooms/${code}`));
+  const snap = await get(ref(db, `rooms2/${code}`));
   if (!snap.exists()) return;
   const room = snap.val();
   const mems = room.members || {};
@@ -4709,7 +4709,7 @@ window.readyUpDungeon = async (code) => {
     updated[`Bot_${i}`] = { name:`人機${i}`, rankKey:bs.rankKey, rankName:bs.rankName, isBot:true, ready:true };
   }
   realMembers.forEach(m => { if (updated[m.uid]) updated[m.uid].ready = true; });
-  await update(ref(db, `rooms/${code}`), { status:'starting', members:updated });
+  await update(ref(db, `rooms2/${code}`), { status:'starting', members:updated });
 };
 
 function botStatsForRank(rankIdx) {
@@ -4777,9 +4777,9 @@ async function initDungeon(members, roomId, rankIdx) {
     roundNum:1, startStage:1, isDungeon:true, dungeonRankIdx:rankIdx
   };
   if (iAmHost) {
-    set(ref(db, `rooms/${roomId}/host`), G.uid);
-    remove(ref(db, `rooms/${roomId}/battleLog`)).catch(()=>{});
-    remove(ref(db, `rooms/${roomId}/battle`)).catch(()=>{});
+    set(ref(db, `rooms2/${roomId}/host`), G.uid);
+    remove(ref(db, `rooms2/${roomId}/battleLog`)).catch(()=>{});
+    remove(ref(db, `rooms2/${roomId}/battle`)).catch(()=>{});
   }
   document.getElementById('gameScreen').classList.remove('hidden');
   startDungeonStage(rankIdx, pts);
@@ -4872,7 +4872,7 @@ window.exitDungeon = async () => {
       try { if (G.listeners[key]) off(ref(db, lRef)); } catch(e){}
       G.listeners[key] = null;
     }
-    try { await remove(ref(db, `rooms/${tid}`)); } catch(e){}
+    try { await remove(ref(db, `rooms2/${tid}`)); } catch(e){}
     G.teamId = null;
   }
   G.gameState = null;
@@ -5157,7 +5157,7 @@ window.showSearchPvp = () => {
 window.loadOpenPvpRooms = async () => {
   const listEl = document.getElementById('openPvpRoomsList');
   try {
-    const snap = await get(ref(db, 'rooms'));
+    const snap = await get(ref(db, 'rooms2'));
     if (!snap.exists()) { listEl.innerHTML = '<div style="color:var(--text2);font-size:13px;padding:8px">目前沒有 PVP 房間</div>'; return; }
     const rooms = snap.val();
     const open = Object.entries(rooms)
@@ -5185,7 +5185,7 @@ window.joinPvpByCode = async () => {
   const code = document.getElementById('joinPvpCodeInput').value.trim().toUpperCase();
   const msgEl = document.getElementById('joinPvpCodeMsg');
   if (!code) { msgEl.textContent = '請輸入代碼'; return; }
-  const snap = await get(ref(db, `rooms/${code}`));
+  const snap = await get(ref(db, `rooms2/${code}`));
   if (!snap.exists()) { msgEl.textContent = '找不到此房間'; return; }
   const room = snap.val();
   if (!room.isPvp) { msgEl.textContent = '這不是 PVP 房間'; return; }
@@ -5210,7 +5210,7 @@ window.doCreatePvp = async () => {
   const pts    = Math.min(50, Math.max(0, parseInt(document.getElementById('pvpAllocPts').value) || 0));
   if (!code || code.length < 2) { msgEl.textContent = '請輸入至少 2 字元的代碼'; return; }
   if (!/^[A-Z0-9]+$/.test(code)) { msgEl.textContent = '代碼只能使用英文字母和數字'; return; }
-  const snap = await get(ref(db, `rooms/${code}`));
+  const snap = await get(ref(db, `rooms2/${code}`));
   if (snap.exists()) { msgEl.textContent = '此代碼已被使用'; return; }
   closeModal('createPvpModal');
   G.isPvp = true;
@@ -5227,7 +5227,7 @@ async function setupPvpRoom(code, size, pts) {
     members: { [G.uid]: { name:G.player.name, uid:G.uid, rankKey:rank.key, rankName:rank.name, isBot:false, ready:false } },
     teamA: [], teamB: []
   };
-  await set(ref(db, `rooms/${code}`), room);
+  await set(ref(db, `rooms2/${code}`), room);
   listenToRoom(code);
   showPvpWaiting(code, true, size, pts);
 }
@@ -5268,7 +5268,7 @@ function showPvpWaiting(code, isLeader, size, pts) {
 }
 
 async function renderPvpTeams(code) {
-  const snap = await get(ref(db, `rooms/${code}`));
+  const snap = await get(ref(db, `rooms2/${code}`));
   if (!snap.exists()) return;
   const room = snap.val();
   const members = room.members || {};
@@ -5321,7 +5321,7 @@ async function renderPvpTeams(code) {
 }
 
 window.pvpMovePlayer = async (code, uid, team, action) => {
-  const snap = await get(ref(db, `rooms/${code}`));
+  const snap = await get(ref(db, `rooms2/${code}`));
   if (!snap.exists()) return;
   const room = snap.val();
   let teamA = [...(room.teamA||[])];
@@ -5338,12 +5338,12 @@ window.pvpMovePlayer = async (code, uid, team, action) => {
     else if (team === 'B' && teamB.length < size) teamB.push(uid);
     else { notify(`隊伍 ${team} 已滿（${size} 人）`, 'err'); return; }
   }
-  await update(ref(db, `rooms/${code}`), { teamA, teamB });
+  await update(ref(db, `rooms2/${code}`), { teamA, teamB });
   renderPvpTeams(code);
 };
 
 window.addPvpBot = async (code, team) => {
-  const snap = await get(ref(db, `rooms/${code}`));
+  const snap = await get(ref(db, `rooms2/${code}`));
   if (!snap.exists()) return;
   const room = snap.val();
   const size = room.teamSize || 3;
@@ -5357,26 +5357,26 @@ window.addPvpBot = async (code, team) => {
   const mems = { ...(room.members||{}), [botId]: { name:`人機`, uid:botId, rankKey:bs.rankKey, rankName:bs.rankName, isBot:true, ready:true }};
   const update_ = { members: mems };
   update_[team === 'A' ? 'teamA' : 'teamB'] = [...teamArr, botId];
-  await update(ref(db, `rooms/${code}`), update_);
+  await update(ref(db, `rooms2/${code}`), update_);
   renderPvpTeams(code);
 };
 
 window.readyPvp = async (code) => {
-  await update(ref(db, `rooms/${code}/members/${G.uid}`), { ready: true });
+  await update(ref(db, `rooms2/${code}/members/${G.uid}`), { ready: true });
   document.getElementById('pvpReadyBtn').disabled = true;
   document.getElementById('pvpReadyBtn').textContent = '已準備';
   notify('已準備！等待房主開始', 'ok');
 };
 
 window.startPvp = async (code) => {
-  const snap = await get(ref(db, `rooms/${code}`));
+  const snap = await get(ref(db, `rooms2/${code}`));
   if (!snap.exists()) return;
   const room = snap.val();
   const size = room.teamSize || 3;
   if ((room.teamA||[]).length !== size || (room.teamB||[]).length !== size) {
     notify('雙方隊伍人數未達標', 'err'); return;
   }
-  await update(ref(db, `rooms/${code}`), { status: 'starting' });
+  await update(ref(db, `rooms2/${code}`), { status: 'starting' });
 };
 
 // listenToRoom already calls startGameFromRoom on status==='starting'
@@ -5439,9 +5439,9 @@ async function initPvp(room, roomId) {
     myTeam, teamA, teamB
   };
   if (iAmHost) {
-    set(ref(db,`rooms/${roomId}/host`), G.uid);
-    remove(ref(db, `rooms/${roomId}/battleLog`)).catch(()=>{});
-    remove(ref(db, `rooms/${roomId}/battle`)).catch(()=>{});
+    set(ref(db,`rooms2/${roomId}/host`), G.uid);
+    remove(ref(db, `rooms2/${roomId}/battleLog`)).catch(()=>{});
+    remove(ref(db, `rooms2/${roomId}/battle`)).catch(()=>{});
   }
   document.getElementById('gameScreen').classList.remove('hidden');
   startPvpStage(pvpPts);
@@ -5515,10 +5515,10 @@ window.exitPvp = async () => {
   const tid = G.teamId;
   if (tid) {
     for (const key of ['alloc','presence','battle','battleLog','nextStage','actions','joinRequests']) {
-      try { if(G.listeners[key]) off(ref(db,`rooms/${tid}/${key.replace('gameMembers','presence')}`)); } catch(e){}
+      try { if(G.listeners[key]) off(ref(db,`rooms2/${tid}/${key.replace('gameMembers','presence')}`)); } catch(e){}
       G.listeners[key] = null;
     }
-    try { await remove(ref(db,`rooms/${tid}`)); } catch(e){}
+    try { await remove(ref(db,`rooms2/${tid}`)); } catch(e){}
     G.teamId = null;
   }
   G.gameState = null;
