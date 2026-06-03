@@ -3066,6 +3066,7 @@ function handleTeammateDisconnect(name) {
 }
 function startBattle() {
   const gs = G.gameState;
+  console.log('[startBattle] roomId=', gs.roomId, 'isHost=', gs.isHost, 'team=', gs.team?.length, 'enemies=', gs.enemies?.length);
   gs.battleActive = true;
   gs.pendingAlloc = false;
   gs.waitingForPlayer = false;
@@ -3118,6 +3119,7 @@ function checkBattleEnd() { return isHost() ? hostCheckBattleEnd() : false; }
 
 window.clickEnemy = (i) => {
   const gs = G.gameState;
+  console.log('[clickEnemy]', i, 'battleActive=', gs?.battleActive, 'waitingForPlayer=', gs?.waitingForPlayer, 'isHost=', gs?.isHost);
   if (!gs || !gs.battleActive) return;
   const enemy = gs.enemies[i];
   if (!enemy || enemy.hp <= 0) return;
@@ -3326,7 +3328,7 @@ function writeBattleState() {
     hitCount: gs._hitCount || {},
     ts: Date.now()
   };
-  set(ref(db, `rooms2/${gs.roomId}/battle`), state);
+  set(ref(db, `rooms2/${gs.roomId}/battle`), state).catch(e => console.error('[writeBattleState ERROR]', e));
 }
 
 // battleLog 用循環 key（0~49）避免無限累積
@@ -3337,7 +3339,7 @@ function writeBattleEvent(event) {
   const gs = G.gameState;
   const key = String(_battleLogIdx % 50).padStart(2, '0');
   _battleLogIdx++;
-  set(ref(db, `rooms2/${gs.roomId}/battleLog/${key}`), { ...event, ts: Date.now() });
+  set(ref(db, `rooms2/${gs.roomId}/battleLog/${key}`), { ...event, ts: Date.now() }).catch(e => console.error('[writeBattleEvent ERROR]', e));
 }
 
 function addLog(msg) {
@@ -3790,6 +3792,7 @@ function hostCheckBattleEnd() {
 function hostProcessNextTurn() {
   const gs = G.gameState;
   if (!gs || !gs.battleActive) return;
+  console.log('[TURN]', 'currentTurn=', gs.currentTurn, 'turnOrder.length=', gs.turnOrder?.length, 'waitingForPlayer=', gs.waitingForPlayer);
 
   // Skip dead
   while (gs.currentTurn < gs.turnOrder.length) {
