@@ -3412,9 +3412,10 @@ function isHost() {
 }
 
 function isSolo() {
-  // 單人模式：無真人隊友，不需 Firebase 同步
   const gs = G.gameState;
-  if (!gs || !gs.roomId) return true;
+  if (!gs) return true;
+  if (gs.isWorldBoss) return true; // 世界Boss永遠單人
+  if (!gs.roomId) return true;
   const realTeammates = (gs.team || []).filter(m => !m.isMe && !m.isBot);
   return realTeammates.length === 0;
 }
@@ -3780,6 +3781,10 @@ function hostPerformAttack(attacker, defender, isSlash) {
     // 天使聖鎧：每次受擊後觸發（不論是否致死）
     if (!defIsEnemy) applyArmorHeal(defender, dmg);
   }
+  // 世界Boss：累積玩家對boss造成的傷害
+  if (gs.isWorldBoss && defIsEnemy && !attIsEnemy && !savedByPhoenix) {
+    gs._wbTotalDmg = (gs._wbTotalDmg || 0) + dmg;
+  }
   let defDying = defender.hp <= 0;
 
   let msg = `<span class="accent">${attacker.name}</span> 攻擊 <span class="red">${defender.name}</span>`;
@@ -3803,6 +3808,10 @@ function hostPerformAttack(attacker, defender, isSlash) {
       if (!saved2) {
         defender.hp = Math.max(0, defender.hp - dmg2);
         if (!defIsEnemy) applyArmorHeal(defender, dmg2);
+      }
+      // 世界Boss：累積二連斬傷害
+      if (gs.isWorldBoss && defIsEnemy && !attIsEnemy && !saved2) {
+        gs._wbTotalDmg = (gs._wbTotalDmg || 0) + dmg2;
       }
       const dying2 = defender.hp <= 0;
       let msg2 = `<span class="accent">${attacker.name}</span> ⚔️⚔️<span style="color:#a0c4ff">二連斬！</span>`;
@@ -3915,16 +3924,18 @@ function hostCheckBattleEnd() {
   const enemiesAlive = gs.enemies.some(e => e.hp > 0);
   if (!enemiesAlive) {
     if (!isSolo()) set(ref(db, `rooms2/${gs.roomId}/battle/stageResult`), 'win');
-    if (gs.isDungeon) setTimeout(() => showDungeonResult(true), 600);
-    else if (gs.isPvp) setTimeout(() => showPvpResult(true), 600);
-    else setTimeout(() => showStageResult(true), 600);
+    if (gs.isWorldBoss)      setTimeout(() => showWorldBossResult(true),  600);
+    else if (gs.isDungeon)   setTimeout(() => showDungeonResult(true),    600);
+    else if (gs.isPvp)       setTimeout(() => showPvpResult(true),        600);
+    else                     setTimeout(() => showStageResult(true),      600);
     return true;
   }
   if (!teamAlive) {
     if (!isSolo()) set(ref(db, `rooms2/${gs.roomId}/battle/stageResult`), 'lose');
-    if (gs.isDungeon) setTimeout(() => showDungeonResult(false), 600);
-    else if (gs.isPvp) setTimeout(() => showPvpResult(false), 600);
-    else setTimeout(() => showStageResult(false), 600);
+    if (gs.isWorldBoss)      setTimeout(() => showWorldBossResult(false), 600);
+    else if (gs.isDungeon)   setTimeout(() => showDungeonResult(false),   600);
+    else if (gs.isPvp)       setTimeout(() => showPvpResult(false),       600);
+    else                     setTimeout(() => showStageResult(false),     600);
     return true;
   }
   return false;
@@ -5074,6 +5085,7 @@ window.equipDroppedItem = async () => {
 };
 
 window.exitDungeon = async () => {
+  const isWB = G.gameState?.isWorldBoss;
   document.getElementById('dungeonResultOverlay').classList.add('hidden');
   document.getElementById('gameScreen').classList.add('hidden');
   document.getElementById('resultOverlay').classList.add('hidden');
@@ -5095,7 +5107,8 @@ window.exitDungeon = async () => {
     G.teamId = null;
   }
   G.gameState = null;
-  switchTab('dungeon');
+  if (isWB) { switchTab('worldboss'); }
+  else { switchTab('dungeon'); }
 };
 
 
@@ -6394,68 +6407,99 @@ function wbDailyAtk() {
 window.challengeWorldBoss = async () => {
   const p = G.player;
   const rank = RANKS[getRankIndex(p.exp || 0)];
-  // 玩家屬性（基礎，含公會加成）
   const guild = G._myGuild || await loadMyGuild();
   G._myGuild = guild;
   const bonus = guild ? guildBonus(guild.level || 1) : 1;
-  const guildId = guild ? guild.id : null;
-  const guildName = guild ? guild.name : null;
 
-  let playerHp = rank.hp;
-  let playerAtk = rank.atk;
-  let playerDef = rank.def;
-  // 套用公會加成到最終傷害和防禦
-  const atkFinal = (mult) => Math.round(playerAtk * mult);
-  const defFinal = (mult) => Math.round(playerDef * mult);
+  // 套用公會加成到基礎屬性
+  const playerAtk = Math.round(rank.atk * bonus);
+  const playerDef = Math.round(rank.def * bonus);
+  const playerHp  = rank.hp;
 
   const bossAtk = wbDailyAtk();
-  const bossDef = 0;
 
-  let totalDmg = 0;
-  let round = 0;
-  const maxRounds = 200;
+  // 建立世界Boss戰鬥 gameState（單人，無需Firebase同步）
+  const me = {
+    name: G.player.name, uid: G.uid,
+    isBot: false, isMe: true,
+    hp: playerHp, maxHp: playerHp,
+    atk: playerAtk, def: playerDef,
+    rankKey: rank.key, rankName: rank.name,
+    skills: G.player.skills || {},
+    allocDone: true, job: null,
+    equippedItems: {}
+  };
+  loadEquipmentOntoFighter(me);
 
-  // 簡易戰鬥模擬（不含技能，純基礎屬性）
-  while (playerHp > 0 && round < maxRounds) {
-    round++;
-    // 玩家攻擊 boss
-    const dmgToBoss = Math.max(1, atkFinal(bonus) - bossDef);
-    totalDmg += dmgToBoss;
-    // Boss 攻擊玩家
-    const dmgToPlayer = Math.max(0, bossAtk - defFinal(bonus));
-    playerHp -= dmgToPlayer;
-    if (bossAtk === 0) break; // boss atk 0 → 玩家不會死，1回合結算
-  }
+  const boss = {
+    name: '混沌巨龍', icon: '💀',
+    isMonster: true,
+    hp: WB_MAX_HP, maxHp: WB_MAX_HP,
+    atk: bossAtk, def: 0,
+    isDungeonBoss: false, rankIdx: 0
+  };
 
-  // 累積傷害到資料庫
+  G.gameState = {
+    stage: 1, team: [me], enemies: [boss],
+    currentTurn: 0, turnOrder: [],
+    battleActive: false,
+    roomId: null,
+    pendingAlloc: false,
+    log: [], selectedEnemy: -1,
+    isHost: true, hostName: G.uid,
+    roundNum: 1, startStage: 1,
+    isDungeon: false, isPvp: false,
+    isWorldBoss: true,
+    _wbTotalDmg: 0,      // 本次累積傷害
+    _guild: guild
+  };
+  isSolo._override = true; // 強制單人模式，跳過Firebase同步
+
+  document.getElementById('gameScreen').classList.remove('hidden');
+  document.getElementById('jobSelectPanel').style.display = 'none';
+  document.getElementById('allocPanel').classList.add('hidden');
+  document.getElementById('gameStageText').textContent = '🌍 世界 Boss 挑戰';
+  document.getElementById('gameStageSub').textContent = '造成越多傷害越好！';
+  document.getElementById('battleSection').classList.remove('hidden');
+  startBattle();
+};
+
+// 世界Boss結束結算
+async function showWorldBossResult(won) {
+  const gs = G.gameState;
+  if (!gs || !gs.isWorldBoss) return;
+  const totalDmg = gs._wbTotalDmg || 0;
+  const guild = gs._guild;
+  const guildId = guild ? guild.id : null;
+  const guildName = guild ? guild.name : null;
   const today = twToday();
+
+  // 累積傷害到Firebase
   const dmgRef = ref(db, `worldBoss/dailyDmg/${today}/${G.uid}`);
   const prevSnap = await get(dmgRef);
   const prevDmg = prevSnap.exists() ? (prevSnap.val().dmg || 0) : 0;
-  const newDmg = prevDmg + totalDmg;
-
   await set(dmgRef, {
-    name: p.name, dmg: newDmg,
-    guildId: guildId || null,
-    guildName: guildName || null,
-    uid: G.uid
+    name: G.player.name, dmg: prevDmg + totalDmg,
+    guildId: guildId || null, guildName: guildName || null, uid: G.uid
   });
-
-  // 更新公會每日傷害
   if (guildId) {
-    const gDmgRef = ref(db, `worldBoss/guildDailyDmg/${today}/${guildId}`);
-    const gPrev = await get(gDmgRef);
+    const gRef = ref(db, `worldBoss/guildDailyDmg/${today}/${guildId}`);
+    const gPrev = await get(gRef);
     const gPrevDmg = gPrev.exists() ? (gPrev.val().dmg || 0) : 0;
-    await set(gDmgRef, {
-      name: guildName, dmg: gPrevDmg + totalDmg, level: guild.level || 1
-    });
+    await set(gRef, { name: guildName, dmg: gPrevDmg + totalDmg, level: guild.level || 1 });
   }
 
-  // 顯示結果
-  const msg = `⚔ 本次造成 <b style="color:var(--gold)">${totalDmg.toLocaleString()}</b> 點傷害！（共 ${round} 回合${playerHp <= 0 ? '，已陣亡' : ''}）`;
-  document.getElementById('wb-my-dmg').innerHTML = msg;
-  loadWorldBoss();
-};
+  // 顯示結果畫面（借用 dungeon result overlay）
+  document.getElementById('dungeonResultOverlay').classList.remove('hidden');
+  document.getElementById('dungeonResultTitle').textContent = won ? '🏆 Boss 已擊敗！' : '💀 挑戰結束';
+  document.getElementById('dungeonResultTitle').className = 'result-title ' + (won ? 'result-win' : 'result-lose');
+  document.getElementById('dungeonLootArea').innerHTML =
+    `<div style="font-size:15px;line-height:2.2;color:var(--text2)">
+      本次造成傷害：<span style="color:var(--gold);font-weight:900">${totalDmg.toLocaleString()}</span><br>
+      今日累積傷害：<span style="color:var(--cyan);font-weight:900">${(prevDmg + totalDmg).toLocaleString()}</span>
+     </div>`;
+  document.getElementById('dungeonEquipBtn').style.display = 'none';
+}
 
 // 載入世界Boss狀態和排行
 window.loadWorldBoss = async () => {
@@ -6672,6 +6716,7 @@ window.doGuildInvite        = doGuildInvite;
 window.acceptGuildInvite    = acceptGuildInvite;
 window.declineGuildInvite   = declineGuildInvite;
 window.challengeWorldBoss   = challengeWorldBoss;
+window.showWorldBossResult  = showWorldBossResult;
 window.loadWorldBoss        = loadWorldBoss;
 window.wbSwitchTab          = wbSwitchTab;
 window.renderGuildTab       = renderGuildTab;
