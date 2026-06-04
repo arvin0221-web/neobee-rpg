@@ -4536,6 +4536,37 @@ function applyWeaponSplash(attacker, primaryTarget, primaryDmg) {
   }
 }
 
+// 詛咒妖巫藤甲: 每關第 10 次攻擊永久降低目標 X% 攻擊（Boss 模式上限 -10%）
+function applyCurseArmor(attacker, target, defIsEnemy, defIdx) {
+  if (attacker.isMonster || attacker.isBot) return;
+  const armor = attacker.equippedItems?.armor;
+  if (!armor || armor.id !== 'armor_curse') return;
+  const gs = G.gameState;
+  const key = attacker.uid || attacker.name;
+  gs._hitCount = gs._hitCount || {};
+  gs._hitCount[key] = (gs._hitCount[key] || 0) + 1;
+  if (gs._hitCount[key] % 10 !== 0) return;
+  // 第 10、20、30... 次攻擊觸發
+  let reducePct = armor.val; // e.g. 4~33
+  if (gs.isDungeon || defIsEnemy) {
+    // Boss 模式：總削減上限 10%
+    const alreadyReduced = target._curseReduced || 0;
+    const cap = 10;
+    if (alreadyReduced >= cap) return;
+    reducePct = Math.min(reducePct, cap - alreadyReduced);
+    target._curseReduced = alreadyReduced + reducePct;
+  }
+  const originalAtk = target.atk;
+  target.atk = Math.max(0, Math.round(target.atk * (1 - reducePct / 100)));
+  const actual = originalAtk - target.atk;
+  if (actual > 0) {
+    addLog(`🌿 詛咒藤甲！${target.name} 攻擊永久降低 ${reducePct}%（-${actual}）`);
+    requestAnimationFrame(() => {
+      fxDamageNumber(getFxEl(defIsEnemy, defIdx), actual, false, false, true, false);
+    });
+  }
+}
+
 // 赤血鐮刀: 攻擊造成 ≥2 傷害時回復傷害量的 X%
 function applySickleHeal(attacker, dmg) {
   if (attacker.isMonster || attacker.isBot) return;
