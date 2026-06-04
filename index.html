@@ -181,7 +181,17 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
 .summon-card    { border-color: #c084fc !important; background: #c084fc11 !important; }
 .poison-dot-tag { font-size:10px; color:#4ade80; font-weight:700; margin-left:4px; }
 
-/* ===== FRIENDS TAB ===== */
+/* ===== GUILD & WORLD BOSS ===== */
+.guild-member-row{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:9px 12px;display:flex;align-items:center;justify-content:space-between;font-size:13px}
+.guild-leader-crown{color:var(--gold);margin-right:4px;font-size:11px}
+.wb-rank-medal{width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;font-family:'Share Tech Mono',monospace;background:var(--bg3);flex-shrink:0}
+.wb-rank-medal.top1{background:linear-gradient(135deg,#b8860b,var(--gold));color:#000}
+.wb-rank-medal.top2{background:linear-gradient(135deg,#888,#ccc);color:#000}
+.wb-rank-medal.top3{background:linear-gradient(135deg,#7a4f00,#cd7f32);color:#000}
+.wb-row{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:10px 14px;display:flex;align-items:center;gap:10px;margin-bottom:6px}
+.wb-row.me{border-color:var(--accent);background:var(--surface2)}
+
+
 .friend-list{display:flex;flex-direction:column;gap:8px}
 .friend-item{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:12px 16px;display:flex;align-items:center;justify-content:space-between}
 .friend-name{font-size:14px;font-weight:700}
@@ -430,6 +440,8 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
       <div class="nav-tab" onclick="switchTab('globalChat')">💬 全服聊天</div>
       <div class="nav-tab" onclick="switchTab('equipment')">⚙️ 裝備</div>
       <div class="nav-tab" onclick="switchTab('dungeon')">🏰 副本</div>
+      <div class="nav-tab" onclick="switchTab('guild')">🏛 公會</div>
+      <div class="nav-tab" onclick="switchTab('worldboss')">🌍 世界Boss</div>
     </div>
     <div class="tab-content">
 
@@ -583,7 +595,79 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
         </div>
       </div>
 
+      <!-- GUILD TAB -->
+      <div id="tab-guild" class="hidden">
+        <div style="max-width:600px;margin:0 auto">
+          <div style="font-size:24px;font-weight:900;color:var(--gold);letter-spacing:4px;margin-bottom:16px;text-align:center">🏛 公會</div>
+          <!-- 無公會 -->
+          <div id="guild-no-guild">
+            <div class="card" style="margin-bottom:12px;text-align:center">
+              <div style="font-size:13px;color:var(--text2);margin-bottom:16px">你尚未加入任何公會</div>
+              <div style="display:flex;flex-direction:column;gap:10px;max-width:320px;margin:0 auto">
+                <button class="btn btn-primary" onclick="showCreateGuildModal()">✦ 創建公會</button>
+                <button class="btn btn-secondary" onclick="showJoinGuildModal()">🔍 搜尋加入公會</button>
+              </div>
+            </div>
+          </div>
+          <!-- 已在公會 -->
+          <div id="guild-in-guild" class="hidden">
+            <div class="card" style="margin-bottom:12px">
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+                <div>
+                  <div id="guild-name-display" style="font-size:20px;font-weight:900;color:var(--gold)"></div>
+                  <div id="guild-level-display" style="font-size:12px;color:var(--text2);margin-top:2px"></div>
+                </div>
+                <div id="guild-bonus-display" style="font-size:13px;color:var(--cyan);text-align:right"></div>
+              </div>
+              <div style="font-size:12px;color:var(--text2);letter-spacing:1px;margin-bottom:8px">成員（<span id="guild-member-count">0</span>/5）</div>
+              <div id="guild-member-list" style="display:flex;flex-direction:column;gap:6px"></div>
+              <div style="margin-top:14px;display:flex;gap:8px;flex-wrap:wrap">
+                <button class="btn btn-secondary btn-sm" id="guild-leader-actions" style="display:none" onclick="showGuildInviteModal()">邀請成員</button>
+                <button class="btn btn-danger btn-sm" onclick="leaveGuild()">離開公會</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- WORLD BOSS TAB -->
+      <div id="tab-worldboss" class="hidden">
+        <div style="max-width:700px;margin:0 auto">
+          <div style="font-size:24px;font-weight:900;color:var(--red);letter-spacing:4px;margin-bottom:4px;text-align:center">🌍 世界 Boss</div>
+          <div style="font-size:12px;color:var(--text2);text-align:center;margin-bottom:16px;letter-spacing:1px">每天臺灣時間 00:00 結算 · 公會排行前5名升級</div>
+          <!-- Boss card -->
+          <div class="card" style="margin-bottom:16px">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+              <div style="font-size:18px;font-weight:900;color:var(--red)">💀 混沌巨龍</div>
+              <div id="wb-atk-display" style="font-size:12px;color:var(--text2)"></div>
+            </div>
+            <div id="wb-hp-bar-wrap" style="margin-bottom:6px">
+              <div style="height:14px;background:var(--bg3);border-radius:7px;overflow:hidden;border:1px solid var(--border)">
+                <div id="wb-hp-fill" style="height:100%;background:linear-gradient(90deg,#e05555,#c0392b);border-radius:7px;transition:width .5s ease;width:100%"></div>
+              </div>
+            </div>
+            <div id="wb-hp-text" style="font-size:12px;color:var(--text2);text-align:center;margin-bottom:14px"></div>
+            <div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap">
+              <button class="btn btn-danger" style="padding:12px 28px;font-size:15px;font-weight:900" onclick="challengeWorldBoss()">⚔ 挑戰 Boss</button>
+              <button class="btn btn-secondary btn-sm" onclick="loadWorldBoss()">🔄 重新整理</button>
+            </div>
+            <div id="wb-my-dmg" style="margin-top:10px;text-align:center;font-size:13px;color:var(--text2)"></div>
+          </div>
+          <!-- Tabs: personal / guild ranking -->
+          <div style="display:flex;gap:0;margin-bottom:12px;border-bottom:1px solid var(--border)">
+            <div id="wb-tab-personal" style="padding:8px 18px;cursor:pointer;font-size:13px;color:var(--accent);border-bottom:2px solid var(--accent);margin-bottom:-1px" onclick="wbSwitchTab('personal')">個人排行</div>
+            <div id="wb-tab-guild" style="padding:8px 18px;cursor:pointer;font-size:13px;color:var(--text2);border-bottom:2px solid transparent;margin-bottom:-1px" onclick="wbSwitchTab('guild')">公會排行</div>
+          </div>
+          <div id="wb-personal-board" class="lb-list"></div>
+          <div id="wb-guild-board" class="lb-list hidden"></div>
+        </div>
+      </div>
+
     </div><!-- end tab-content -->
+
+    <!-- VERSION FOOTER -->
+    <div style="text-align:center;padding:12px 0 8px;font-size:11px;color:var(--text3);letter-spacing:2px">v1.1.51</div>
+
   </div>
 </div>
 
@@ -685,6 +769,59 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
       <button class="btn btn-secondary" onclick="closeModal('playerProfileModal')">關閉</button>
     </div>
   </div>
+</div>
+
+<!-- GUILD CREATE MODAL -->
+<div id="createGuildModal" class="modal-overlay hidden">
+  <div class="modal-card" style="max-width:400px;width:95%">
+    <div class="modal-title">✦ 創建公會</div>
+    <div class="form-group">
+      <div class="form-label">公會名稱（2~20字元）</div>
+      <input class="form-input" id="createGuildName" placeholder="輸入公會名稱" maxlength="14">
+    </div>
+    <div id="createGuildMsg" style="font-size:12px;color:var(--red);margin-top:4px"></div>
+    <div class="modal-actions">
+      <button class="btn btn-primary" onclick="doCreateGuild()">創建</button>
+      <button class="btn btn-secondary" onclick="closeModal('createGuildModal')">取消</button>
+    </div>
+  </div>
+</div>
+
+<!-- GUILD JOIN MODAL -->
+<div id="joinGuildModal" class="modal-overlay hidden">
+  <div class="modal-card" style="max-width:400px;width:95%">
+    <div class="modal-title">🔍 搜尋公會</div>
+    <div style="display:flex;gap:8px;margin-bottom:12px">
+      <input class="form-input" id="joinGuildNameInput" placeholder="輸入公會名稱" maxlength="14" style="flex:1">
+      <button class="btn btn-primary btn-sm" onclick="searchGuild()">搜尋</button>
+    </div>
+    <div id="joinGuildResult" style="font-size:13px;color:var(--text2);min-height:40px"></div>
+    <div id="joinGuildMsg" style="font-size:12px;color:var(--red);margin-top:4px"></div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeModal('joinGuildModal')">關閉</button>
+    </div>
+  </div>
+</div>
+
+<!-- GUILD INVITE MODAL -->
+<div id="guildInviteModal" class="modal-overlay hidden">
+  <div class="modal-card" style="max-width:400px;width:95%">
+    <div class="modal-title">邀請成員</div>
+    <div style="display:flex;gap:8px;margin-bottom:12px">
+      <input class="form-input" id="guildInviteInput" placeholder="輸入玩家暱稱" maxlength="12" style="flex:1">
+      <button class="btn btn-primary btn-sm" onclick="doGuildInvite()">邀請</button>
+    </div>
+    <div id="guildInviteMsg" style="font-size:12px;margin-top:4px"></div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeModal('guildInviteModal')">關閉</button>
+    </div>
+  </div>
+</div>
+
+<!-- GUILD INVITES NOTIFICATION -->
+<div id="guildInvitesPanel" class="hidden" style="position:fixed;bottom:20px;left:20px;z-index:9000;background:var(--surface);border:1px solid var(--gold);border-radius:12px;padding:14px 18px;max-width:300px;box-shadow:0 4px 24px #00000088">
+  <div style="font-size:13px;font-weight:700;color:var(--gold);margin-bottom:8px">📨 公會邀請</div>
+  <div id="guildInvitesList" style="display:flex;flex-direction:column;gap:6px"></div>
 </div>
 
 <!-- MATCH SCREEN -->
@@ -1328,6 +1465,8 @@ function enterMain() {
   updateUI();
   setupGlobalChat();
   setupFriendListeners();
+  listenGuildInvites();
+  runDailySettlement();
   switchTab('home');
 }
 
@@ -1407,7 +1546,7 @@ function updateUI() {
 window.switchTab = (tab) => {
   document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
   document.querySelectorAll('.tab-content > div').forEach(d => d.classList.add('hidden'));
-  const tabs = ['home','play','skills','friends','leaderboard','globalChat','equipment','dungeon'];
+  const tabs = ['home','play','skills','friends','leaderboard','globalChat','equipment','dungeon','guild','worldboss'];
   const idx = tabs.indexOf(tab);
   if (idx >= 0) document.querySelectorAll('.nav-tab')[idx].classList.add('active');
   document.getElementById(`tab-${tab}`).classList.remove('hidden');
@@ -1417,6 +1556,8 @@ window.switchTab = (tab) => {
   if (tab === 'friends') renderFriends();
   if (tab === 'equipment') renderEquipTab();
   if (tab === 'dungeon') renderDungeonTab();
+  if (tab === 'guild') renderGuildTab();
+  if (tab === 'worldboss') { loadMyGuild().then(g => { G._myGuild = g; loadWorldBoss(); }); runDailySettlement(); }
 };
 
 // ===== SKILLS TAB =====
@@ -5976,8 +6117,565 @@ window.addPvpBot         = addPvpBot;
 window.readyPvp          = readyPvp;
 window.startPvp          = startPvp;
 window.exitPvp           = exitPvp;
-window.confirmBotJob     = confirmBotJob;
-window.skipBotJob        = skipBotJob;
+
+// ===================================================================
+// ===== GUILD SYSTEM =====
+// ===================================================================
+
+// 台灣時間 (UTC+8) 的今日日期字串 YYYY-MM-DD
+function twToday() {
+  const now = new Date(Date.now() + 8 * 3600 * 1000);
+  return now.toISOString().slice(0, 10);
+}
+
+// 取得公會加成倍率（傷害 & 防禦最終乘數）
+function guildBonus(level) {
+  if (!level || level <= 0) return 1;
+  if (level < 100) return 1 + level * 0.01;
+  return 1 + (100 * 0.01) + (level - 100) * 0.005;
+}
+
+// 格式化加成文字
+function fmtGuildBonus(level) {
+  const b = guildBonus(level);
+  const pct = ((b - 1) * 100).toFixed(1);
+  return `傷害/防禦 +${pct}%`;
+}
+
+// 讀取自己的公會
+async function loadMyGuild() {
+  if (!G.uid) return null;
+  const snap = await get(ref(db, `players/${G.uid}/guildId`));
+  if (!snap.exists()) return null;
+  const gid = snap.val();
+  const gs = await get(ref(db, `guilds/${gid}`));
+  if (!gs.exists()) {
+    // 公會已不存在，清除
+    await set(ref(db, `players/${G.uid}/guildId`), null);
+    return null;
+  }
+  return { id: gid, ...gs.val() };
+}
+
+async function renderGuildTab() {
+  const guild = await loadMyGuild();
+  if (!guild) {
+    document.getElementById('guild-no-guild').classList.remove('hidden');
+    document.getElementById('guild-in-guild').classList.add('hidden');
+    return;
+  }
+  G._myGuild = guild;
+  document.getElementById('guild-no-guild').classList.add('hidden');
+  document.getElementById('guild-in-guild').classList.remove('hidden');
+  document.getElementById('guild-name-display').textContent = '🏛 ' + guild.name;
+  document.getElementById('guild-level-display').textContent = `Lv.${guild.level || 1}`;
+  document.getElementById('guild-bonus-display').textContent = fmtGuildBonus(guild.level || 1);
+  const members = guild.members || [];
+  document.getElementById('guild-member-count').textContent = members.length;
+  // Leader actions
+  const isLeader = guild.leader === G.uid;
+  document.getElementById('guild-leader-actions').style.display = isLeader && members.length < 5 ? '' : 'none';
+  // Render members
+  const listEl = document.getElementById('guild-member-list');
+  listEl.innerHTML = '';
+  for (const uid of members) {
+    const ps = await get(ref(db, `players/${uid}`));
+    if (!ps.exists()) continue;
+    const p = ps.val();
+    const rank = RANKS[getRankIndex(p.exp || 0)];
+    const isMe = uid === G.uid;
+    const row = document.createElement('div');
+    row.className = 'guild-member-row';
+    row.innerHTML = `
+      <div style="display:flex;align-items:center;gap:6px">
+        ${uid === guild.leader ? '<span class="guild-leader-crown">👑</span>' : ''}
+        <span style="font-weight:700;${isMe ? 'color:var(--accent)' : ''}">${p.name}</span>
+        <span style="font-size:11px;color:var(--text2)">${rank.name}</span>
+      </div>
+      ${isLeader && uid !== G.uid ? `<button class="btn btn-secondary btn-sm" onclick="kickGuildMember('${uid}','${p.name}')">移除</button>` : ''}`;
+    listEl.appendChild(row);
+  }
+}
+
+window.showCreateGuildModal = () => {
+  document.getElementById('createGuildName').value = '';
+  document.getElementById('createGuildMsg').textContent = '';
+  document.getElementById('createGuildModal').classList.remove('hidden');
+};
+
+window.doCreateGuild = async () => {
+  const name = document.getElementById('createGuildName').value.trim();
+  const msgEl = document.getElementById('createGuildMsg');
+  if (name.length < 2 || name.length > 14) { msgEl.textContent = '公會名稱需 2~14 字元'; return; }
+  // Check name unique
+  const exists = await get(ref(db, `guildIndex/${name}`));
+  if (exists.exists()) { msgEl.textContent = '此名稱已被使用'; return; }
+  // Check player not in guild
+  const myGuildSnap = await get(ref(db, `players/${G.uid}/guildId`));
+  if (myGuildSnap.exists() && myGuildSnap.val()) { msgEl.textContent = '你已在公會中'; return; }
+  const gid = 'g_' + G.uid.slice(0, 8) + '_' + Date.now().toString(36);
+  const guild = { name, level: 1, members: [G.uid], leader: G.uid, createdAt: Date.now() };
+  await set(ref(db, `guilds/${gid}`), guild);
+  await set(ref(db, `guildIndex/${name}`), gid);
+  await set(ref(db, `players/${G.uid}/guildId`), gid);
+  closeModal('createGuildModal');
+  renderGuildTab();
+};
+
+window.showJoinGuildModal = () => {
+  document.getElementById('joinGuildNameInput').value = '';
+  document.getElementById('joinGuildResult').textContent = '';
+  document.getElementById('joinGuildMsg').textContent = '';
+  document.getElementById('joinGuildModal').classList.remove('hidden');
+};
+
+window.searchGuild = async () => {
+  const name = document.getElementById('joinGuildNameInput').value.trim();
+  const resultEl = document.getElementById('joinGuildResult');
+  if (!name) return;
+  const idxSnap = await get(ref(db, `guildIndex/${name}`));
+  if (!idxSnap.exists()) { resultEl.innerHTML = '<span style="color:var(--red)">找不到此公會</span>'; return; }
+  const gid = idxSnap.val();
+  const gs = await get(ref(db, `guilds/${gid}`));
+  if (!gs.exists()) { resultEl.innerHTML = '<span style="color:var(--red)">公會不存在</span>'; return; }
+  const g = gs.val();
+  const members = g.members || [];
+  if (members.length >= 5) {
+    resultEl.innerHTML = `<div><b style="color:var(--gold)">${g.name}</b> Lv.${g.level||1} — <span style="color:var(--red)">已滿員（${members.length}/5）</span></div>`;
+    return;
+  }
+  resultEl.innerHTML = `<div style="display:flex;align-items:center;justify-content:space-between">
+    <div><b style="color:var(--gold)">${g.name}</b> Lv.${g.level||1} — 成員 ${members.length}/5</div>
+    <button class="btn btn-primary btn-sm" onclick="doJoinGuild('${gid}','${g.name}')">申請加入</button>
+  </div>`;
+};
+
+window.doJoinGuild = async (gid, gname) => {
+  const msgEl = document.getElementById('joinGuildMsg');
+  // Check not already in guild
+  const mySnap = await get(ref(db, `players/${G.uid}/guildId`));
+  if (mySnap.exists() && mySnap.val()) { msgEl.textContent = '你已在公會中'; return; }
+  // Check space
+  const gs = await get(ref(db, `guilds/${gid}`));
+  if (!gs.exists()) { msgEl.textContent = '公會不存在'; return; }
+  const g = gs.val();
+  const members = [...(g.members || [])];
+  if (members.length >= 5) { msgEl.textContent = '公會已滿員'; return; }
+  if (members.includes(G.uid)) { msgEl.textContent = '你已是成員'; return; }
+  members.push(G.uid);
+  await set(ref(db, `guilds/${gid}/members`), members);
+  await set(ref(db, `players/${G.uid}/guildId`), gid);
+  closeModal('joinGuildModal');
+  renderGuildTab();
+};
+
+window.leaveGuild = async () => {
+  if (!confirm('確定要離開公會嗎？')) return;
+  const guild = await loadMyGuild();
+  if (!guild) return;
+  const members = (guild.members || []).filter(u => u !== G.uid);
+  if (guild.leader === G.uid) {
+    if (members.length === 0) {
+      // 解散公會
+      await remove(ref(db, `guilds/${guild.id}`));
+      await remove(ref(db, `guildIndex/${guild.name}`));
+    } else {
+      // 轉讓給第一個成員
+      await set(ref(db, `guilds/${guild.id}/members`), members);
+      await set(ref(db, `guilds/${guild.id}/leader`), members[0]);
+    }
+  } else {
+    await set(ref(db, `guilds/${guild.id}/members`), members);
+  }
+  await set(ref(db, `players/${G.uid}/guildId`), null);
+  G._myGuild = null;
+  renderGuildTab();
+};
+
+window.kickGuildMember = async (uid, name) => {
+  if (!confirm(`確定要移除 ${name}？`)) return;
+  const guild = await loadMyGuild();
+  if (!guild || guild.leader !== G.uid) return;
+  const members = (guild.members || []).filter(u => u !== uid);
+  await set(ref(db, `guilds/${guild.id}/members`), members);
+  await set(ref(db, `players/${uid}/guildId`), null);
+  renderGuildTab();
+};
+
+window.showGuildInviteModal = () => {
+  document.getElementById('guildInviteInput').value = '';
+  document.getElementById('guildInviteMsg').textContent = '';
+  document.getElementById('guildInviteModal').classList.remove('hidden');
+};
+
+window.doGuildInvite = async () => {
+  const name = document.getElementById('guildInviteInput').value.trim();
+  const msgEl = document.getElementById('guildInviteMsg');
+  msgEl.style.color = 'var(--red)';
+  if (!name) return;
+  const idxSnap = await get(ref(db, `nameIndex/${name}`));
+  if (!idxSnap.exists()) { msgEl.textContent = '找不到此玩家'; return; }
+  const targetUid = idxSnap.val();
+  const guild = await loadMyGuild();
+  if (!guild) return;
+  if ((guild.members || []).length >= 5) { msgEl.textContent = '公會已滿員'; return; }
+  if ((guild.members || []).includes(targetUid)) { msgEl.textContent = '此玩家已在公會中'; return; }
+  // Send invite via guildInvites node
+  await set(ref(db, `guildInvites/${targetUid}/${guild.id}`), {
+    guildId: guild.id, guildName: guild.name, fromName: G.player.name, ts: Date.now()
+  });
+  msgEl.style.color = 'var(--green)';
+  msgEl.textContent = `已向 ${name} 發送邀請`;
+};
+
+// Listen for incoming guild invites
+function listenGuildInvites() {
+  if (!G.uid) return;
+  onValue(ref(db, `guildInvites/${G.uid}`), snap => {
+    const panel = document.getElementById('guildInvitesPanel');
+    const list = document.getElementById('guildInvitesList');
+    if (!snap.exists()) { panel.classList.add('hidden'); return; }
+    const invites = snap.val();
+    const entries = Object.entries(invites);
+    if (!entries.length) { panel.classList.add('hidden'); return; }
+    panel.classList.remove('hidden');
+    list.innerHTML = '';
+    for (const [gid, inv] of entries) {
+      const div = document.createElement('div');
+      div.style.cssText = 'display:flex;align-items:center;justify-content:space-between;gap:8px';
+      div.innerHTML = `<span style="font-size:12px"><b style="color:var(--gold)">${inv.guildName}</b><br><span style="color:var(--text2)">${inv.fromName} 邀請你</span></span>
+        <div style="display:flex;gap:4px">
+          <button class="btn btn-primary btn-sm" onclick="acceptGuildInvite('${gid}','${inv.guildName}')">接受</button>
+          <button class="btn btn-secondary btn-sm" onclick="declineGuildInvite('${gid}')">拒絕</button>
+        </div>`;
+      list.appendChild(div);
+    }
+  });
+}
+
+window.acceptGuildInvite = async (gid, gname) => {
+  const mySnap = await get(ref(db, `players/${G.uid}/guildId`));
+  if (mySnap.exists() && mySnap.val()) {
+    alert('你已在公會中，請先離開再加入');
+    await remove(ref(db, `guildInvites/${G.uid}/${gid}`));
+    return;
+  }
+  const gs = await get(ref(db, `guilds/${gid}`));
+  if (!gs.exists()) { await remove(ref(db, `guildInvites/${G.uid}/${gid}`)); return; }
+  const g = gs.val();
+  const members = [...(g.members || [])];
+  if (members.length >= 5) { alert('公會已滿員'); await remove(ref(db, `guildInvites/${G.uid}/${gid}`)); return; }
+  if (!members.includes(G.uid)) members.push(G.uid);
+  await set(ref(db, `guilds/${gid}/members`), members);
+  await set(ref(db, `players/${G.uid}/guildId`), gid);
+  await remove(ref(db, `guildInvites/${G.uid}/${gid}`));
+  if (G.currentTab === 'guild') renderGuildTab();
+};
+
+window.declineGuildInvite = async (gid) => {
+  await remove(ref(db, `guildInvites/${G.uid}/${gid}`));
+};
+
+// ===================================================================
+// ===== WORLD BOSS SYSTEM =====
+// ===================================================================
+
+const WB_MAX_HP = 50_000_000;
+
+// 取得台灣今日 boss 攻擊（每天固定，用日期 seed 模擬）
+function wbDailyAtk() {
+  const d = twToday().replace(/-/g, '');
+  let seed = parseInt(d) % 10007;
+  seed = (seed * 1103515245 + 12345) & 0x7fffffff;
+  return (seed % 31); // 0~30
+}
+
+// 挑戰世界Boss（基礎屬性打一輪）
+window.challengeWorldBoss = async () => {
+  const p = G.player;
+  const rank = RANKS[getRankIndex(p.exp || 0)];
+  // 玩家屬性（基礎，含公會加成）
+  const guild = G._myGuild || await loadMyGuild();
+  G._myGuild = guild;
+  const bonus = guild ? guildBonus(guild.level || 1) : 1;
+  const guildId = guild ? guild.id : null;
+  const guildName = guild ? guild.name : null;
+
+  let playerHp = rank.hp;
+  let playerAtk = rank.atk;
+  let playerDef = rank.def;
+  // 套用公會加成到最終傷害和防禦
+  const atkFinal = (mult) => Math.round(playerAtk * mult);
+  const defFinal = (mult) => Math.round(playerDef * mult);
+
+  const bossAtk = wbDailyAtk();
+  const bossDef = 0;
+
+  let totalDmg = 0;
+  let round = 0;
+  const maxRounds = 200;
+
+  // 簡易戰鬥模擬（不含技能，純基礎屬性）
+  while (playerHp > 0 && round < maxRounds) {
+    round++;
+    // 玩家攻擊 boss
+    const dmgToBoss = Math.max(1, atkFinal(bonus) - bossDef);
+    totalDmg += dmgToBoss;
+    // Boss 攻擊玩家
+    const dmgToPlayer = Math.max(0, bossAtk - defFinal(bonus));
+    playerHp -= dmgToPlayer;
+    if (bossAtk === 0) break; // boss atk 0 → 玩家不會死，1回合結算
+  }
+
+  // 累積傷害到資料庫
+  const today = twToday();
+  const dmgRef = ref(db, `worldBoss/dailyDmg/${today}/${G.uid}`);
+  const prevSnap = await get(dmgRef);
+  const prevDmg = prevSnap.exists() ? (prevSnap.val().dmg || 0) : 0;
+  const newDmg = prevDmg + totalDmg;
+
+  await set(dmgRef, {
+    name: p.name, dmg: newDmg,
+    guildId: guildId || null,
+    guildName: guildName || null,
+    uid: G.uid
+  });
+
+  // 更新公會每日傷害
+  if (guildId) {
+    const gDmgRef = ref(db, `worldBoss/guildDailyDmg/${today}/${guildId}`);
+    const gPrev = await get(gDmgRef);
+    const gPrevDmg = gPrev.exists() ? (gPrev.val().dmg || 0) : 0;
+    await set(gDmgRef, {
+      name: guildName, dmg: gPrevDmg + totalDmg, level: guild.level || 1
+    });
+  }
+
+  // 顯示結果
+  const msg = `⚔ 本次造成 <b style="color:var(--gold)">${totalDmg.toLocaleString()}</b> 點傷害！（共 ${round} 回合${playerHp <= 0 ? '，已陣亡' : ''}）`;
+  document.getElementById('wb-my-dmg').innerHTML = msg;
+  loadWorldBoss();
+};
+
+// 載入世界Boss狀態和排行
+window.loadWorldBoss = async () => {
+  // Boss HP（所有歷史總傷害）
+  const today = twToday();
+  // 讀取今日所有玩家傷害
+  const snap = await get(ref(db, `worldBoss/dailyDmg/${today}`));
+  let totalTodayDmg = 0;
+  let myDmg = 0;
+  const personalRows = [];
+
+  if (snap.exists()) {
+    const data = snap.val();
+    for (const [uid, v] of Object.entries(data)) {
+      if (uid === G.uid) myDmg = v.dmg || 0;
+      personalRows.push({ uid, name: v.name, dmg: v.dmg || 0 });
+      totalTodayDmg += v.dmg || 0;
+    }
+  }
+
+  // 使用全部歷史傷害計算 boss 剩餘 HP
+  const allSnap = await get(ref(db, `worldBoss/dailyDmg`));
+  let allTimeDmg = 0;
+  if (allSnap.exists()) {
+    const all = allSnap.val();
+    for (const dateData of Object.values(all)) {
+      for (const v of Object.values(dateData)) allTimeDmg += v.dmg || 0;
+    }
+  }
+  // Boss HP 是循環的：打死後重生
+  const bossHp = Math.max(0, WB_MAX_HP - (allTimeDmg % WB_MAX_HP));
+  const pct = (bossHp / WB_MAX_HP * 100).toFixed(1);
+  document.getElementById('wb-hp-fill').style.width = pct + '%';
+  document.getElementById('wb-hp-text').textContent = `${bossHp.toLocaleString()} / ${WB_MAX_HP.toLocaleString()} HP`;
+  document.getElementById('wb-atk-display').textContent = `攻擊：${wbDailyAtk()}（每日隨機）`;
+  if (myDmg > 0) {
+    document.getElementById('wb-my-dmg').innerHTML = `今日累積傷害：<b style="color:var(--gold)">${myDmg.toLocaleString()}</b>`;
+  }
+
+  // 個人排行
+  personalRows.sort((a, b) => b.dmg - a.dmg);
+  const pBoard = document.getElementById('wb-personal-board');
+  pBoard.innerHTML = personalRows.length ? '' : '<div style="color:var(--text2);font-size:13px;padding:12px">今日尚無挑戰紀錄</div>';
+  personalRows.slice(0, 30).forEach((r, i) => {
+    const isMe = r.uid === G.uid;
+    const div = document.createElement('div');
+    div.className = 'wb-row' + (isMe ? ' me' : '');
+    const medalClass = i === 0 ? 'top1' : i === 1 ? 'top2' : i === 2 ? 'top3' : '';
+    div.innerHTML = `
+      <div class="wb-rank-medal ${medalClass}">${i + 1}</div>
+      <div style="flex:1;font-weight:700;${isMe ? 'color:var(--accent)' : ''}">${r.name}${isMe ? ' 👤' : ''}</div>
+      <div style="font-family:'Share Tech Mono',monospace;color:var(--gold)">${r.dmg.toLocaleString()}</div>`;
+    pBoard.appendChild(div);
+  });
+
+  // 公會排行
+  const gSnap = await get(ref(db, `worldBoss/guildDailyDmg/${today}`));
+  const guildRows = [];
+  if (gSnap.exists()) {
+    for (const [gid, v] of Object.entries(gSnap.val())) {
+      guildRows.push({ gid, name: v.name, dmg: v.dmg || 0, level: v.level || 1 });
+    }
+  }
+  guildRows.sort((a, b) => b.dmg - a.dmg);
+  const gBoard = document.getElementById('wb-guild-board');
+  gBoard.innerHTML = guildRows.length ? '' : '<div style="color:var(--text2);font-size:13px;padding:12px">今日尚無公會挑戰紀錄</div>';
+  const myGuildId = G._myGuild?.id;
+  guildRows.slice(0, 20).forEach((r, i) => {
+    const isMyGuild = r.gid === myGuildId;
+    const div = document.createElement('div');
+    div.className = 'wb-row' + (isMyGuild ? ' me' : '');
+    const medalClass = i === 0 ? 'top1' : i === 1 ? 'top2' : i === 2 ? 'top3' : '';
+    const topFive = i < 5;
+    div.innerHTML = `
+      <div class="wb-rank-medal ${medalClass}">${i + 1}</div>
+      <div style="flex:1">
+        <div style="font-weight:700;${isMyGuild ? 'color:var(--accent)' : ''}">${r.name}${isMyGuild ? ' 🏛' : ''}</div>
+        <div style="font-size:11px;color:var(--text2)">Lv.${r.level} ${topFive ? '<span style="color:var(--gold)">✦ 今日結算升級</span>' : ''}</div>
+      </div>
+      <div style="font-family:'Share Tech Mono',monospace;color:var(--gold)">${r.dmg.toLocaleString()}</div>`;
+    gBoard.appendChild(div);
+  });
+};
+
+window.wbSwitchTab = (tab) => {
+  document.getElementById('wb-personal-board').classList.toggle('hidden', tab !== 'personal');
+  document.getElementById('wb-guild-board').classList.toggle('hidden', tab !== 'guild');
+  document.getElementById('wb-tab-personal').style.color = tab === 'personal' ? 'var(--accent)' : 'var(--text2)';
+  document.getElementById('wb-tab-personal').style.borderBottomColor = tab === 'personal' ? 'var(--accent)' : 'transparent';
+  document.getElementById('wb-tab-guild').style.color = tab === 'guild' ? 'var(--accent)' : 'var(--text2)';
+  document.getElementById('wb-tab-guild').style.borderBottomColor = tab === 'guild' ? 'var(--accent)' : 'transparent';
+};
+
+// ===== DAILY SETTLEMENT: 每天 0:00 結算公會排行，前5名升級 =====
+async function runDailySettlement() {
+  const today = twToday();
+  // 計算昨天
+  const yesterday = new Date(Date.now() + 8*3600*1000 - 86400*1000).toISOString().slice(0,10);
+  const settledSnap = await get(ref(db, `worldBoss/settled/${yesterday}`));
+  if (settledSnap.exists()) return; // 已結算過
+
+  const gSnap = await get(ref(db, `worldBoss/guildDailyDmg/${yesterday}`));
+  if (!gSnap.exists()) {
+    await set(ref(db, `worldBoss/settled/${yesterday}`), true);
+    return;
+  }
+  const guildRows = Object.entries(gSnap.val())
+    .map(([gid, v]) => ({ gid, dmg: v.dmg || 0 }))
+    .sort((a, b) => b.dmg - a.dmg)
+    .slice(0, 5);
+
+  for (const row of guildRows) {
+    const gRef = ref(db, `guilds/${row.gid}/level`);
+    const lvSnap = await get(gRef);
+    const currentLv = lvSnap.exists() ? (lvSnap.val() || 1) : 1;
+    await set(gRef, currentLv + 1);
+  }
+  await set(ref(db, `worldBoss/settled/${yesterday}`), true);
+}
+
+// ===== BOT GUILDS =====
+// 10 個 bot 公會，每個 5 人，使用 SIM_BOTS 的 uid
+function setupBotGuilds() {
+  // 定義 10 個公會名（固定），每個公會對應 5 個 bot
+  const BOT_GUILD_NAMES = [
+    '666','Roblox戰隊','WHO','最強公會','欸欸欸欸欸',
+    '屁眼派對','這什麼東西','我的公會名字九個字','Skhhghdsfopj','sigma boy team'
+  ];
+  // SIM_BOTS 固定 50 個，分成 10 組
+  return BOT_GUILD_NAMES.map((name, gi) => ({
+    name,
+    id: `botguild_${gi}`,
+    botUids: SIM_BOTS.slice(gi * 5, gi * 5 + 5).map(b => b.uid)
+  }));
+}
+
+const BOT_GUILDS = setupBotGuilds();
+
+// 初始化 bot 公會到 Firebase（只執行一次）
+async function initBotGuilds() {
+  for (const bg of BOT_GUILDS) {
+    const snap = await get(ref(db, `guilds/${bg.id}`));
+    if (!snap.exists()) {
+      await set(ref(db, `guilds/${bg.id}`), {
+        name: bg.name, level: 1,
+        members: bg.botUids,
+        leader: bg.botUids[0],
+        isBot: true,
+        createdAt: Date.now()
+      });
+      await set(ref(db, `guildIndex/${bg.name}`), bg.id);
+      for (const uid of bg.botUids) {
+        await set(ref(db, `players/${uid}/guildId`), bg.id);
+      }
+    }
+  }
+}
+
+// Bot 每日世界Boss模擬傷害
+async function simBotGuildBossDmg() {
+  const today = twToday();
+  for (const bg of BOT_GUILDS) {
+    let guildTotalDmg = 0;
+    for (const uid of bg.botUids) {
+      const dmg = 10 + Math.floor(Math.random() * 991); // 10~1000
+      guildTotalDmg += dmg;
+      // 寫入個人傷害（累加）
+      const dmgRef = ref(db, `worldBoss/dailyDmg/${today}/${uid}`);
+      const prev = await get(dmgRef);
+      const prevDmg = prev.exists() ? (prev.val().dmg || 0) : 0;
+      // Bot 名字
+      const bot = SIM_BOTS.find(b => b.uid === uid);
+      await set(dmgRef, {
+        name: bot?.name || uid, dmg: prevDmg + dmg,
+        guildId: bg.id, guildName: bg.name, uid
+      });
+    }
+    // 寫入公會傷害（累加）
+    const gRef = ref(db, `worldBoss/guildDailyDmg/${today}/${bg.id}`);
+    const gPrev = await get(gRef);
+    const gPrevDmg = gPrev.exists() ? (gPrev.val().dmg || 0) : 0;
+    const lvSnap = await get(ref(db, `guilds/${bg.id}/level`));
+    const lv = lvSnap.exists() ? lvSnap.val() : 1;
+    await set(gRef, { name: bg.name, dmg: gPrevDmg + guildTotalDmg, level: lv });
+  }
+}
+
+// 擴充 simAdminPanel 加入公會 Boss 模擬按鈕
+const _origOpenSimPanel = window.openSimPanel;
+window.openSimPanel = function() {
+  _origOpenSimPanel();
+  const panel = document.getElementById('simAdminPanel');
+  if (!panel) return;
+  const extra = document.createElement('div');
+  extra.style.cssText = 'margin-top:8px;display:flex;flex-direction:column;gap:8px';
+  extra.innerHTML = `
+    <button class="btn btn-secondary btn-sm" onclick="initBotGuilds().then(()=>alert('Bot公會已初始化'))">⚙ 初始化Bot公會</button>
+    <button class="btn btn-secondary btn-sm" onclick="simBotGuildBossDmg().then(()=>alert('Bot Boss傷害已模擬'))">🐉 模擬Bot Boss傷害</button>
+    <button class="btn btn-secondary btn-sm" onclick="runDailySettlement().then(()=>alert('結算完成'))">📊 手動執行昨日結算</button>`;
+  panel.appendChild(extra);
+};
+window.initBotGuilds = initBotGuilds;
+window.simBotGuildBossDmg = simBotGuildBossDmg;
+window.runDailySettlement = runDailySettlement;
+window.showCreateGuildModal = showCreateGuildModal;
+window.showJoinGuildModal   = showJoinGuildModal;
+window.doCreateGuild        = doCreateGuild;
+window.searchGuild          = searchGuild;
+window.doJoinGuild          = doJoinGuild;
+window.leaveGuild           = leaveGuild;
+window.kickGuildMember      = kickGuildMember;
+window.showGuildInviteModal = showGuildInviteModal;
+window.doGuildInvite        = doGuildInvite;
+window.acceptGuildInvite    = acceptGuildInvite;
+window.declineGuildInvite   = declineGuildInvite;
+window.challengeWorldBoss   = challengeWorldBoss;
+window.loadWorldBoss        = loadWorldBoss;
+window.wbSwitchTab          = wbSwitchTab;
+window.renderGuildTab       = renderGuildTab;
 </script>
 </body>
+</html>
 </html>
