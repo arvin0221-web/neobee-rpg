@@ -4536,6 +4536,25 @@ function applyWeaponSplash(attacker, primaryTarget, primaryDmg) {
   }
 }
 
+// 赤血鐮刀: 攻擊造成 ≥2 傷害時回復傷害量的 X%
+function applySickleHeal(attacker, dmg) {
+  if (attacker.isMonster || attacker.isBot) return;
+  if (dmg < 2) return;
+  const weapon = attacker.equippedItems?.weapon;
+  if (!weapon || weapon.id !== 'weapon_sickle') return;
+  const healAmt = Math.max(1, Math.round(dmg * weapon.val / 100));
+  const before = attacker.hp;
+  attacker.hp = Math.min(attacker.maxHp, attacker.hp + healAmt);
+  const actual = attacker.hp - before;
+  if (actual > 0) {
+    addLog(`🩸 赤血鐮刀！${attacker.name} 回復 <span class="green">${actual}</span> 點血量`);
+    requestAnimationFrame(() => {
+      const idx = G.gameState.team.indexOf(attacker);
+      if (idx >= 0) fxDamageNumber(getFxEl(false, idx), actual, false, true, false, false);
+    });
+  }
+}
+
 // 天使聖鎧: called when player receives damage
 function applyArmorHeal(defender, dmgReceived) {
   if (defender.isMonster || defender.isBot) return;
