@@ -666,7 +666,7 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
     </div><!-- end tab-content -->
 
     <!-- VERSION FOOTER -->
-    <div style="text-align:center;padding:12px 0 8px;font-size:11px;color:var(--text3);letter-spacing:2px">v1.1.51</div>
+    <div style="text-align:center;padding:12px 0 8px;font-size:11px;color:var(--text3);letter-spacing:2px">v1.1.52</div>
 
   </div>
 </div>
@@ -3231,6 +3231,38 @@ function startBattle() {
 
 function buildTurnOrder() {
   const gs = G.gameState;
+
+  // 世界Boss暴怒系統（每10回合升級一次）
+  if (gs.isWorldBoss && gs.enemies[0]) {
+    const boss = gs.enemies[0];
+    const round = gs.roundNum || 1;
+    let mult = 1;
+    let rageName = null;
+    if (round > 30)      { mult = 8; rageName = '超•神怒'; }
+    else if (round > 20) { mult = 4; rageName = '神怒'; }
+    else if (round > 10) { mult = 2; rageName = '暴怒'; }
+
+    // 每回合重新隨機 0~30，再乘暴怒倍數
+    const baseAtk = Math.floor(Math.random() * 31);
+    const newAtk = Math.round(baseAtk * mult);
+    if (round === 11 || round === 21 || round === 31) {
+      const color = round === 31 ? '#ff00ff' : round === 21 ? '#ff6600' : '#ff3333';
+      addLog(`<span style="color:${color};font-weight:900;font-size:15px">💢 混沌巨龍進入【${rageName}】狀態！傷害 ×${mult}！</span>`);
+    }
+    boss.atk = newAtk;
+
+    // 更新 UI 狀態標籤
+    const atkEl = document.getElementById('wb-atk-display');
+    if (atkEl) {
+      let label = `攻擊：${boss.atk}`;
+      if (rageName) {
+        const color = mult === 8 ? '#ff00ff' : mult === 4 ? '#ff6600' : '#ff3333';
+        label += ` <span style="color:${color};font-weight:900">【${rageName}】×${mult}</span>`;
+      }
+      atkEl.innerHTML = label;
+    }
+  }
+
   // _frozenThisRound uses roundNum comparison — no decrement needed
 
   // Apply poison damage at start of each new round (except round 1)
@@ -6432,7 +6464,7 @@ window.challengeWorldBoss = async () => {
   const playerDef = Math.round(rank.def * bonus);
   const playerHp  = rank.hp;
 
-  const bossAtk = wbDailyAtk();
+  const bossAtk = Math.floor(Math.random() * 31); // 每回合隨機，初始也隨機
 
   // 建立世界Boss戰鬥 gameState（單人，無需Firebase同步）
   const me = {
@@ -6550,7 +6582,7 @@ window.loadWorldBoss = async () => {
   const pct = (bossHp / WB_MAX_HP * 100).toFixed(1);
   document.getElementById('wb-hp-fill').style.width = pct + '%';
   document.getElementById('wb-hp-text').textContent = `${bossHp.toLocaleString()} / ${WB_MAX_HP.toLocaleString()} HP`;
-  document.getElementById('wb-atk-display').textContent = `攻擊：${wbDailyAtk()}（每日隨機）`;
+  document.getElementById('wb-atk-display').textContent = `攻擊：每回合隨機 0~30`;
   if (myDmg > 0) {
     document.getElementById('wb-my-dmg').innerHTML = `今日累積傷害：<b style="color:var(--gold)">${myDmg.toLocaleString()}</b>`;
   }
