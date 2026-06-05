@@ -3385,8 +3385,8 @@ function checkPhoenix(defender, gs) {
 
 // 致命一擊 instant kill check
 function checkInstantKill(attacker, defender) {
-  // 致命一擊 disabled in dungeon boss fights
-  if (G.gameState?.isDungeon) return false;
+  // 致命一擊 disabled in dungeon and world boss fights
+  if (G.gameState?.isDungeon || G.gameState?.isWorldBoss) return false;
   const lv = (attacker.skills||{})['致命一擊'] || 0;
   if (lv <= 0) return false;
   const chance = 1 + (lv - 1) * 1;
@@ -4636,9 +4636,16 @@ window.equipItem = async (uid) => {
   const inv = G.player.inventory || [];
   const item = inv.find(i => i.uid === uid);
   if (!item) return;
+  // 補上舊裝備缺少的 templateId（用 icon 反查，不受名稱修改影響）
+  if (!item.templateId && item.icon) {
+    const iconToTemplateId = {};
+    for (const arr of Object.values(EQ_TEMPLATES))
+      for (const tmpl of arr) iconToTemplateId[tmpl.icon] = tmpl.id;
+    item.templateId = iconToTemplateId[item.icon] || null;
+  }
   const eq = { ...(G.player.equipped || {}), [item.slot]: uid };
   G.player.equipped = eq;
-  await update(ref(db, `players/${G.uid}`), { equipped: eq });
+  await update(ref(db, `players/${G.uid}`), { equipped: eq, inventory: inv });
   renderEquipTab();
   updateUI();
   notify(`已裝備 ${item.name}！`, 'ok');
@@ -4667,7 +4674,7 @@ function applyWeaponSplash(attacker, primaryTarget, primaryDmg) {
   const gs = G.gameState;
   if (attacker.isMonster || attacker.isBot) return;
   const weapon = attacker.equippedItems?.weapon;
-  if (!weapon) return;
+  if (!weapon || weapon.templateId !== 'weapon_blade') return;
   const splashPct = weapon.val / 100;
   const others = gs.enemies.filter(e => e.hp > 0 && e !== primaryTarget);
   if (!others.length) return;
@@ -4692,7 +4699,7 @@ function applyWeaponSplash(attacker, primaryTarget, primaryDmg) {
 function applyCurseArmor(attacker, target, defIsEnemy, defIdx) {
   if (attacker.isMonster || attacker.isBot) return;
   const armor = attacker.equippedItems?.armor;
-  if (!armor || armor.id !== 'armor_curse') return;
+  if (!armor || armor.templateId !== 'armor_curse') return;
   const gs = G.gameState;
   const key = attacker.uid || attacker.name;
   gs._hitCount = gs._hitCount || {};
@@ -4724,7 +4731,7 @@ function applySickleHeal(attacker, dmg) {
   if (attacker.isMonster || attacker.isBot) return;
   if (dmg < 2) return;
   const weapon = attacker.equippedItems?.weapon;
-  if (!weapon || weapon.id !== 'weapon_sickle') return;
+  if (!weapon || weapon.templateId !== 'weapon_sickle') return;
   const healAmt = Math.max(1, Math.round(dmg * weapon.val / 100));
   const before = attacker.hp;
   attacker.hp = Math.min(attacker.maxHp, attacker.hp + healAmt);
@@ -4742,7 +4749,7 @@ function applySickleHeal(attacker, dmg) {
 function applyArmorHeal(defender, dmgReceived) {
   if (defender.isMonster || defender.isBot) return;
   const armor = defender.equippedItems?.armor;
-  if (!armor) return;
+  if (!armor || armor.templateId !== 'armor_angel') return;
   const chance = armor.val; // val is already the %
   if (Math.random() * 100 < chance) {
     const lost = defender.maxHp - defender.hp;
@@ -4759,7 +4766,7 @@ function applyArmorHeal(defender, dmgReceived) {
 function applyTrinketDeath(attacker, gs) {
   if (attacker.isMonster || attacker.isBot) return;
   const trinket = attacker.equippedItems?.trinket;
-  if (!trinket) return;
+  if (!trinket || trinket.templateId !== 'trinket_bomb') return;
   const pct = trinket.val / 100;
   const rawDmg = Math.round(attacker.maxHp * pct);
   let anyEnemyDied = false;
@@ -4796,9 +4803,18 @@ function loadEquipmentOntoFighter(fighter) {
   const inv = G.player.inventory || [];
   const eq  = G.player.equipped  || {};
   fighter.equippedItems = {};
+
+  // icon 是固定不變的，用來反查 templateId（name 可能被改過）
+  const iconToTemplateId = {};
+  for (const arr of Object.values(EQ_TEMPLATES))
+    for (const tmpl of arr) iconToTemplateId[tmpl.icon] = tmpl.id;
+
   for (const [slot, uid] of Object.entries(eq)) {
     const item = inv.find(i => i.uid === uid);
-    if (item) fighter.equippedItems[slot] = item;
+    if (!item) continue;
+    if (!item.templateId && item.icon)
+      item.templateId = iconToTemplateId[item.icon] || null;
+    fighter.equippedItems[slot] = item;
   }
 }
 
