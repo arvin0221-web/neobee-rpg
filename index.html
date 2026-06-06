@@ -666,7 +666,7 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
     </div><!-- end tab-content -->
 
     <!-- VERSION FOOTER -->
-    <div style="text-align:center;padding:12px 0 8px;font-size:11px;color:var(--text3);letter-spacing:2px">v1.1.56</div>
+    <div style="text-align:center;padding:12px 0 8px;font-size:11px;color:var(--text3);letter-spacing:2px">v1.1.57</div>
 
   </div>
 </div>
@@ -2971,6 +2971,12 @@ function startStage(stage) {
   // Reset bot active skill usage each stage
   gs.team.forEach(m => { if (m.isBot) m.botJobUsedThisStage = false; });
 
+  // 清除上一關殘留的 alloc listener
+  if (G.listeners.alloc && gs.roomId) {
+    try { off(ref(db, `rooms2/${gs.roomId}/alloc`)); } catch(e){}
+    G.listeners.alloc = null;
+  }
+
   document.getElementById('gameStageText').textContent = `第 ${stage} 關`;
   document.getElementById('allocPanel').classList.add('hidden');
   document.getElementById('allocWaitMsg').classList.add('hidden');
@@ -3066,6 +3072,7 @@ window.confirmAlloc = async () => {
 
   // Check if there are any real teammates (not just solo/bots)
   const realTeammates = gs.team.filter(m => !m.isMe && !m.isBot);
+  console.log('[confirmAlloc] stage=', gs.stage, 'team=', gs.team.map(m=>({name:m.name,isBot:m.isBot,isMe:m.isMe})), 'realTeammates=', realTeammates.length);
 
   if (realTeammates.length === 0) {
     // Solo or all-bot team — start immediately
