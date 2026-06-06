@@ -666,7 +666,7 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
     </div><!-- end tab-content -->
 
     <!-- VERSION FOOTER -->
-    <div style="text-align:center;padding:12px 0 8px;font-size:11px;color:var(--text3);letter-spacing:2px">v1.1.52</div>
+    <div style="text-align:center;padding:12px 0 8px;font-size:11px;color:var(--text3);letter-spacing:2px">v1.1.54</div>
 
   </div>
 </div>
@@ -964,6 +964,11 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
         <option value="8">第 8 關</option>
         <option value="9">第 9 關</option>
         <option value="10">第 10 關</option>
+        <option value="11">第 11 關</option>
+        <option value="12">第 12 關</option>
+        <option value="13">第 13 關</option>
+        <option value="14">第 14 關</option>
+        <option value="15">第 15 關</option>
       </select>
     </div>
     <div id="createTeamMsg" style="font-size:12px;color:var(--red);margin-top:4px"></div>
@@ -1071,7 +1076,12 @@ const STAGE_CONFIG = [
   {stage:7,playerPts:10,monsterPts:90, exp:35000, gold:80000},
   {stage:8,playerPts:10,monsterPts:120,exp:90000, gold:200000},
   {stage:9,playerPts:10,monsterPts:180,exp:200000,gold:500000},
-  {stage:10,playerPts:10,monsterPts:270,exp:500000,gold:1200000}
+  {stage:10,playerPts:10,monsterPts:270, exp:500000,  gold:1200000},
+  {stage:11,playerPts:10,monsterPts:280, exp:750000,  gold:1800000, enemyCount:4},
+  {stage:12,playerPts:10,monsterPts:290, exp:1000000, gold:2400000, enemyCount:5},
+  {stage:13,playerPts:5, monsterPts:320, exp:1500000, gold:3600000, enemyCount:5},
+  {stage:14,playerPts:5, monsterPts:360, exp:2500000, gold:6000000, enemyCount:5},
+  {stage:15,playerPts:5, monsterPts:410, exp:4000000, gold:9600000, enemyCount:5}
 ];
 const SKILLS_DEF = [
   {id:'反傷',   name:'反傷',   desc:'受到傷害時，將傷害的5%返還給攻擊者（最低1點）。每升1級+7%。',                                  baseCost:1000,  maxLvOverride:null, costMult:15},
@@ -1299,12 +1309,17 @@ function getSkillMaxLevel(exp, sd) {
 }
 function rollMonsterStats(pts, stage) {
   // Each point randomly becomes: +5 hp, or +1 atk, or +1 def
-  // From stage 7+: atk 37%, hp 37%, def 26%
+  // Stage 13+: atk 39%, hp 39%, def 22%
+  // Stage 7-12: atk 37%, hp 37%, def 26%
+  // Stage 1-6:  equal 33% each
   let hpPts = 0, atk = 0, def = 0;
-  const late = stage && stage >= 7;
   for (let i = 0; i < pts; i++) {
     const r = Math.random() * 100;
-    if (late) {
+    if (stage && stage >= 13) {
+      if (r < 39)       hpPts++;  // 39%
+      else if (r < 78)  atk++;    // 39%
+      else              def++;    // 22%
+    } else if (stage && stage >= 7) {
       if (r < 37)       hpPts++;  // 37%
       else if (r < 74)  atk++;    // 37%
       else              def++;    // 26%
@@ -2938,9 +2953,10 @@ function startStage(stage) {
     m.hp = m.maxHp;
     if (stage > 1 && !m.isMe && !m.isBot) m.allocDone = false;
   }
-  // Generate enemies
+  // Generate enemies (11關4隻，12關起5隻)
   gs.enemies = [];
-  for (let i = 0; i < 3; i++) {
+  const enemyCount = cfg.enemyCount || 3;
+  for (let i = 0; i < enemyCount; i++) {
     const s = rollMonsterStats(cfg.monsterPts, stage);
     gs.enemies.push({ name:`怪物${i+1}`, isMonster:true, hp:s.hp, maxHp:s.hp, atk:s.atk, def:s.def, skills:{} });
   }
@@ -4980,10 +4996,10 @@ window.readyUpDungeon = async (code) => {
   const memVals = Object.values(mems);
   const realMembers = memVals.filter(m => !m.isBot);
   const updated = { ...mems };
-  const rankIdx = room.dungeonRankIdx || 0;
-  // Fill bots based on dungeon difficulty rank
+  // 人機等級跟玩家一樣
+  const playerRankIdx = getRankIndex(G.player.exp || 0);
   for (let i = memVals.length; i < 3; i++) {
-    const bs = botStatsForRank(rankIdx);
+    const bs = botStatsForRank(playerRankIdx);
     updated[`Bot_${i}`] = { name:`人機${i}`, rankKey:bs.rankKey, rankName:bs.rankName, isBot:true, ready:true };
   }
   realMembers.forEach(m => { if (updated[m.uid]) updated[m.uid].ready = true; });
@@ -5022,8 +5038,8 @@ async function initDungeon(members, roomId, rankIdx) {
   const team = [];
   for (const m of memVals) {
     if (m.isBot) {
-      const botR = RANKS[Math.max(0, Math.min(rankIdx, RANKS.length-1))];
-      // Use rankIdx+1 as pseudo-stage so high-difficulty (idx>=6) uses late-game distribution
+      const playerRankIdx = getRankIndex(G.player.exp || 0);
+      const botR = RANKS[playerRankIdx];
       const pseudoStage = rankIdx + 1;
       const extra = rollMonsterStats(pts, pseudoStage);
       team.push({ name:m.name, isBot:true, isMe:false,
