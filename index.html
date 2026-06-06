@@ -666,7 +666,7 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
     </div><!-- end tab-content -->
 
     <!-- VERSION FOOTER -->
-    <div style="text-align:center;padding:12px 0 8px;font-size:11px;color:var(--text3);letter-spacing:2px">v1.1.54</div>
+    <div style="text-align:center;padding:12px 0 8px;font-size:11px;color:var(--text3);letter-spacing:2px">v1.1.55</div>
 
   </div>
 </div>
@@ -2970,6 +2970,9 @@ function startStage(stage) {
 
   document.getElementById('gameStageText').textContent = `第 ${stage} 關`;
   document.getElementById('allocPanel').classList.add('hidden');
+  document.getElementById('allocWaitMsg').classList.add('hidden');
+  const allocBtn = document.getElementById('confirmAllocBtn');
+  if (allocBtn) { allocBtn.disabled = false; allocBtn.textContent = '確認分配'; }
   document.getElementById('battleSection').classList.add('hidden');
   document.getElementById('resultOverlay').classList.add('hidden');
   document.getElementById('jobSelectPanel').style.display = 'none';
