@@ -666,7 +666,7 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
     </div><!-- end tab-content -->
 
     <!-- VERSION FOOTER -->
-    <div style="text-align:center;padding:12px 0 8px;font-size:11px;color:var(--text3);letter-spacing:2px">v1.1.55</div>
+    <div style="text-align:center;padding:12px 0 8px;font-size:11px;color:var(--text3);letter-spacing:2px">v1.1.56</div>
 
   </div>
 </div>
@@ -898,6 +898,7 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
         <button class="alloc-btn" onclick="allocAttr('hp',-1)">−</button>
         <div class="alloc-val green" id="alloc-hp">0</div>
         <button class="alloc-btn" onclick="allocAttr('hp',1)">+</button>
+        <button class="alloc-btn" onclick="allocAttr('hp',10)" style="font-size:11px;padding:0 6px">+10</button>
         <div class="alloc-hint" id="alloc-hp-total"></div>
       </div>
       <div class="alloc-row">
@@ -905,6 +906,7 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
         <button class="alloc-btn" onclick="allocAttr('atk',-1)">−</button>
         <div class="alloc-val red" id="alloc-atk">0</div>
         <button class="alloc-btn" onclick="allocAttr('atk',1)">+</button>
+        <button class="alloc-btn" onclick="allocAttr('atk',10)" style="font-size:11px;padding:0 6px">+10</button>
         <div class="alloc-hint" id="alloc-atk-total"></div>
       </div>
       <div class="alloc-row">
@@ -912,6 +914,7 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
         <button class="alloc-btn" onclick="allocAttr('def',-1)">−</button>
         <div class="alloc-val cyan" id="alloc-def">0</div>
         <button class="alloc-btn" onclick="allocAttr('def',1)">+</button>
+        <button class="alloc-btn" onclick="allocAttr('def',10)" style="font-size:11px;padding:0 6px">+10</button>
         <div class="alloc-hint" id="alloc-def-total"></div>
       </div>
       <div style="margin-top:16px;text-align:center">
@@ -3035,8 +3038,12 @@ window.allocAttr = (attr, delta) => {
   if (!myMem) return;
   const ptsLeft = parseInt(document.getElementById('allocPointsLeft').textContent);
   const current = parseInt(document.getElementById(`alloc-${attr}`).textContent);
-  if (delta > 0 && ptsLeft <= 0) return;
+  if (delta > 0) {
+    if (ptsLeft <= 0) return;
+    delta = Math.min(delta, ptsLeft); // +10 時若不足10就加剩餘全部
+  }
   if (delta < 0 && current <= 0) return;
+  if (delta < 0) delta = Math.max(delta, -current); // 不能減到負數
   document.getElementById(`alloc-${attr}`).textContent = current + delta;
   document.getElementById('allocPointsLeft').textContent = ptsLeft - delta;
   updateAllocTotals(myMem);
