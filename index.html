@@ -666,7 +666,7 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
     </div><!-- end tab-content -->
 
     <!-- VERSION FOOTER -->
-    <div style="text-align:center;padding:12px 0 8px;font-size:11px;color:var(--text3);letter-spacing:2px">v1.1.57</div>
+    <div style="text-align:center;padding:12px 0 8px;font-size:11px;color:var(--text3);letter-spacing:2px">v1.1.59</div>
 
   </div>
 </div>
@@ -2193,7 +2193,7 @@ function showRoomWaiting(code, isLeader, startStageNum) {
         開始關卡：
         <select id="roomStartStageSelect" style="background:var(--bg2);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:4px 8px"
           onchange="updateRoomStartStage('${code}',this.value)">
-          ${[1,2,3,4,5,6,7,8,9,10].map(i=>`<option value="${i}" ${i===startStageNum?'selected':''}>${i===1?'第 '+i+' 關（預設）':'第 '+i+' 關'}</option>`).join('')}
+          ${Array.from({length:STAGE_CONFIG.length},(_,i)=>i+1).map(i=>`<option value="${i}" ${i===startStageNum?'selected':''}>${i===1?'第 '+i+' 關（預設）':'第 '+i+' 關'}</option>`).join('')}
         </select>
       </div>`;
     document.getElementById('matchBtns').innerHTML = `
@@ -2492,6 +2492,16 @@ async function initGame(members, roomId, startStageNum) {
   const meSelf = team.find(m => m.isMe);
   if (meSelf) loadEquipmentOntoFighter(meSelf);
 
+  // 讀取公會等級
+  let guildLevel = 0;
+  try {
+    const gidSnap = await get(ref(db, `players/${G.uid}/guildId`));
+    if (gidSnap.exists() && gidSnap.val()) {
+      const lvSnap = await get(ref(db, `guilds/${gidSnap.val()}/level`));
+      if (lvSnap.exists()) guildLevel = lvSnap.val() || 0;
+    }
+  } catch(e) {}
+
   G.gameState = {
     stage: startStageNum,
     team,
@@ -2504,9 +2514,10 @@ async function initGame(members, roomId, startStageNum) {
     log: [],
     selectedEnemy: -1,
     isHost: iAmHost,
-    hostName: hostUid,   // stored as uid
+    hostName: hostUid,
     roundNum: 1,
-    startStage: startStageNum
+    startStage: startStageNum,
+    _guildLevel: guildLevel
   };
   if (iAmHost) {
     set(ref(db, `rooms2/${roomId}/host`), G.uid);
@@ -3359,12 +3370,24 @@ function getEffectiveAtk(fighter) {
 }
 
 function calcSingleHit(attacker, defender) {
+  // 公會加成：套用到最終傷害（攻擊方）和有效防禦（防禦方）
+  const gs = G.gameState;
+  const guildLv = gs?._guildLevel || 0;
+  const bonus = guildBonus(guildLv); // 1.0 if no guild
+
   const effAtk = getEffectiveAtk(attacker);
   // 刺客 passive: ignore 30% of defense
   const assassinPassive = attacker.job === '刺客';
-  const effDef = assassinPassive ? Math.round(defender.def * 0.7) : defender.def;
+  let baseDef = assassinPassive ? Math.round(defender.def * 0.7) : defender.def;
+  // 公會防禦加成（防禦方是玩家時）
+  const effDef = (!defender.isMonster && !defender.isBot) ? Math.round(baseDef * bonus) : baseDef;
   let dmg = effAtk - effDef;
   if (dmg < 1) dmg = 1;
+  // 公會攻擊加成（攻擊方是玩家時）
+  if (!attacker.isMonster && !attacker.isBot) {
+    dmg = Math.round(dmg * bonus);
+    if (dmg < 1) dmg = 1;
+  }
   let isCrit = false;
 
   // 暴徒: HP < 20% → damage bonus
@@ -5081,11 +5104,22 @@ async function initDungeon(members, roomId, rankIdx) {
   const me = team.find(m => m.isMe);
   if (me) loadEquipmentOntoFighter(me);
 
+  // 讀取公會等級
+  let dungeonGuildLevel = 0;
+  try {
+    const gidSnap2 = await get(ref(db, `players/${G.uid}/guildId`));
+    if (gidSnap2.exists() && gidSnap2.val()) {
+      const lvSnap2 = await get(ref(db, `guilds/${gidSnap2.val()}/level`));
+      if (lvSnap2.exists()) dungeonGuildLevel = lvSnap2.val() || 0;
+    }
+  } catch(e) {}
+
   G.gameState = {
     stage:1, team, enemies:[boss], currentTurn:0, turnOrder:[],
     battleActive:false, roomId, pendingAlloc:true, log:[],
     selectedEnemy:-1, isHost:iAmHost, hostName:hostUid,
-    roundNum:1, startStage:1, isDungeon:true, dungeonRankIdx:rankIdx
+    roundNum:1, startStage:1, isDungeon:true, dungeonRankIdx:rankIdx,
+    _guildLevel: dungeonGuildLevel
   };
   if (iAmHost) {
     set(ref(db, `rooms2/${roomId}/host`), G.uid);
