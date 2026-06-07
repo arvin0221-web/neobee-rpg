@@ -447,6 +447,9 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
 
       <!-- HOME TAB -->
       <div id="tab-home">
+        <div style="display:flex;justify-content:flex-end;margin-bottom:8px">
+          <button id="muteBtn" onclick="toggleMute()" style="background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:6px 12px;font-size:18px;cursor:pointer;color:var(--text)" title="音效開關">🔊</button>
+        </div>
         <div class="home-grid">
           <div class="card">
             <div class="card-title">等級 / 排名</div>
@@ -667,7 +670,7 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
 
     <!-- VERSION FOOTER -->
     <div style="text-align:center;padding:12px 0 8px;font-size:11px;color:var(--text3);letter-spacing:2px;cursor:default;user-select:none"
-      onclick="(function(){window._erudaTap=(window._erudaTap||0)+1;if(window._erudaTap>=5){window._erudaTap=0;if(window.eruda){eruda.show();return;}var s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/eruda';document.head.appendChild(s);s.onload=function(){eruda.init();eruda.show();}}})()">v1.1.63</div>
+      onclick="(function(){window._erudaTap=(window._erudaTap||0)+1;if(window._erudaTap>=5){window._erudaTap=0;if(window.eruda){eruda.show();return;}var s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/eruda';document.head.appendChild(s);s.onload=function(){eruda.init();eruda.show();}}})()">v1.1.64</div>
 
   </div>
 </div>
@@ -1487,6 +1490,8 @@ function enterMain() {
   listenGuildInvites();
   runDailySettlement();
   switchTab('home');
+  // 登入後啟動探索 BGM（需使用者互動才能播放）
+  document.addEventListener('click', () => { AUDIO.playExploreBgm(); }, { once: true });
 }
 
 function updateUI() {
@@ -3262,6 +3267,7 @@ function handleTeammateDisconnect(name) {
 function startBattle() {
   const gs = G.gameState;
   console.log('[startBattle] roomId=', gs.roomId, 'isHost=', gs.isHost, 'team=', gs.team?.length, 'enemies=', gs.enemies?.length);
+  AUDIO.playBattleBgm();
   gs.battleActive = true;
   gs.pendingAlloc = false;
   gs.waitingForPlayer = false;
@@ -3302,6 +3308,7 @@ function buildTurnOrder() {
     if (round === 11 || round === 21 || round === 31) {
       const color = round === 31 ? '#ff00ff' : round === 21 ? '#ff6600' : '#ff3333';
       addLog(`<span style="color:${color};font-weight:900;font-size:15px">💢 混沌巨龍進入【${rageName}】狀態！傷害 ×${mult}！</span>`);
+      AUDIO.sfxRage();
     }
     boss.atk = newAtk;
 
@@ -3653,7 +3660,8 @@ function listenBattleState() {
               if (evCopy.dying && !evCopy.defIsEnemy) setTimeout(() => { fxGhost(defFxEl); setTimeout(() => fxTombstone(defFxEl), 800); }, 150);
             }, 120);
           } else {
-            fxHitFlash(defFxEl);
+            AUDIO.sfxHit();
+          fxHitFlash(defFxEl);
             fxParticles(defCard, evCopy.dmg, evCopy.isCrit);
             fxBloodDrip(defCard, evCopy.isCrit);
             fxDamageNumber(defFxEl, evCopy.dmg, evCopy.isCrit, false, false, false);
@@ -4189,6 +4197,7 @@ function spawnParticle(parent, { x, y, size, color, tx, ty, dur, opacity=1, shap
 /* 絢麗斬擊：SVG canvas 繪製光刀，確保在卡片內 */
 function fxSlash(fxEl, isCrit, _unused, slashColor) {
   if (!fxEl) return;
+  if (isCrit) AUDIO.sfxCritSlash(); else AUDIO.sfxSlash();
   const card = fxEl.parentElement;
   const W = card ? card.offsetWidth  || 120 : 120;
   const H = card ? card.offsetHeight || 90  : 90;
@@ -4390,6 +4399,7 @@ function fxParticles(card, dmg, isCrit, slashColor) {
 /* 怪物死亡：多重爆炸波 + 白色粒子 */
 function fxExplosion(fxEl, card) {
   if (!card) return;
+  AUDIO.sfxExplosion();
   const W = card.offsetWidth || 120;
   const H = card.offsetHeight || 90;
   const cx = W/2, cy = H*0.48;
@@ -4479,6 +4489,7 @@ function fxExplosion(fxEl, card) {
 /* 玩家死亡：幽靈上飄 + 藍白粒子 */
 function fxGhost(fxEl) {
   if (!fxEl) return;
+  AUDIO.sfxDeath();
   const card = fxEl.parentElement;
   const W = card ? card.offsetWidth||120 : 120;
   const H = card ? card.offsetHeight||90 : 90;
@@ -4562,6 +4573,7 @@ function fxTombstone(fxEl) {
 /* 防禦格擋 */
 function fxBlock(fxEl, card) {
   if (!fxEl) return;
+  AUDIO.sfxBlock();
   const shield = document.createElement('div');
   shield.style.cssText = `position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:40px;animation:popIn .3s ease forwards;pointer-events:none;z-index:28`;
   shield.textContent = '🛡';
@@ -4576,6 +4588,7 @@ function fxBlock(fxEl, card) {
 /* 致命一擊 */
 function fxInstantKill(fxEl, card, isEnemy) {
   if (!fxEl) return;
+  AUDIO.sfxInstantKill();
   for (let i=0; i<6; i++) {
     const line = document.createElement('div');
     line.className = 'slash-line';
@@ -4684,6 +4697,7 @@ function renderBattle() {
 function highlightActiveActor() { renderBattle(); }
 
 function showStageResult(win) {
+  if (win) AUDIO.sfxWin(); else AUDIO.sfxLose();
   const gs = G.gameState;
   gs.battleActive = false;
   const cfg = STAGE_CONFIG[gs.stage-1];
@@ -4726,6 +4740,7 @@ window.nextStage = () => {
 };
 
 window.exitGame = async () => {
+  AUDIO.playExploreBgm();
   document.getElementById('gameScreen').classList.add('hidden');
   document.getElementById('resultOverlay').classList.add('hidden');
   hideGameChat();
@@ -4937,6 +4952,7 @@ function applySickleHeal(attacker, dmg) {
   const actual = attacker.hp - before;
   if (actual > 0) {
     addLog(`🩸 赤血鐮刀！${attacker.name} 回復 <span class="green">${actual}</span> 點血量`);
+    AUDIO.sfxHeal();
     requestAnimationFrame(() => {
       const idx = G.gameState.team.indexOf(attacker);
       if (idx >= 0) fxDamageNumber(getFxEl(false, idx), actual, false, true, false, false);
@@ -5265,6 +5281,7 @@ function startDungeonStage(rankIdx, pts) {
 
 // Override showStageResult for dungeon boss
 function showDungeonResult(win) {
+  if (win) AUDIO.sfxWin(); else AUDIO.sfxLose();
   const gs = G.gameState;
   gs.battleActive = false;
   const overlay = document.getElementById('dungeonResultOverlay');
@@ -5311,6 +5328,7 @@ window.equipDroppedItem = async () => {
 };
 
 window.exitDungeon = async () => {
+  AUDIO.playExploreBgm();
   const isWB = G.gameState?.isWorldBoss;
   document.getElementById('dungeonResultOverlay').classList.add('hidden');
   document.getElementById('gameScreen').classList.add('hidden');
@@ -5945,6 +5963,7 @@ function startPvpStage(pvpPts) {
 }
 
 function showPvpResult(win) {
+  if (win) AUDIO.sfxWin(); else AUDIO.sfxLose();
   const gs = G.gameState;
   gs.battleActive = false;
   const overlay = document.getElementById('pvpResultOverlay');
@@ -6277,6 +6296,7 @@ function applyPoisonTick(gs) {
     const dmg = Math.max(1, Math.round(m.maxHp * poisonDmgPct));
     m.hp = Math.max(0, m.hp - dmg);
     addLog(`🧪 <span style="color:#4ade80">${m.name}</span> 中毒傷害 <span class="red">-${dmg}</span>`);
+    AUDIO.sfxPoison();
     const { isEnemy: iE, idx } = getTargetIndex(m);
     requestAnimationFrame(() => fxDamageNumber(getFxEl(iE, idx), dmg, false, false, false, false));
     if (m.hp <= 0) {
@@ -6927,7 +6947,345 @@ window.openSimPanel = function() {
     <button class="btn btn-secondary btn-sm" onclick="runDailySettlement().then(()=>alert('結算完成'))">📊 手動執行昨日結算</button>`;
   panel.appendChild(extra);
 };
-window.initBotGuilds = initBotGuilds;
+
+// ===================================================================
+// ===== AUDIO SYSTEM =====
+// ===================================================================
+
+const AUDIO = {
+  ctx: null,
+  muted: false,
+  bgmNodes: [],  // 目前播放中的 BGM 節點
+  bgmType: null, // 'explore' | 'battle'
+  _battleTimer: null,
+  _exploreTimer: null,
+
+  init() {
+    if (this.ctx) return;
+    this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+    this.muted = localStorage.getItem('sfx_muted') === '1';
+    this._updateBtn();
+  },
+
+  resume() {
+    if (this.ctx && this.ctx.state === 'suspended') this.ctx.resume();
+  },
+
+  _updateBtn() {
+    const btn = document.getElementById('muteBtn');
+    if (btn) btn.textContent = this.muted ? '🔇' : '🔊';
+  },
+
+  // ── 基礎工具 ──
+  _osc(type, freq, start, dur, gain=0.4, dest=null) {
+    const ctx = this.ctx;
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0, start);
+    g.gain.linearRampToValueAtTime(gain, start + 0.005);
+    g.gain.exponentialRampToValueAtTime(0.0001, start + dur);
+    const o = ctx.createOscillator();
+    o.type = type;
+    o.frequency.setValueAtTime(freq, start);
+    o.connect(g);
+    g.connect(dest || ctx.destination);
+    o.start(start);
+    o.stop(start + dur + 0.01);
+    return { osc: o, gain: g };
+  },
+
+  _noise(start, dur, gain=0.3, filter={type:'bandpass',freq:1000,Q:1}) {
+    const ctx = this.ctx;
+    const buf = ctx.createBuffer(1, ctx.sampleRate * dur, ctx.sampleRate);
+    const data = buf.getChannelData(0);
+    for (let i=0; i<data.length; i++) data[i] = Math.random()*2-1;
+    const src = ctx.createBufferSource();
+    src.buffer = buf;
+    const f = ctx.createBiquadFilter();
+    f.type = filter.type;
+    f.frequency.value = filter.freq;
+    f.Q.value = filter.Q;
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(gain, start);
+    g.gain.exponentialRampToValueAtTime(0.0001, start + dur);
+    src.connect(f); f.connect(g); g.connect(ctx.destination);
+    src.start(start); src.stop(start + dur);
+    return { src, filter: f, gain: g };
+  },
+
+  // ── 音效 ──
+  sfxSlash() {
+    if (this.muted) return;
+    this.init(); this.resume();
+    const t = this.ctx.currentTime;
+    // 高頻切割聲：快速向下掃頻
+    const o = this.ctx.createOscillator();
+    o.type = 'sawtooth';
+    o.frequency.setValueAtTime(1200, t);
+    o.frequency.exponentialRampToValueAtTime(300, t + 0.12);
+    const g = this.ctx.createGain();
+    g.gain.setValueAtTime(0.35, t);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.13);
+    o.connect(g); g.connect(this.ctx.destination);
+    o.start(t); o.stop(t + 0.14);
+    // 輕微雜訊層
+    this._noise(t, 0.08, 0.15, {type:'highpass', freq:2000, Q:0.5});
+  },
+
+  sfxCritSlash() {
+    if (this.muted) return;
+    this.init(); this.resume();
+    const t = this.ctx.currentTime;
+    // 更重的爆擊音
+    const o = this.ctx.createOscillator();
+    o.type = 'sawtooth';
+    o.frequency.setValueAtTime(1600, t);
+    o.frequency.exponentialRampToValueAtTime(180, t + 0.18);
+    const g = this.ctx.createGain();
+    g.gain.setValueAtTime(0.5, t);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.2);
+    o.connect(g); g.connect(this.ctx.destination);
+    o.start(t); o.stop(t + 0.21);
+    this._noise(t, 0.1, 0.25, {type:'highpass', freq:3000, Q:0.3});
+    // 低頻衝擊
+    this._osc('sine', 80, t, 0.15, 0.4);
+  },
+
+  sfxHit() {
+    if (this.muted) return;
+    this.init(); this.resume();
+    const t = this.ctx.currentTime;
+    this._noise(t, 0.06, 0.3, {type:'bandpass', freq:800, Q:2});
+    this._osc('sine', 120, t, 0.08, 0.2);
+  },
+
+  sfxExplosion() {
+    if (this.muted) return;
+    this.init(); this.resume();
+    const t = this.ctx.currentTime;
+    // 低頻爆破
+    const o = this.ctx.createOscillator();
+    o.type = 'sine';
+    o.frequency.setValueAtTime(140, t);
+    o.frequency.exponentialRampToValueAtTime(30, t + 0.4);
+    const g = this.ctx.createGain();
+    g.gain.setValueAtTime(0.7, t);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.45);
+    o.connect(g); g.connect(this.ctx.destination);
+    o.start(t); o.stop(t + 0.46);
+    // 爆炸雜訊
+    this._noise(t, 0.5, 0.6, {type:'lowpass', freq:600, Q:0.5});
+    this._noise(t+0.02, 0.3, 0.3, {type:'bandpass', freq:200, Q:1});
+  },
+
+  sfxDeath() {
+    if (this.muted) return;
+    this.init(); this.resume();
+    const t = this.ctx.currentTime;
+    // 低沉悲嗚：下行音階
+    [220, 196, 165, 131].forEach((freq, i) => {
+      this._osc('sine', freq, t + i*0.12, 0.25, 0.2);
+    });
+    this._noise(t, 0.6, 0.15, {type:'lowpass', freq:300, Q:1});
+  },
+
+  sfxHeal() {
+    if (this.muted) return;
+    this.init(); this.resume();
+    const t = this.ctx.currentTime;
+    // 清脆上揚
+    [523, 659, 784, 1047].forEach((freq, i) => {
+      this._osc('sine', freq, t + i*0.07, 0.18, 0.18);
+    });
+  },
+
+  sfxInstantKill() {
+    if (this.muted) return;
+    this.init(); this.resume();
+    const t = this.ctx.currentTime;
+    this._osc('sawtooth', 60, t, 0.5, 0.6);
+    this._osc('square', 120, t, 0.4, 0.3);
+    this._noise(t, 0.4, 0.5, {type:'lowpass', freq:400, Q:0.5});
+    // 高頻尖銳
+    this._osc('sine', 2400, t, 0.15, 0.3);
+  },
+
+  sfxWin() {
+    if (this.muted) return;
+    this.init(); this.resume();
+    const t = this.ctx.currentTime;
+    const melody = [523,659,784,1047,1047,784,1047];
+    melody.forEach((freq, i) => {
+      this._osc('square', freq, t + i*0.11, 0.18, 0.2);
+      this._osc('sine',   freq, t + i*0.11, 0.18, 0.1);
+    });
+  },
+
+  sfxLose() {
+    if (this.muted) return;
+    this.init(); this.resume();
+    const t = this.ctx.currentTime;
+    [392, 349, 330, 261].forEach((freq, i) => {
+      this._osc('square', freq, t + i*0.18, 0.3, 0.2);
+    });
+  },
+
+  sfxPoison() {
+    if (this.muted) return;
+    this.init(); this.resume();
+    const t = this.ctx.currentTime;
+    this._osc('sine', 300, t,    0.1, 0.15);
+    this._osc('sine', 200, t+0.1,0.1, 0.12);
+  },
+
+  sfxBlock() {
+    if (this.muted) return;
+    this.init(); this.resume();
+    const t = this.ctx.currentTime;
+    this._noise(t, 0.08, 0.35, {type:'bandpass', freq:2000, Q:3});
+    this._osc('square', 440, t, 0.06, 0.2);
+  },
+
+  sfxRage() {
+    if (this.muted) return;
+    this.init(); this.resume();
+    const t = this.ctx.currentTime;
+    [80,100,130].forEach((f,i) => this._osc('sawtooth', f, t+i*0.04, 0.5, 0.35));
+    this._noise(t, 0.4, 0.4, {type:'lowpass', freq:500, Q:1});
+  },
+
+  // ── BGM：探索 8-bit ──
+  _stopBgm() {
+    if (this._battleTimer)  { clearTimeout(this._battleTimer);  this._battleTimer  = null; }
+    if (this._exploreTimer) { clearTimeout(this._exploreTimer); this._exploreTimer = null; }
+    this.bgmNodes.forEach(n => { try { n.stop(); } catch(e){} });
+    this.bgmNodes = [];
+    this.bgmType = null;
+  },
+
+  playExploreBgm() {
+    if (this.muted) return;
+    this.init(); this.resume();
+    if (this.bgmType === 'explore') return;
+    this._stopBgm();
+    this.bgmType = 'explore';
+
+    const ctx = this.ctx;
+    const BPM = 120, beat = 60 / BPM;
+    // 8-bit 音階（C大調五聲音階）
+    const scale = [261, 293, 329, 392, 440, 523, 587, 659];
+    // 主旋律 pattern（16拍）
+    const melody = [0,2,4,5,4,2,0,2,4,7,5,4,2,0,2,4];
+    // 和弦低音 pattern（每4拍）
+    const bass = [0, 4, 3, 4];
+
+    let loop;
+    const playLoop = () => {
+      if (this.bgmType !== 'explore' || this.muted) return;
+      const t = ctx.currentTime;
+
+      // 主旋律
+      melody.forEach((si, i) => {
+        const freq = scale[si % scale.length];
+        this._osc('square', freq, t + i*beat*0.5, beat*0.45, 0.06);
+      });
+
+      // 低音
+      bass.forEach((si, i) => {
+        const freq = scale[si % scale.length] / 2;
+        this._osc('square', freq, t + i*beat*2, beat*1.8, 0.1);
+      });
+
+      // 打鼓（每2拍）
+      [0, 2, 4, 6].forEach(i => {
+        this._noise(t + i*beat, 0.05, 0.12, {type:'highpass', freq:6000, Q:0.5});
+      });
+
+      const loopDur = melody.length * beat * 0.5 * 1000;
+      this._exploreTimer = setTimeout(playLoop, loopDur - 50);
+    };
+    playLoop();
+  },
+
+  // ── BGM：戰鬥快節奏打擊樂 ──
+  playBattleBgm() {
+    if (this.muted) return;
+    this.init(); this.resume();
+    if (this.bgmType === 'battle') return;
+    this._stopBgm();
+    this.bgmType = 'battle';
+
+    const ctx = this.ctx;
+    const BPM = 160, beat = 60 / BPM;
+
+    const kick = (t, gain=0.5) => {
+      const o = ctx.createOscillator();
+      o.type = 'sine';
+      o.frequency.setValueAtTime(180, t);
+      o.frequency.exponentialRampToValueAtTime(40, t + 0.15);
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(gain, t);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + 0.2);
+      o.connect(g); g.connect(ctx.destination);
+      o.start(t); o.stop(t + 0.21);
+    };
+
+    const snare = (t, gain=0.3) => {
+      this._noise(t, 0.12, gain, {type:'bandpass', freq:1500, Q:1.5});
+      this._osc('sine', 200, t, 0.08, gain*0.4);
+    };
+
+    const hihat = (t, gain=0.1) => {
+      this._noise(t, 0.04, gain, {type:'highpass', freq:8000, Q:0.5});
+    };
+
+    // 低音旋律 pattern
+    const bassNotes = [130, 146, 155, 130, 116, 130, 155, 174];
+
+    const playLoop = () => {
+      if (this.bgmType !== 'battle' || this.muted) return;
+      const t = ctx.currentTime;
+      const bar = beat * 4;
+
+      // Kick: 拍1、拍3
+      [0, 2, 3.5].forEach(b => kick(t + b*beat));
+      // Snare: 拍2、拍4
+      [1, 3].forEach(b => snare(t + b*beat));
+      // Hi-hat: 每半拍
+      for (let i=0; i<8; i++) hihat(t + i*beat*0.5, i%2===0 ? 0.12 : 0.07);
+
+      // 緊張低音旋律（2小節循環）
+      bassNotes.forEach((freq, i) => {
+        this._osc('sawtooth', freq, t + i*beat*0.5, beat*0.4, 0.08);
+      });
+
+      // 高頻鋸齒補氣氛
+      [523, 659, 784].forEach((freq, i) => {
+        this._osc('square', freq, t + i*bar/3, beat*0.2, 0.03);
+      });
+
+      this._battleTimer = setTimeout(playLoop, bar * 2 * 1000 - 60);
+    };
+    playLoop();
+  },
+};
+
+window.toggleMute = () => {
+  AUDIO.init();
+  AUDIO.muted = !AUDIO.muted;
+  localStorage.setItem('sfx_muted', AUDIO.muted ? '1' : '0');
+  AUDIO._updateBtn();
+  if (!AUDIO.muted) {
+    // 恢復 BGM
+    const type = AUDIO.bgmType;
+    AUDIO.bgmType = null;
+    if (type === 'battle') AUDIO.playBattleBgm();
+    else AUDIO.playExploreBgm();
+  } else {
+    AUDIO._stopBgm();
+  }
+};
+
+
 window.simBotGuildBossDmg = simBotGuildBossDmg;
 window.runDailySettlement = runDailySettlement;
 window.showCreateGuildModal = showCreateGuildModal;
