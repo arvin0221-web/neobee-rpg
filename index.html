@@ -667,7 +667,7 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
 
     <!-- VERSION FOOTER -->
     <div style="text-align:center;padding:12px 0 8px;font-size:11px;color:var(--text3);letter-spacing:2px;cursor:default;user-select:none"
-      onclick="(function(){window._erudaTap=(window._erudaTap||0)+1;if(window._erudaTap>=5){window._erudaTap=0;if(window.eruda){eruda.show();return;}var s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/eruda';document.head.appendChild(s);s.onload=function(){eruda.init();eruda.show();}}})()">v1.1.60</div>
+      onclick="(function(){window._erudaTap=(window._erudaTap||0)+1;if(window._erudaTap>=5){window._erudaTap=0;if(window.eruda){eruda.show();return;}var s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/eruda';document.head.appendChild(s);s.onload=function(){eruda.init();eruda.show();}}})()">v1.1.63</div>
 
   </div>
 </div>
@@ -2938,7 +2938,16 @@ function processSkillRequest(ev) {
 function resetJobState(gs) {
   // Remove dead summons from team at stage transition
   gs.team = gs.team.filter(m => !m.isSummon || m.hp > 0);
-  gs.team.forEach(m => { m.activeUsed = 0; m.poisoned = m.poisoned||0; m._sacrificeApplied = false; });
+  gs.team.forEach(m => {
+    m.activeUsed = 0;
+    m.poisoned = m.poisoned || 0;
+    // 祭獻胸甲：每關重置，讓 updateSacrificeArmor 重新判斷
+    if (m._sacrificeApplied) {
+      if (m._baseAtk != null) { m.atk = m._baseAtk; m._baseAtk = null; }
+      if (m._baseDef != null) { m.def = m._baseDef; m._baseDef = null; }
+      m._sacrificeApplied = false;
+    }
+  });
   gs.enemies.forEach(e => { e.poisoned = e.poisoned||0; });
   gs._silenced        = {};
   gs._frozenThisRound = 0;
@@ -3672,6 +3681,9 @@ function applyBattleState(state) {
       gs.team[i].dead      = ft.dead;
       gs.team[i].job       = ft.job || gs.team[i].job;
       gs.team[i].activeUsed = ft.activeUsed ?? gs.team[i].activeUsed;
+      gs.team[i]._sacrificeApplied = ft._sacrificeApplied || false;
+      gs.team[i]._baseAtk  = ft._baseAtk || null;
+      gs.team[i]._baseDef  = ft._baseDef || null;
     });
     buildActiveSkillBar();
   }
@@ -4181,64 +4193,117 @@ function fxSlash(fxEl, isCrit, _unused, slashColor) {
   const W = card ? card.offsetWidth  || 120 : 120;
   const H = card ? card.offsetHeight || 90  : 90;
 
-  let baseColor, glowColor;
-  if (slashColor === 'red') { baseColor='#ff2222'; glowColor='#ff6600'; }
-  else if (isCrit)          { baseColor='#ffe066'; glowColor='#ff9900'; }
-  else                      { baseColor='#60aaff'; glowColor='#aa55ff'; }
+  let coreColor, glowColor, trailColor;
+  if (slashColor === 'red') {
+    coreColor='#ffffff'; glowColor='#ff3300'; trailColor='#ff660088';
+  } else if (isCrit) {
+    coreColor='#ffffff'; glowColor='#ffcc00'; trailColor='#ffaa0088';
+  } else {
+    coreColor='#ffffff'; glowColor='#44aaff'; trailColor='#6644ff88';
+  }
 
-  const count = isCrit ? 4 : 3;
+  const angle = -32; // 固定斜角，俐落感
+  const rad   = angle * Math.PI / 180;
+  const len   = Math.sqrt(W*W + H*H) * 1.15; // 對角線長度確保覆蓋整張卡
+  const cx = W * 0.5, cy = H * 0.48;
+  const x1 = cx - Math.cos(rad)*len*0.5, y1 = cy - Math.sin(rad)*len*0.5;
+  const x2 = cx + Math.cos(rad)*len*0.5, y2 = cy + Math.sin(rad)*len*0.5;
+
+  const coreW  = isCrit ? 5 : 3.5;
+  const glowW  = isCrit ? 22 : 16;
+  const outerW = isCrit ? 38 : 28;
+
   const svg = document.createElementNS('http://www.w3.org/2000/svg','svg');
   svg.style.cssText = `position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:25;overflow:visible`;
   fxEl.appendChild(svg);
 
-  for (let k = 0; k < count; k++) {
-    const yFrac = 0.2 + k * 0.22;
-    const angle = -(18 + k * 8); // slight diagonal
-    const len = W * 1.4;
-    const cx = W * 0.5, cy = H * yFrac;
-    const rad = angle * Math.PI / 180;
-    const x1 = cx - Math.cos(rad)*len*0.5, y1 = cy - Math.sin(rad)*len*0.5;
-    const x2 = cx + Math.cos(rad)*len*0.5, y2 = cy + Math.sin(rad)*len*0.5;
-    const thickness = isCrit ? 4 - k*0.5 : 3 - k*0.5;
-    const delay = k * 45;
+  // 定義漸層：從透明→不透明→透明，讓線有「掃過」的速度感
+  const defs = document.createElementNS('http://www.w3.org/2000/svg','defs');
+  const gradId = 'slashGrad_' + Date.now();
+  const grad = document.createElementNS('http://www.w3.org/2000/svg','linearGradient');
+  grad.setAttribute('id', gradId);
+  grad.setAttribute('x1','0%'); grad.setAttribute('y1','0%');
+  grad.setAttribute('x2','100%'); grad.setAttribute('y2','0%');
+  grad.setAttribute('gradientUnits','userSpaceOnUse');
+  const stops = [
+    {offset:'0%',   color:'transparent'},
+    {offset:'15%',  color:glowColor, opacity:'0.3'},
+    {offset:'45%',  color:coreColor,  opacity:'1'},
+    {offset:'65%',  color:glowColor, opacity:'0.6'},
+    {offset:'100%', color:'transparent'},
+  ];
+  stops.forEach(s => {
+    const stop = document.createElementNS('http://www.w3.org/2000/svg','stop');
+    stop.setAttribute('offset', s.offset);
+    stop.setAttribute('stop-color', s.color || 'transparent');
+    if (s.opacity != null) stop.setAttribute('stop-opacity', s.opacity);
+    grad.appendChild(stop);
+  });
+  defs.appendChild(grad);
+  svg.appendChild(defs);
 
-    // Glow line (wide, soft)
-    const glowLine = document.createElementNS('http://www.w3.org/2000/svg','line');
-    glowLine.setAttribute('x1',x1); glowLine.setAttribute('y1',y1);
-    glowLine.setAttribute('x2',x2); glowLine.setAttribute('y2',y2);
-    glowLine.style.cssText = `stroke:${glowColor};stroke-width:${thickness*3};opacity:0;filter:blur(4px);stroke-linecap:round`;
-    svg.appendChild(glowLine);
+  const mkLine = (w, color, blur, opacity) => {
+    const l = document.createElementNS('http://www.w3.org/2000/svg','line');
+    l.setAttribute('x1',x1); l.setAttribute('y1',y1);
+    l.setAttribute('x2',x2); l.setAttribute('y2',y2);
+    l.style.cssText = `stroke:${color};stroke-width:${w};stroke-linecap:round;opacity:${opacity};${blur?`filter:blur(${blur}px)`:''}`;
+    return l;
+  };
 
-    // Core line (sharp)
-    const line = document.createElementNS('http://www.w3.org/2000/svg','line');
-    line.setAttribute('x1',x1); line.setAttribute('y1',y1);
-    line.setAttribute('x2',x2); line.setAttribute('y2',y2);
-    line.style.cssText = `stroke:#fff;stroke-width:${thickness};opacity:0;stroke-linecap:round`;
-    svg.appendChild(line);
+  const outer = mkLine(outerW, glowColor, 8, 0);
+  const glow  = mkLine(glowW,  glowColor, 3, 0);
+  const core  = mkLine(coreW, `url(#${gradId})`, 0, 0);
+  const shine = mkLine(1.5,   '#ffffff', 0, 0);
+  [outer, glow, core, shine].forEach(l => svg.appendChild(l));
 
-    // Animate: flash in → fade out
+  // 動畫：快速出現、短暫持續、優雅消退
+  requestAnimationFrame(() => {
+    [outer,glow,core,shine].forEach(l => {
+      l.style.transition = 'opacity 40ms ease-out';
+    });
+    outer.style.opacity = '0.35';
+    glow.style.opacity  = '0.7';
+    core.style.opacity  = '1';
+    shine.style.opacity = '0.9';
+
     setTimeout(() => {
-      glowLine.style.transition = 'opacity 60ms';
-      line.style.transition = 'opacity 60ms';
-      glowLine.style.opacity = '0.7';
-      line.style.opacity = '1';
+      outer.style.transition = 'opacity 280ms ease-in';
+      glow.style.transition  = 'opacity 240ms ease-in';
+      core.style.transition  = 'opacity 200ms ease-in';
+      shine.style.transition = 'opacity 180ms ease-in';
+      outer.style.opacity = '0';
+      glow.style.opacity  = '0';
+      core.style.opacity  = '0';
+      shine.style.opacity = '0';
+    }, isCrit ? 130 : 90);
+  });
+
+  // 卡片邊框光暈
+  const border = document.createElement('div');
+  border.style.cssText = `position:absolute;inset:0;border-radius:10px;pointer-events:none;z-index:24;
+    box-shadow:inset 0 0 24px 6px ${glowColor}99, 0 0 18px 4px ${glowColor}55;
+    opacity:1;transition:opacity 350ms ease-out`;
+  fxEl.appendChild(border);
+  requestAnimationFrame(() => requestAnimationFrame(() => { border.style.opacity='0'; }));
+
+  // 爆裂粒子（爆擊時額外火花）
+  if (isCrit && card) {
+    for (let i=0; i<8; i++) {
       setTimeout(() => {
-        glowLine.style.transition = 'opacity 350ms ease-out';
-        line.style.transition = 'opacity 350ms ease-out';
-        glowLine.style.opacity = '0';
-        line.style.opacity = '0';
-      }, 80);
-    }, delay);
+        const px = cx + (Math.random()-.5)*W*0.6;
+        const py = cy + (Math.random()-.5)*H*0.5;
+        const size = 2 + Math.random()*3;
+        spawnParticle(card, {
+          x:px, y:py, size,
+          color: ['#ffffff','#ffeeaa','#ffcc44'][Math.floor(Math.random()*3)],
+          tx:(Math.random()-.5)*30, ty:(Math.random()-.5)*25,
+          dur: 350 + Math.random()*200
+        });
+      }, i*18);
+    }
   }
 
-  // Glow flash on card border
-  const glow = document.createElement('div');
-  glow.style.cssText = `position:absolute;inset:0;border-radius:10px;pointer-events:none;z-index:24;
-    box-shadow:inset 0 0 18px 4px ${glowColor}88;opacity:1;transition:opacity .4s ease-out`;
-  fxEl.appendChild(glow);
-  requestAnimationFrame(() => requestAnimationFrame(() => { glow.style.opacity='0'; }));
-
-  setTimeout(() => { svg.remove(); glow.remove(); }, 600);
+  setTimeout(() => { svg.remove(); border.remove(); }, 500);
 }
 
 /* 流血粒子：紅色液滴往下噴 */
@@ -4327,57 +4392,88 @@ function fxExplosion(fxEl, card) {
   if (!card) return;
   const W = card.offsetWidth || 120;
   const H = card.offsetHeight || 90;
-  const cx = W/2, cy = H*0.5;
+  const cx = W/2, cy = H*0.48;
 
-  // 3 expanding shockwave rings at staggered intervals
-  [0, 120, 240].forEach((delay, ri) => {
+  // 閃光覆蓋（爆炸瞬間白光）
+  const flash = document.createElement('div');
+  flash.style.cssText = `position:absolute;inset:-4px;border-radius:12px;pointer-events:none;z-index:35;
+    background:radial-gradient(circle,#fff8 0%,#ffaa0066 50%,transparent 80%);
+    opacity:1;transition:opacity 250ms ease-out`;
+  card.appendChild(flash);
+  requestAnimationFrame(() => requestAnimationFrame(() => { flash.style.opacity='0'; }));
+  setTimeout(() => flash.remove(), 300);
+
+  // 衝擊波圓環（4層，更大）
+  [0, 80, 170, 270].forEach((delay, ri) => {
     setTimeout(() => {
       const ring = document.createElement('div');
-      const size = 20 + ri*10;
+      const initSize = 16;
+      const colors = ['#ff4400','#ff8800','#ffcc00','#ffffff'];
+      const bw = [3,2.5,2,1.5][ri];
       ring.style.cssText = `
         position:absolute;
-        left:${cx - size/2}px;top:${cy - size/2}px;
-        width:${size}px;height:${size}px;
+        left:${cx - initSize/2}px;top:${cy - initSize/2}px;
+        width:${initSize}px;height:${initSize}px;
         border-radius:50%;
-        border:${3-ri}px solid ${ri===0?'#ff8800':ri===1?'#ffcc00':'#ffffff'};
-        pointer-events:none;z-index:31;
-        box-shadow:0 0 ${12-ri*3}px ${ri===0?'#ff880099':'#ffcc0066'};
-        transition:transform .5s ease-out,opacity .5s ease-out;
+        border:${bw}px solid ${colors[ri]};
+        pointer-events:none;z-index:33;
+        box-shadow:0 0 ${14-ri*2}px ${colors[ri]}aa, inset 0 0 8px ${colors[ri]}44;
+        transition:transform .55s cubic-bezier(.1,.6,.3,1),opacity .55s ease-out;
         will-change:transform,opacity;
       `;
       card.appendChild(ring);
+      const scale = [7, 6, 5, 4][ri];
       requestAnimationFrame(() => requestAnimationFrame(() => {
-        ring.style.transform = 'scale(4.5)';
+        ring.style.transform = `scale(${scale})`;
         ring.style.opacity = '0';
       }));
-      setTimeout(() => ring.remove(), 560);
+      setTimeout(() => ring.remove(), 620);
     }, delay);
   });
 
-  // White radial particles
-  const count = 14;
+  // 火花粒子（更多、更遠）
+  const count = 22;
   for (let i=0; i<count; i++) {
-    const angle = (360/count)*i + Math.random()*10;
-    const dist  = 32 + Math.random()*40;
-    const size  = 3 + Math.random()*4;
+    const angle = (360/count)*i + Math.random()*14;
+    const dist  = 45 + Math.random()*65;
+    const size  = 2.5 + Math.random()*5;
     const rad   = angle*Math.PI/180;
-    const colors = ['#ffffff','#ffeeaa','#ff8800','#ffcc00'];
+    const colors = ['#ffffff','#ffeeaa','#ff8800','#ffcc00','#ff4400','#ffdd44'];
     setTimeout(() => {
       spawnParticle(card, {
-        x: cx-size/2, y: cy-size/2, size,
+        x: cx - size/2, y: cy - size/2, size,
         color: colors[Math.floor(Math.random()*colors.length)],
         tx: Math.cos(rad)*dist, ty: Math.sin(rad)*dist,
-        dur: 550 + Math.random()*300
+        dur: 600 + Math.random()*400
       });
-    }, Math.random()*100);
+    }, Math.random()*120);
   }
 
-  // Card shake
-  let shakeT=0;
+  // 上升火花
+  for (let i=0; i<10; i++) {
+    setTimeout(() => {
+      const x = cx + (Math.random()-.5)*W*0.8;
+      spawnParticle(card, {
+        x, y: cy, size: 2+Math.random()*3,
+        color: ['#ffcc00','#ff8800','#ffffff'][Math.floor(Math.random()*3)],
+        tx: (Math.random()-.5)*20,
+        ty: -(40 + Math.random()*50),
+        dur: 500 + Math.random()*300
+      });
+    }, i*30);
+  }
+
+  // 卡片強烈震動
+  let shakeT = 0;
   const shake = setInterval(() => {
-    card.style.transform = `translate(${(Math.random()-.5)*8}px,${(Math.random()-.5)*4}px)`;
-    if (++shakeT>5) { clearInterval(shake); card.style.transform=''; }
-  }, 55);
+    const mag = shakeT < 3 ? 10 : 5;
+    card.style.transform = `translate(${(Math.random()-.5)*mag}px,${(Math.random()-.5)*mag*0.6}px)`;
+    if (++shakeT > 7) { clearInterval(shake); card.style.transform=''; }
+  }, 45);
+
+  // 卡片光暈殘留
+  card.style.boxShadow = '0 0 32px 12px #ff880099';
+  setTimeout(() => { card.style.boxShadow=''; }, 600);
 }
 
 /* 玩家死亡：幽靈上飄 + 藍白粒子 */
@@ -4388,54 +4484,68 @@ function fxGhost(fxEl) {
   const H = card ? card.offsetHeight||90 : 90;
   const cx = W/2, cy = H/2;
 
-  // Ghost SVG shape (simple arc + eyes)
+  // 死亡暗化覆蓋
+  const dark = document.createElement('div');
+  dark.style.cssText = `position:absolute;inset:0;border-radius:10px;pointer-events:none;z-index:30;
+    background:rgba(0,0,40,0.55);opacity:0;transition:opacity 300ms ease-out`;
+  fxEl.appendChild(dark);
+  requestAnimationFrame(() => requestAnimationFrame(() => { dark.style.opacity='1'; }));
+
+  // 大幽靈（覆蓋整張卡片）
   const ghost = document.createElement('div');
+  const gSize = Math.min(W, H) * 1.1;
   ghost.style.cssText = `
-    position:absolute;left:50%;top:60%;
-    transform:translateX(-50%) scale(0.3);
-    width:40px;height:44px;pointer-events:none;z-index:32;
+    position:absolute;
+    left:50%;top:75%;
+    transform:translateX(-50%) translateY(0) scale(0.5);
+    width:${gSize}px;height:${gSize*1.1}px;
+    pointer-events:none;z-index:32;
     will-change:transform,opacity;
-    transition:transform 1.4s cubic-bezier(.2,.8,.3,1), opacity .5s ease-in 0.9s;
+    transition:transform 1.6s cubic-bezier(.15,.85,.25,1), opacity .6s ease-in 1.0s;
+    filter:drop-shadow(0 0 12px #88ccffaa) drop-shadow(0 0 6px #ffffff88);
   `;
-  // Draw ghost with CSS
-  ghost.innerHTML = `<svg width="40" height="44" viewBox="0 0 40 44" xmlns="http://www.w3.org/2000/svg">
+  ghost.innerHTML = `<svg width="${gSize}" height="${gSize*1.1}" viewBox="0 0 60 66" xmlns="http://www.w3.org/2000/svg">
     <defs>
-      <filter id="gf"><feGaussianBlur stdDeviation="1.5"/></filter>
+      <radialGradient id="gg${Date.now()}" cx="50%" cy="40%" r="55%">
+        <stop offset="0%" stop-color="#eef8ff" stop-opacity="1"/>
+        <stop offset="60%" stop-color="#aaddff" stop-opacity="0.95"/>
+        <stop offset="100%" stop-color="#6699cc" stop-opacity="0.8"/>
+      </radialGradient>
     </defs>
-    <ellipse cx="20" cy="16" rx="16" ry="14" fill="#cceeff" opacity="0.9"/>
-    <rect x="4" y="16" width="32" height="18" fill="#cceeff" opacity="0.9"/>
-    <path d="M4 34 Q9 40 14 34 Q19 40 20 34 Q21 40 26 34 Q31 40 36 34 L36 34" fill="#cceeff" opacity="0.9"/>
-    <ellipse cx="14" cy="15" rx="4" ry="5" fill="#1a3a5c" opacity="0.9"/>
-    <ellipse cx="26" cy="15" rx="4" ry="5" fill="#1a3a5c" opacity="0.9"/>
-    <ellipse cx="14" cy="16" rx="2" ry="3" fill="#aaddff"/>
-    <ellipse cx="26" cy="16" rx="2" ry="3" fill="#aaddff"/>
-    <ellipse cx="20" cy="16" rx="18" ry="16" fill="#88ccff" opacity="0.15" filter="url(#gf)"/>
+    <ellipse cx="30" cy="24" rx="24" ry="21" fill="url(#gg${Date.now()})"/>
+    <rect x="6" y="24" width="48" height="27" fill="#bbddff" opacity="0.92"/>
+    <path d="M6 51 Q13 60 21 51 Q27 60 30 51 Q33 60 39 51 Q47 60 54 51 L54 51" fill="#bbddff" opacity="0.92"/>
+    <ellipse cx="21" cy="22" rx="6" ry="7.5" fill="#0a1f3a" opacity="0.85"/>
+    <ellipse cx="39" cy="22" rx="6" ry="7.5" fill="#0a1f3a" opacity="0.85"/>
+    <ellipse cx="21" cy="23" rx="3" ry="4.5" fill="#88ccff" opacity="0.9"/>
+    <ellipse cx="39" cy="23" rx="3" ry="4.5" fill="#88ccff" opacity="0.9"/>
+    <ellipse cx="30" cy="24" rx="27" ry="24" fill="#aaddff" opacity="0.12"/>
   </svg>`;
   fxEl.appendChild(ghost);
 
   requestAnimationFrame(() => requestAnimationFrame(() => {
-    ghost.style.transform = `translateX(-50%) translateY(-${H*1.1}px) scale(1)`;
+    ghost.style.transform = `translateX(-50%) translateY(-${H*1.35}px) scale(1)`;
     ghost.style.opacity = '0';
   }));
-  setTimeout(() => ghost.remove(), 1600);
+  setTimeout(() => { ghost.remove(); dark.remove(); }, 1800);
 
-  // Blue & white rising particles
-  for (let i=0; i<10; i++) {
+  // 靈魂粒子（更多更明顯）
+  for (let i=0; i<18; i++) {
     setTimeout(() => {
       if (!card) return;
-      const x = cx + (Math.random()-.5)*W*0.7;
-      const y = cy + (Math.random()-.5)*H*0.4;
-      const size = 2 + Math.random()*3;
-      const colors = ['#aaddff','#ffffff','#88bbff','#ddeeff'];
+      const x = cx + (Math.random()-.5)*W*0.8;
+      const y = cy + (Math.random()-.5)*H*0.5;
+      const size = 3 + Math.random()*5;
+      const colors = ['#aaddff','#ffffff','#88ccff','#ddeeff','#cceeff'];
       spawnParticle(card, {
         x, y, size,
         color: colors[Math.floor(Math.random()*colors.length)],
-        tx: (Math.random()-.5)*20,
-        ty: -(25 + Math.random()*35),
-        dur: 900 + Math.random()*500,
-        opacity: 0.85
+        tx: (Math.random()-.5)*28,
+        ty: -(35 + Math.random()*55),
+        dur: 1000 + Math.random()*600,
+        opacity: 0.95
       });
-    }, i * 120);
+    }, i * 80);
   }
 }
 
