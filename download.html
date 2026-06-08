@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>星岩傳說 - 下載</title>
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{
+    min-height:100vh;
+    background:radial-gradient(ellipse at 60% 20%, #1a0a2e 0%, #0a0a1a 60%, #000 100%);
+    color:#e0d8f0;
+    font-family:'Segoe UI',system-ui,sans-serif;
+    display:flex;align-items:center;justify-content:center;
+    padding:20px;
+  }
+  .container{max-width:480px;width:100%;text-align:center}
+
+  .logo{font-size:64px;margin-bottom:12px;
+    filter:drop-shadow(0 0 24px #aa66ff88)}
+  h1{
+    font-size:36px;font-weight:900;letter-spacing:6px;
+    background:linear-gradient(135deg,#c084fc,#818cf8,#38bdf8);
+    -webkit-background-clip:text;-webkit-text-fill-color:transparent;
+    margin-bottom:6px;
+  }
+  .subtitle{font-size:13px;color:#8b7db8;letter-spacing:3px;margin-bottom:36px}
+
+  .version-badge{
+    display:inline-block;
+    background:rgba(168,85,247,.15);
+    border:1px solid #7c3aed55;
+    border-radius:20px;
+    padding:4px 14px;
+    font-size:12px;color:#a78bfa;
+    letter-spacing:2px;margin-bottom:32px;
+  }
+
+  .card{
+    background:rgba(255,255,255,.04);
+    border:1px solid rgba(255,255,255,.1);
+    border-radius:20px;
+    padding:28px 24px;
+    margin-bottom:16px;
+    backdrop-filter:blur(10px);
+  }
+  .card-icon{font-size:36px;margin-bottom:10px}
+  .card h2{font-size:16px;font-weight:700;margin-bottom:6px;color:#e2d9f3}
+  .card p{font-size:12px;color:#8b7db8;line-height:1.7;margin-bottom:18px}
+
+  .btn{
+    display:flex;align-items:center;justify-content:center;gap:10px;
+    width:100%;padding:15px 20px;
+    border-radius:12px;border:none;cursor:pointer;
+    font-size:15px;font-weight:700;letter-spacing:1px;
+    text-decoration:none;transition:all .2s;
+  }
+  .btn-primary{
+    background:linear-gradient(135deg,#7c3aed,#4f46e5);
+    color:#fff;
+    box-shadow:0 4px 20px #7c3aed55;
+  }
+  .btn-primary:hover{transform:translateY(-2px);box-shadow:0 8px 28px #7c3aed77}
+  .btn-secondary{
+    background:rgba(255,255,255,.06);
+    border:1px solid rgba(255,255,255,.15);
+    color:#c4b5fd;
+  }
+  .btn-secondary:hover{background:rgba(255,255,255,.1)}
+
+  .divider{
+    display:flex;align-items:center;gap:12px;
+    color:#4b4070;font-size:11px;letter-spacing:2px;
+    margin:8px 0;
+  }
+  .divider::before,.divider::after{
+    content:'';flex:1;height:1px;background:#2a2050;
+  }
+
+  .tips{
+    margin-top:24px;
+    background:rgba(251,191,36,.06);
+    border:1px solid rgba(251,191,36,.2);
+    border-radius:12px;padding:14px 16px;
+    font-size:12px;color:#fbbf24aa;line-height:1.8;
+    text-align:left;
+  }
+  .tips b{color:#fbbf24;display:block;margin-bottom:4px}
+
+  .footer{
+    margin-top:28px;font-size:11px;color:#4b4070;letter-spacing:1px;line-height:2;
+  }
+  .footer a{color:#7c3aed88;text-decoration:none}
+  .footer a:hover{color:#a78bfa}
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="logo">💎</div>
+  <h1>星岩傳說</h1>
+  <div class="subtitle">多人養成對戰 RPG</div>
+  <div class="version-badge">v1.1.65</div>
+
+  <div class="card">
+    <div class="card-icon">📱</div>
+    <h2>Android APK</h2>
+    <p>直接安裝到 Android 手機<br>安裝後自動同步最新版本，無需重複下載</p>
+    <a class="btn btn-primary" href="StarRock.apk" download>
+      ⬇ 下載 APK（Android）
+    </a>
+  </div>
+
+  <div class="divider">或</div>
+
+  <div class="card">
+    <div class="card-icon">🌐</div>
+    <h2>網頁版</h2>
+    <p>直接在瀏覽器遊玩，無需安裝<br>建議使用 Chrome，加到主畫面體驗更佳</p>
+    <a class="btn btn-secondary" href="index.html" target="_blank">
+      ▶ 開始遊玩（網頁版）
+    </a>
+  </div>
+
+  <div class="tips">
+    <b>⚠ 安裝 APK 注意事項</b>
+    安裝前請至手機設定開啟「允許未知來源」或「安裝未知應用程式」<br>
+    APK 版本會自動更新，不需重新安裝<br>
+    iOS 目前僅支援網頁版
+  </div>
+
+  <div class="footer">
+    遊戲資料儲存於雲端，換裝置不怕遺失<br>
+    <a href="https://github.com/arvin0221-web/neobee-rpg" target="_blank">GitHub 原始碼</a>
+  </div>
+</div>
+</body>
+</html>
