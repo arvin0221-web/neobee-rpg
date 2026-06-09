@@ -670,7 +670,7 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
 
     <!-- VERSION FOOTER -->
     <div style="text-align:center;padding:3px 0;font-size:11px;color:var(--text3);letter-spacing:2px;cursor:default;user-select:none;display:inline-block;margin:0 auto;width:100%"
-      onclick="(function(){window._erudaTap=(window._erudaTap||0)+1;if(window._erudaTap>=5){window._erudaTap=0;if(window.eruda){eruda.show();return;}var s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/eruda';document.head.appendChild(s);s.onload=function(){eruda.init();eruda.show();}}})()">v1.1.69</div>
+      onclick="(function(){window._erudaTap=(window._erudaTap||0)+1;if(window._erudaTap>=5){window._erudaTap=0;if(window.eruda){eruda.show();return;}var s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/eruda';document.head.appendChild(s);s.onload=function(){eruda.init();eruda.show();}}})()">v1.1.70</div>
 
   </div>
 </div>
@@ -4939,7 +4939,7 @@ function applyWeaponSplash(attacker, primaryTarget, primaryDmg) {
   for (const e of others) {
     e.hp = Math.max(0, e.hp - splashDmg);
     const { isEnemy: dIE, idx: dIdx } = getTargetIndex(e);
-    addLog(`⚡ 電刀連電！${e.name} 受到 <span class="cyan">${splashDmg}</span> 點傷害`);
+    addLog(`⚡ ${attacker.equippedItems?.weapon?.name||'電刀'}連電！${e.name} 受到 <span class="cyan">${splashDmg}</span> 點傷害`);
     writeBattleEvent({ type:'attack', attIsEnemy:false, attIdx:gs.team.indexOf(attacker),
       defIsEnemy:dIE, defIdx:dIdx, dmg:splashDmg, isCrit:false, isSlash:false, dying:e.hp<=0 });
     requestAnimationFrame(() => {
@@ -4976,7 +4976,7 @@ function applyCurseArmor(attacker, target, defIsEnemy, defIdx) {
   target.atk = Math.max(0, Math.round(target.atk * (1 - reducePct / 100)));
   const actual = originalAtk - target.atk;
   if (actual > 0) {
-    addLog(`🌿 詛咒藤甲！${target.name} 攻擊永久降低 ${reducePct}%（-${actual}）`);
+    addLog(`🌿 ${attacker.equippedItems?.armor?.name||'詛咒藤甲'}！${target.name} 攻擊永久降低 ${reducePct}%（-${actual}）`);
     requestAnimationFrame(() => {
       fxDamageNumber(getFxEl(defIsEnemy, defIdx), actual, false, false, true, false);
     });
@@ -4994,7 +4994,7 @@ function applySickleHeal(attacker, dmg) {
   attacker.hp = Math.min(attacker.maxHp, attacker.hp + healAmt);
   const actual = attacker.hp - before;
   if (actual > 0) {
-    addLog(`🩸 赤血鐮刀！${attacker.name} 回復 <span class="green">${actual}</span> 點血量`);
+    addLog(`🩸 ${attacker.equippedItems?.weapon?.name||'赤血鐮刀'}！${attacker.name} 回復 <span class="green">${actual}</span> 點血量`);
     AUDIO.sfxHeal();
     requestAnimationFrame(() => {
       const idx = G.gameState.team.indexOf(attacker);
@@ -5014,7 +5014,7 @@ function applyArmorHeal(defender, dmgReceived) {
     if (lost <= 0) return;
     const heal = Math.round(lost * 0.6);
     defender.hp = Math.min(defender.maxHp, defender.hp + heal);
-    addLog(`😇 <span class="green">${defender.name}</span> 天使聖鎧！恢復 <span class="green">${heal}</span> 血量`);
+    addLog(`😇 <span class="green">${defender.name}</span> ${defender.equippedItems?.armor?.name||'天使聖鎧'}！恢復 <span class="green">${heal}</span> 血量`);
     const { isEnemy: dIE, idx: dIdx } = getTargetIndex(defender);
     requestAnimationFrame(() => fxDamageNumber(getFxEl(dIE, dIdx), heal, false, false, true, false));
   }
@@ -5034,7 +5034,7 @@ function applyTrinketDeath(attacker, gs) {
     e.hp = Math.max(0, e.hp - dmg);
     if (e.hp <= 0) anyEnemyDied = true;
     const { isEnemy: dIE, idx: dIdx } = getTargetIndex(e);
-    addLog(`💣 <span class="red">${attacker.name}</span> 心臟炸藥！${e.name} 受到 <span class="red">${dmg}</span> 點傷害${e.hp<=0?' 💀':''}`);
+    addLog(`💣 <span class="red">${attacker.name}</span> ${attacker.equippedItems?.trinket?.name||'心臟炸藥'}！${e.name} 受到 <span class="red">${dmg}</span> 點傷害${e.hp<=0?' 💀':''}`);
     writeBattleEvent({ type:'attack', attIsEnemy:false, attIdx:gs.team.indexOf(attacker),
       defIsEnemy:dIE, defIdx:dIdx, dmg, isCrit:false, isSlash:false, dying:e.hp<=0 });
     requestAnimationFrame(() => {
@@ -6353,7 +6353,7 @@ function updateSacrificeArmor(gs) {
       m.atk = Math.round(m._baseAtk * (1 + pct));
       m.def = Math.round(m._baseDef * (1 + pct));
       m._sacrificeApplied = true;
-      addLog(`⚰️ <span style="color:#ef4444">${m.name}</span> 祭獻胸甲！攻擊與防禦提升 ${Math.round(pct*100)}%！`);
+      addLog(`⚰️ <span style="color:#ef4444">${m.name}</span> ${m.equippedItems?.armor?.name||'祭獻胸甲'}！攻擊與防禦提升 ${Math.round(pct*100)}%！`);
     } else if (!shouldBeActive && m._sacrificeApplied) {
       // Remove boost (ally revived? shouldn't happen but guard anyway)
       if (m._baseAtk) { m.atk = m._baseAtk; m._baseAtk = null; }
@@ -6370,7 +6370,7 @@ function applyPoisonBracelet(attacker, defender) {
   if (defender.poisoned > 0) return; // already poisoned
   if (Math.random() * 100 < trinket.val) {
     defender.poisoned = 1; // flag: 1 = poisoned
-    addLog(`🧪 <span style="color:#4ade80">${attacker.name}</span> 劇毒手鐲！${defender.name} 中毒！`);
+    addLog(`🧪 <span style="color:#4ade80">${attacker.name}</span> ${attacker.equippedItems?.trinket?.name||'劇毒手鐲'}！${defender.name} 中毒！`);
     renderBattle();
   }
 }
