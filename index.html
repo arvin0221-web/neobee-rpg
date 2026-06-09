@@ -670,7 +670,7 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
 
     <!-- VERSION FOOTER -->
     <div style="text-align:center;padding:3px 0;font-size:11px;color:var(--text3);letter-spacing:2px;cursor:default;user-select:none;display:inline-block;margin:0 auto;width:100%"
-      onclick="(function(){window._erudaTap=(window._erudaTap||0)+1;if(window._erudaTap>=5){window._erudaTap=0;if(window.eruda){eruda.show();return;}var s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/eruda';document.head.appendChild(s);s.onload=function(){eruda.init();eruda.show();}}})()">v1.1.71</div>
+      onclick="(function(){window._erudaTap=(window._erudaTap||0)+1;if(window._erudaTap>=5){window._erudaTap=0;if(window.eruda){eruda.show();return;}var s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/eruda';document.head.appendChild(s);s.onload=function(){eruda.init();eruda.show();}}})()">v1.1.72</div>
 
   </div>
 </div>
@@ -793,18 +793,24 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
 
 <!-- GUILD JOIN MODAL -->
 <div id="joinGuildModal" class="modal-overlay hidden">
-  <div class="modal-card" style="max-width:400px;width:95%">
-    <div class="modal-title">🔍 搜尋公會</div>
+  <div class="modal-card" style="max-width:480px;width:95%">
+    <div class="modal-title">🔍 公會列表</div>
     <div style="display:flex;gap:8px;margin-bottom:12px">
-      <input class="form-input" id="joinGuildNameInput" placeholder="輸入公會名稱" maxlength="14" style="flex:1">
+      <input class="form-input" id="joinGuildNameInput" placeholder="搜尋公會名稱（可留空顯示全部）" maxlength="14" style="flex:1">
       <button class="btn btn-primary btn-sm" onclick="searchGuild()">搜尋</button>
     </div>
-    <div id="joinGuildResult" style="font-size:13px;color:var(--text2);min-height:40px"></div>
+    <div id="joinGuildResult" style="font-size:13px;color:var(--text2);max-height:320px;overflow-y:auto"></div>
     <div id="joinGuildMsg" style="font-size:12px;color:var(--red);margin-top:4px"></div>
     <div class="modal-actions">
       <button class="btn btn-secondary" onclick="closeModal('joinGuildModal')">關閉</button>
     </div>
   </div>
+</div>
+
+<!-- GUILD JOIN REQUESTS NOTIFICATION -->
+<div id="guildJoinReqPanel" class="hidden" style="position:fixed;bottom:20px;right:20px;z-index:9000;background:var(--surface);border:1px solid var(--accent);border-radius:12px;padding:14px 18px;max-width:300px;box-shadow:0 4px 24px #00000088">
+  <div style="font-size:13px;font-weight:700;color:var(--accent);margin-bottom:8px">📩 公會入會申請</div>
+  <div id="guildJoinReqList" style="display:flex;flex-direction:column;gap:6px"></div>
 </div>
 
 <!-- GUILD INVITE MODAL -->
@@ -1494,6 +1500,8 @@ function enterMain() {
   setupGlobalChat();
   setupFriendListeners();
   listenGuildInvites();
+  listenGuildJoinRequests();
+  listenGuildJoinResponse();
   runDailySettlement();
   switchTab('home');
   // 登入後啟動探索 BGM（需使用者互動才能播放）
@@ -2095,6 +2103,8 @@ window.joinByCode = async () => {
 
 window.requestJoinRoom = async (roomId) => {
   closeModal('searchRoomsModal');
+  // 先清除舊的 joinResponse，避免殘留資料觸發自動拒絕
+  await remove(ref(db, `joinResponses/${G.uid}`));
   // Send join request to room leader
   await set(ref(db, `rooms2/${roomId}/joinRequests/${G.uid}`), {
     name: G.player.name, uid: G.uid, ts: Date.now()
@@ -3725,7 +3735,21 @@ function applyBattleState(state) {
   // Sync full team stats from host
   if (state.team) {
     state.team.forEach((ft, i) => {
-      if (!gs.team[i]) return;
+      if (!gs.team[i]) {
+        // 新成員（召喚物）：直接加入 team
+        if (ft.isSummon) {
+          gs.team.push({
+            name: ft.name, isSummon: true, summonerUid: ft.summonerUid||null,
+            isBot: false, isMe: false,
+            hp: ft.hp, maxHp: ft.maxHp, atk: ft.atk, def: ft.def,
+            rankKey: ft.rankKey||'鐵', rankName: ft.rankName||'黑鐵',
+            skills: {}, allocDone: true, equippedItems: {},
+            poisoned: 0, _sacrificeApplied: false,
+            summonRevives: ft.summonRevives||0, job: null, activeUsed: 0
+          });
+        }
+        return;
+      }
       gs.team[i].hp        = ft.hp;
       gs.team[i].maxHp     = ft.maxHp;
       gs.team[i].atk       = ft.atk;
@@ -3736,7 +3760,13 @@ function applyBattleState(state) {
       gs.team[i]._sacrificeApplied = ft._sacrificeApplied || false;
       gs.team[i]._baseAtk  = ft._baseAtk || null;
       gs.team[i]._baseDef  = ft._baseDef || null;
+      gs.team[i].isSummon  = ft.isSummon || false;
+      gs.team[i].summonRevives = ft.summonRevives || 0;
     });
+    // 若 host 端召喚物死亡被移除，非 host 端也同步移除
+    if (state.team.length < gs.team.length) {
+      gs.team = gs.team.slice(0, state.team.length);
+    }
     buildActiveSkillBar();
   }
   // Sync full enemy stats from host
@@ -5201,6 +5231,7 @@ window.joinDungeonByCode = async () => {
 };
 
 window.requestJoinDungeon = async (roomId) => {
+  await remove(ref(db, `joinResponses/${G.uid}`));
   closeModal('searchDungeonModal');
   G.isDungeon = true;
   G.teamId = roomId;
@@ -5756,6 +5787,7 @@ window.joinPvpByCode = async () => {
 };
 
 window.requestJoinPvp = async (roomId) => {
+  await remove(ref(db, `joinResponses/${G.uid}`));
   closeModal('searchPvpModal');
   G.isPvp = true;
   G.teamId = roomId;
@@ -6586,41 +6618,57 @@ window.showJoinGuildModal = () => {
 window.searchGuild = async () => {
   const name = document.getElementById('joinGuildNameInput').value.trim();
   const resultEl = document.getElementById('joinGuildResult');
-  if (!name) return;
-  const idxSnap = await get(ref(db, `guildIndex/${name}`));
-  if (!idxSnap.exists()) { resultEl.innerHTML = '<span style="color:var(--red)">找不到此公會</span>'; return; }
-  const gid = idxSnap.val();
-  const gs = await get(ref(db, `guilds/${gid}`));
-  if (!gs.exists()) { resultEl.innerHTML = '<span style="color:var(--red)">公會不存在</span>'; return; }
-  const g = gs.val();
-  const members = g.members || [];
-  if (members.length >= 5) {
-    resultEl.innerHTML = `<div><b style="color:var(--gold)">${g.name}</b> Lv.${g.level||1} — <span style="color:var(--red)">已滿員（${members.length}/5）</span></div>`;
-    return;
-  }
-  resultEl.innerHTML = `<div style="display:flex;align-items:center;justify-content:space-between">
-    <div><b style="color:var(--gold)">${g.name}</b> Lv.${g.level||1} — 成員 ${members.length}/5</div>
-    <button class="btn btn-primary btn-sm" onclick="doJoinGuild('${gid}','${g.name}')">申請加入</button>
-  </div>`;
+  resultEl.innerHTML = '<div style="color:var(--text2);padding:8px">載入中...</div>';
+
+  // 讀取所有公會
+  const allSnap = await get(ref(db, 'guilds'));
+  if (!allSnap.exists()) { resultEl.innerHTML = '<div style="color:var(--text2)">尚無公會</div>'; return; }
+  const all = allSnap.val();
+  let guilds = Object.entries(all)
+    .map(([gid, g]) => ({ gid, ...g }))
+    .filter(g => g.name && !g._hidden);
+
+  // 若有搜尋字詞，過濾
+  if (name) guilds = guilds.filter(g => g.name.toLowerCase().includes(name.toLowerCase()));
+  guilds.sort((a, b) => (b.level||1) - (a.level||1));
+
+  if (!guilds.length) { resultEl.innerHTML = '<div style="color:var(--text2)">找不到符合的公會</div>'; return; }
+
+  resultEl.innerHTML = guilds.map(g => {
+    const members = g.members || [];
+    const full = members.length >= 5;
+    return `<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 4px;border-bottom:1px solid var(--border)">
+      <div>
+        <span style="font-weight:700;color:var(--gold)">${g.name}</span>
+        <span style="font-size:11px;color:var(--text2);margin-left:6px">Lv.${g.level||1}</span>
+        <span style="font-size:11px;color:${full?'var(--red)':'var(--text2)'};margin-left:6px">${members.length}/5</span>
+      </div>
+      ${full
+        ? `<span style="font-size:11px;color:var(--red)">已滿員</span>`
+        : `<button class="btn btn-primary btn-sm" onclick="doJoinGuild('${g.gid}','${g.name}')">申請</button>`
+      }
+    </div>`;
+  }).join('');
 };
 
 window.doJoinGuild = async (gid, gname) => {
   const msgEl = document.getElementById('joinGuildMsg');
-  // Check not already in guild
+  msgEl.style.color = 'var(--red)';
   const mySnap = await get(ref(db, `players/${G.uid}/guildId`));
   if (mySnap.exists() && mySnap.val()) { msgEl.textContent = '你已在公會中'; return; }
-  // Check space
-  const gs = await get(ref(db, `guilds/${gid}`));
-  if (!gs.exists()) { msgEl.textContent = '公會不存在'; return; }
-  const g = gs.val();
-  const members = [...(g.members || [])];
+  const gs2 = await get(ref(db, `guilds/${gid}`));
+  if (!gs2.exists()) { msgEl.textContent = '公會不存在'; return; }
+  const g = gs2.val();
+  const members = g.members || [];
   if (members.length >= 5) { msgEl.textContent = '公會已滿員'; return; }
   if (members.includes(G.uid)) { msgEl.textContent = '你已是成員'; return; }
-  members.push(G.uid);
-  await set(ref(db, `guilds/${gid}/members`), members);
-  await set(ref(db, `players/${G.uid}/guildId`), gid);
-  closeModal('joinGuildModal');
-  renderGuildTab();
+
+  // 傳申請給會長
+  await set(ref(db, `guildJoinReqs/${gid}/${G.uid}`), {
+    name: G.player.name, uid: G.uid, guildName: gname, ts: Date.now()
+  });
+  msgEl.style.color = 'var(--green)';
+  msgEl.textContent = `已向「${gname}」發送入會申請，等待會長同意`;
 };
 
 window.leaveGuild = async () => {
@@ -6681,6 +6729,83 @@ window.doGuildInvite = async () => {
   msgEl.style.color = 'var(--green)';
   msgEl.textContent = `已向 ${name} 發送邀請`;
 };
+
+// Listen for incoming guild join REQUESTS (for guild leader)
+function listenGuildJoinRequests() {
+  if (!G.uid) return;
+  onValue(ref(db, `guildJoinReqs`), async snap => {
+    const panel = document.getElementById('guildJoinReqPanel');
+    const list  = document.getElementById('guildJoinReqList');
+    if (!panel || !list) return;
+
+    // Only show requests for guilds this player leads
+    const myGuildSnap = await get(ref(db, `players/${G.uid}/guildId`));
+    if (!myGuildSnap.exists() || !myGuildSnap.val()) { panel.classList.add('hidden'); return; }
+    const myGuildId = myGuildSnap.val();
+
+    const leaderSnap = await get(ref(db, `guilds/${myGuildId}/leader`));
+    if (!leaderSnap.exists() || leaderSnap.val() !== G.uid) { panel.classList.add('hidden'); return; }
+
+    if (!snap.exists() || !snap.val()[myGuildId]) { panel.classList.add('hidden'); return; }
+    const reqs = snap.val()[myGuildId];
+    const entries = Object.entries(reqs);
+    if (!entries.length) { panel.classList.add('hidden'); return; }
+
+    panel.classList.remove('hidden');
+    list.innerHTML = '';
+    for (const [uid, req] of entries) {
+      const div = document.createElement('div');
+      div.style.cssText = 'display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:4px';
+      div.innerHTML = `<span style="font-size:12px;color:var(--text)"><b>${req.name}</b> 申請加入</span>
+        <div style="display:flex;gap:4px">
+          <button class="btn btn-primary btn-sm" onclick="approveGuildJoin('${myGuildId}','${uid}','${req.name}')">同意</button>
+          <button class="btn btn-secondary btn-sm" onclick="denyGuildJoin('${myGuildId}','${uid}')">拒絕</button>
+        </div>`;
+      list.appendChild(div);
+    }
+  });
+}
+
+window.approveGuildJoin = async (gid, uid, name) => {
+  // Re-check space
+  const gs2 = await get(ref(db, `guilds/${gid}`));
+  if (!gs2.exists()) return;
+  const g = gs2.val();
+  const members = [...(g.members || [])];
+  if (members.length >= 5) {
+    notify(`公會已滿，無法接受 ${name} 的申請`, 'err');
+    await remove(ref(db, `guildJoinReqs/${gid}/${uid}`));
+    return;
+  }
+  if (!members.includes(uid)) members.push(uid);
+  await set(ref(db, `guilds/${gid}/members`), members);
+  await set(ref(db, `players/${uid}/guildId`), gid);
+  await remove(ref(db, `guildJoinReqs/${gid}/${uid}`));
+  // Notify applicant
+  await set(ref(db, `guildJoinResp/${uid}`), { approved: true, guildName: g.name, ts: Date.now() });
+  notify(`已同意 ${name} 加入公會`, 'ok');
+};
+
+window.denyGuildJoin = async (gid, uid) => {
+  await remove(ref(db, `guildJoinReqs/${gid}/${uid}`));
+  await set(ref(db, `guildJoinResp/${uid}`), { approved: false, ts: Date.now() });
+};
+
+// Listen for guild join response (for applicant)
+function listenGuildJoinResponse() {
+  if (!G.uid) return;
+  onValue(ref(db, `guildJoinResp/${G.uid}`), async snap => {
+    if (!snap.exists()) return;
+    const resp = snap.val();
+    await remove(ref(db, `guildJoinResp/${G.uid}`));
+    if (resp.approved) {
+      notify(`🎉 已獲准加入「${resp.guildName}」！`, 'ok');
+      if (G.currentTab === 'guild') renderGuildTab();
+    } else {
+      notify('入會申請被拒絕', 'err');
+    }
+  });
+}
 
 // Listen for incoming guild invites
 function listenGuildInvites() {
@@ -7254,498 +7379,36 @@ const AUDIO = {
     if (this._exploreTimer) { clearTimeout(this._exploreTimer); this._exploreTimer = null; }
     this.bgmNodes.forEach(n => { try { n.stop(); } catch(e){} });
     this.bgmNodes = [];
+    if (this._exploreAudio) { this._exploreAudio.pause(); this._exploreAudio.currentTime = 0; }
+    if (this._battleAudio)  { this._battleAudio.pause();  this._battleAudio.currentTime  = 0; }
     this.bgmType = null;
   },
 
   playExploreBgm() {
     if (this.muted) return;
-    this.init(); this.resume();
     if (this.bgmType === 'explore') return;
     this._stopBgm();
     this.bgmType = 'explore';
-
-    const ctx = this.ctx;
-    const BPM = 108, beat = 60 / BPM;
-    const bar = beat * 4;
-
-    // C大調音階（含高八度）
-    const C = [130, 146, 164, 174, 196, 220, 246,
-               261, 293, 329, 349, 392, 440, 493,
-               523, 587, 659, 698, 784, 880, 988, 1047];
-    const n = (note, oct=0) => C[note + oct*7];
-
-    // 方波 OSC helper（8-bit feel）
-    const sq = (freq, t, dur, vol=0.07) => {
-      if (!freq || freq <= 0) return;
-      const o = ctx.createOscillator(); o.type = 'square';
-      o.frequency.value = freq;
-      const g = ctx.createGain();
-      g.gain.setValueAtTime(vol, t);
-      g.gain.setValueAtTime(vol, t + dur * 0.7);
-      g.gain.linearRampToValueAtTime(0, t + dur);
-      o.connect(g); g.connect(ctx.destination);
-      o.start(t); o.stop(t + dur + 0.01);
-    };
-
-    // 三角波 OSC（柔和和弦音）
-    const tri = (freq, t, dur, vol=0.04) => {
-      if (!freq || freq <= 0) return;
-      const o = ctx.createOscillator(); o.type = 'triangle';
-      o.frequency.value = freq;
-      const g = ctx.createGain();
-      g.gain.setValueAtTime(0, t);
-      g.gain.linearRampToValueAtTime(vol, t + 0.02);
-      g.gain.setValueAtTime(vol, t + dur * 0.8);
-      g.gain.linearRampToValueAtTime(0, t + dur);
-      o.connect(g); g.connect(ctx.destination);
-      o.start(t); o.stop(t + dur + 0.01);
-    };
-
-    // hihat
-    const hh = (t, vol=0.06) => this._noise(t, 0.04, vol, {type:'highpass', freq:7000, Q:0.5});
-    // soft kick
-    const kk = (t, vol=0.15) => {
-      const o = ctx.createOscillator(); o.type = 'sine';
-      o.frequency.setValueAtTime(120, t);
-      o.frequency.exponentialRampToValueAtTime(40, t + 0.12);
-      const g = ctx.createGain();
-      g.gain.setValueAtTime(vol, t);
-      g.gain.exponentialRampToValueAtTime(0.0001, t + 0.18);
-      o.connect(g); g.connect(ctx.destination);
-      o.start(t); o.stop(t + 0.2);
-    };
-
-    /*
-     * 32小節循環（約 71 秒 @ BPM108）
-     * 分四段：A(8) B(8) A'(8) C(8)
-     */
-    const playLoop = () => {
-      if (this.bgmType !== 'explore' || this.muted) return;
-      const t = ctx.currentTime;
-
-      // ── 段落 A（小節 0-7）：輕快主旋律 ──
-      const melA = [
-        // 小節0
-        [n(7,1),n(9,1),n(11,1),n(7,1), n(9,1),n(11,1),n(14,1),n(11,1)],
-        // 小節1
-        [n(9,1),n(7,1),n(5,1),n(4,1),  n(5,1),n(7,1),n(9,1),n(7,1)],
-        // 小節2
-        [n(11,1),n(9,1),n(7,1),n(9,1), n(11,1),n(14,1),n(11,1),n(9,1)],
-        // 小節3
-        [n(7,1),n(5,1),n(4,1),n(2,1),  n(4,1),n(5,1),n(7,1),n(5,1)],
-        // 小節4
-        [n(7,1),n(11,1),n(9,1),n(7,1), n(9,1),n(7,1),n(5,1),n(7,1)],
-        // 小節5
-        [n(9,1),n(11,1),n(14,1),n(11,1),n(9,1),n(7,1),n(9,1),n(11,1)],
-        // 小節6
-        [n(14,1),n(11,1),n(9,1),n(7,1), n(5,1),n(7,1),n(9,1),n(7,1)],
-        // 小節7（結尾往下解決）
-        [n(5,1),n(4,1),n(2,1),n(0,1),   n(2,1),n(4,1),n(5,1),0],
-      ];
-      melA.forEach((bar_notes, bi) => {
-        bar_notes.forEach((freq, ni) => {
-          if (freq > 0) sq(freq, t + bi*bar + ni*beat*0.5, beat*0.48, 0.07);
-        });
-      });
-
-      // 低音（A段）
-      const bassA = [
-        [n(0,0), n(4,0)], [n(2,0), n(5,0)], [n(0,0), n(4,0)], [n(-1,0),n(2,0)],
-        [n(0,0), n(4,0)], [n(2,0), n(5,0)], [n(4,0), n(2,0)], [n(0,0), 0],
-      ];
-      bassA.forEach(([b1,b2], bi) => {
-        tri(b1, t + bi*bar,          bar*0.9, 0.09);
-        if (b2) tri(b2, t + bi*bar + bar*0.5, bar*0.4, 0.06);
-      });
-
-      // 和弦伴奏（A段，每2小節一個和弦）
-      [[n(0,1),n(4,1),n(7,1)],[n(2,1),n(5,1),n(9,1)],
-       [n(0,1),n(4,1),n(7,1)],[n(-1,0)*2,n(2,1),n(5,1)]].forEach(([c1,c2,c3], ci) => {
-        [c1,c2,c3].forEach(freq => tri(freq, t + ci*bar*2, bar*1.9, 0.03));
-      });
-
-      // 打擊（A段）
-      for (let bi=0; bi<8; bi++) {
-        kk(t + bi*bar, 0.12);
-        kk(t + bi*bar + bar*0.5, 0.08);
-        for (let hi=0; hi<8; hi++) hh(t + bi*bar + hi*beat*0.5, 0.05);
-      }
-
-      // ── 段落 B（小節 8-15）：高八度變奏，加入裝飾音 ──
-      const melB = [
-        [n(14,1),n(11,1),n(14,1),n(16,1), n(14,1),n(11,1),n(9,1),n(11,1)],
-        [n(9,1),n(11,1),n(9,1),n(7,1),    n(9,1),n(11,1),n(14,1),n(11,1)],
-        [n(16,1),n(14,1),n(11,1),n(14,1), n(16,1),n(19,1),n(16,1),n(14,1)],
-        [n(11,1),n(9,1),n(7,1),n(9,1),    n(11,1),n(9,1),n(7,1),n(5,1)],
-        [n(14,1),n(16,1),n(19,1),n(16,1), n(14,1),n(11,1),n(14,1),n(16,1)],
-        [n(14,1),n(11,1),n(9,1),n(11,1),  n(9,1),n(7,1),n(9,1),n(11,1)],
-        [n(11,1),n(9,1),n(7,1),n(5,1),    n(7,1),n(9,1),n(7,1),n(5,1)],
-        [n(4,1),n(5,1),n(7,1),n(9,1),     n(7,1),n(5,1),n(4,1),0],
-      ];
-      melB.forEach((bar_notes, bi) => {
-        const bt = t + (bi+8)*bar;
-        bar_notes.forEach((freq, ni) => {
-          if (freq > 0) sq(freq, bt + ni*beat*0.5, beat*0.45, 0.065);
-        });
-      });
-
-      // 低音（B段，更活躍）
-      const bassB = [
-        [n(4,0),n(7,0)],[n(5,0),n(9,0)],[n(7,0),n(11,0)],[n(4,0),n(7,0)],
-        [n(0,0),n(4,0)],[n(2,0),n(5,0)],[n(4,0),n(7,0)], [n(0,0),0],
-      ];
-      bassB.forEach(([b1,b2], bi) => {
-        const bt = t + (bi+8)*bar;
-        tri(b1, bt, bar*0.45, 0.1);
-        if (b2) tri(b2, bt+beat, bar*0.45, 0.08);
-        tri(b1, bt+beat*2, bar*0.45, 0.09);
-        if (b2) tri(b2, bt+beat*3, bar*0.4, 0.07);
-      });
-
-      // 打擊（B段，加 offbeat）
-      for (let bi=0; bi<8; bi++) {
-        const bt = t + (bi+8)*bar;
-        kk(bt, 0.15);
-        kk(bt + bar*0.5, 0.09);
-        this._noise(bt + beat, 0.06, 0.12, {type:'bandpass', freq:2000, Q:2}); // snare
-        for (let hi=0; hi<8; hi++) hh(bt + hi*beat*0.5, hi%2===0?0.07:0.04);
-      }
-
-      // ── 段落 A'（小節 16-23）：主旋律回歸，加和聲 ──
-      melA.forEach((bar_notes, bi) => {
-        const bt = t + (bi+16)*bar;
-        bar_notes.forEach((freq, ni) => {
-          if (freq > 0) {
-            sq(freq, bt + ni*beat*0.5, beat*0.48, 0.065);
-            // 加三度和聲
-            const harm = freq * 1.26; // 小三度
-            tri(harm, bt + ni*beat*0.5, beat*0.44, 0.025);
-          }
-        });
-      });
-      bassA.forEach(([b1,b2], bi) => {
-        const bt = t + (bi+16)*bar;
-        tri(b1, bt, bar*0.9, 0.09);
-        if (b2) tri(b2, bt + bar*0.5, bar*0.4, 0.06);
-      });
-      for (let bi=0; bi<8; bi++) {
-        const bt = t + (bi+16)*bar;
-        kk(bt, 0.12); kk(bt+bar*0.5, 0.08);
-        for (let hi=0; hi<8; hi++) hh(bt + hi*beat*0.5, 0.05);
-      }
-
-      // ── 段落 C（小節 24-31）：橋段，情緒轉換，稍慢感 ──
-      const melC = [
-        [0,n(7,1),0,n(11,1), 0,n(9,1),0,n(7,1)],
-        [0,n(9,1),0,n(11,1), 0,n(14,1),0,n(11,1)],
-        [0,n(11,1),0,n(9,1), 0,n(7,1),0,n(5,1)],
-        [0,n(7,1),0,n(5,1),  0,n(4,1),0,0],
-        [n(9,1),0,n(11,1),0, n(9,1),0,n(7,1),0],
-        [n(11,1),0,n(9,1),0, n(7,1),n(9,1),n(7,1),n(5,1)],
-        [n(7,1),n(9,1),n(11,1),n(9,1), n(7,1),n(5,1),n(7,1),n(9,1)],
-        [n(11,1),n(9,1),n(7,1),n(5,1), n(4,1),n(2,1),n(0,1),0],
-      ];
-      melC.forEach((bar_notes, bi) => {
-        const bt = t + (bi+24)*bar;
-        bar_notes.forEach((freq, ni) => {
-          if (freq > 0) sq(freq, bt + ni*beat*0.5, beat*0.55, 0.07);
-        });
-      });
-
-      // 低音（C段，長音為主）
-      const bassC = [
-        n(0,0),n(2,0),n(4,0),n(-1,0)*2, n(0,0),n(4,0),n(2,0),n(0,0)
-      ];
-      bassC.forEach((freq, bi) => {
-        if (freq > 0) tri(freq, t + (bi+24)*bar, bar*0.95, 0.11);
-      });
-
-      // 打擊（C段，輕柔）
-      for (let bi=0; bi<8; bi++) {
-        const bt = t + (bi+24)*bar;
-        kk(bt, 0.08);
-        for (let hi=0; hi<4; hi++) hh(bt + hi*beat, 0.04);
-      }
-
-      // 32小節總長
-      const totalDur = 32 * bar * 1000;
-      this._exploreTimer = setTimeout(playLoop, totalDur - 100);
-    };
-    playLoop();
+    if (!this._exploreAudio) {
+      this._exploreAudio = new Audio('explore.mp3');
+      this._exploreAudio.loop = true;
+      this._exploreAudio.volume = 0.5;
+    }
+    this._exploreAudio.play().catch(()=>{});
   },
 
   // ── BGM：戰鬥快節奏打擊樂 ──
   playBattleBgm() {
     if (this.muted) return;
-    this.init(); this.resume();
     if (this.bgmType === 'battle') return;
     this._stopBgm();
     this.bgmType = 'battle';
-
-    const ctx = this.ctx;
-    const BPM = 165, beat = 60 / BPM;
-    const bar = beat * 4;
-
-    // ── 打擊樂器 ──
-    const kick = (t, vol=0.55) => {
-      const o = ctx.createOscillator(); o.type = 'sine';
-      o.frequency.setValueAtTime(200, t);
-      o.frequency.exponentialRampToValueAtTime(35, t + 0.18);
-      const g = ctx.createGain();
-      g.gain.setValueAtTime(vol, t);
-      g.gain.exponentialRampToValueAtTime(0.0001, t + 0.22);
-      o.connect(g); g.connect(ctx.destination);
-      o.start(t); o.stop(t + 0.23);
-    };
-    const kick2 = (t) => kick(t, 0.38); // 輕踢
-
-    const snare = (t, vol=0.28) => {
-      this._noise(t, 0.14, vol, {type:'bandpass', freq:1800, Q:1.8});
-      this._osc('sine', 180, t, 0.06, vol*0.35);
-    };
-    const snareGhost = (t) => // 鬼音小鼓
-      this._noise(t, 0.06, 0.09, {type:'bandpass', freq:2000, Q:2});
-
-    const hh  = (t, vol=0.09) => this._noise(t, 0.03, vol, {type:'highpass', freq:8000, Q:0.4});
-    const hhO = (t, vol=0.13) => this._noise(t, 0.09, vol, {type:'highpass', freq:6000, Q:0.3}); // open hihat
-    const crash = (t) => {
-      this._noise(t, 0.6, 0.18, {type:'highpass', freq:5000, Q:0.2});
-      this._noise(t, 0.2, 0.08, {type:'bandpass', freq:3000, Q:1});
-    };
-    const tom = (t, freq=120, vol=0.3) => {
-      const o = ctx.createOscillator(); o.type = 'sine';
-      o.frequency.setValueAtTime(freq, t);
-      o.frequency.exponentialRampToValueAtTime(freq*0.4, t + 0.15);
-      const g = ctx.createGain();
-      g.gain.setValueAtTime(vol, t);
-      g.gain.exponentialRampToValueAtTime(0.0001, t + 0.2);
-      o.connect(g); g.connect(ctx.destination);
-      o.start(t); o.stop(t + 0.21);
-    };
-
-    // ── 音符工具 ──
-    const saw = (freq, t, dur, vol=0.07) => {
-      if (!freq) return;
-      const o = ctx.createOscillator(); o.type = 'sawtooth';
-      o.frequency.value = freq;
-      const g = ctx.createGain();
-      g.gain.setValueAtTime(0, t);
-      g.gain.linearRampToValueAtTime(vol, t + 0.01);
-      g.gain.setValueAtTime(vol, t + dur*0.75);
-      g.gain.linearRampToValueAtTime(0, t + dur);
-      // 輕微失真感
-      const wv = ctx.createWaveShaper();
-      const curve = new Float32Array(256);
-      for (let i=0;i<256;i++) { const x=i*2/256-1; curve[i]=x*(1+0.3)/(1+0.3*Math.abs(x)); }
-      wv.curve = curve;
-      o.connect(wv); wv.connect(g); g.connect(ctx.destination);
-      o.start(t); o.stop(t + dur + 0.01);
-    };
-    const sq = (freq, t, dur, vol=0.06) => {
-      if (!freq) return;
-      const o = ctx.createOscillator(); o.type = 'square';
-      o.frequency.value = freq;
-      const g = ctx.createGain();
-      g.gain.setValueAtTime(vol, t);
-      g.gain.setValueAtTime(vol, t+dur*0.8);
-      g.gain.linearRampToValueAtTime(0, t+dur);
-      o.connect(g); g.connect(ctx.destination);
-      o.start(t); o.stop(t+dur+0.01);
-    };
-    const pad = (freq, t, dur, vol=0.04) => {
-      if (!freq) return;
-      const o = ctx.createOscillator(); o.type = 'triangle';
-      o.frequency.value = freq;
-      const g = ctx.createGain();
-      g.gain.setValueAtTime(0, t);
-      g.gain.linearRampToValueAtTime(vol, t+0.06);
-      g.gain.setValueAtTime(vol, t+dur*0.7);
-      g.gain.linearRampToValueAtTime(0, t+dur);
-      o.connect(g); g.connect(ctx.destination);
-      o.start(t); o.stop(t+dur+0.01);
-    };
-
-    // ── 音符定義（小調，Am = A minor）──
-    // A2=110 B2=123 C3=130 D3=146 E3=164 F3=174 G3=196
-    // A3=220 B3=246 C4=261 D4=293 E4=329 F4=349 G4=392
-    // A4=440 B4=493 C5=523 D5=587 E5=659 F5=698 G5=784 A5=880
-    const N = {
-      A2:110, B2:123, C3:130, D3:146, E3:164, F3:174, G3:196,
-      A3:220, B3:246, C4:261, D4:293, E4:329, F4:349, G4:392,
-      A4:440, B4:493, C5:523, D5:587, E5:659, F5:698, G5:784, A5:880
-    };
-
-    /*
-     * 32小節循環（約 46 秒 @ BPM165）
-     * 結構：Intro(4) → A(8) → B(8) → A'(8) → Fill(4)
-     */
-    const playLoop = () => {
-      if (this.bgmType !== 'battle' || this.muted) return;
-      const t = ctx.currentTime;
-
-      // ════ INTRO / FILL（小節 0-3）════
-      // Crash + 開場節奏
-      crash(t);
-      for (let bi=0; bi<4; bi++) {
-        const bt = t + bi*bar;
-        kick(bt); kick2(bt+beat*0.5);
-        kick(bt+beat*2); kick2(bt+beat*2.75);
-        snare(bt+beat); snare(bt+beat*3);
-        for (let i=0; i<8; i++) hh(bt+i*beat*0.5, i%2===0?0.1:0.06);
-        // 簡單低音
-        saw(N.A2, bt, beat*1.9, 0.12);
-        saw(N.E3, bt+beat*2, beat*1.9, 0.1);
-      }
-      // 開場旋律hint
-      [N.A4,N.C5,N.E5,N.A5].forEach((f,i)=> sq(f, t+i*beat*0.5, beat*0.4, 0.05));
-
-      // ════ 段落 A（小節 4-11）：主旋律 ════
-      // 主旋律：緊張的 Am 小調旋律
-      const melA = [
-        // bar4
-        [N.E5,N.D5,N.C5,N.B4, N.A4,N.B4,N.C5,N.B4],
-        // bar5
-        [N.A4,N.G4,N.A4,N.C5, N.E5,N.C5,N.B4,N.A4],
-        // bar6
-        [N.G4,N.A4,N.B4,N.C5, N.D5,N.C5,N.B4,N.G4],
-        // bar7
-        [N.A4,N.B4,N.C5,N.D5, N.E5,N.D5,N.C5,N.B4],
-        // bar8（高潮）
-        [N.E5,N.F5,N.E5,N.D5, N.C5,N.D5,N.E5,N.D5],
-        // bar9
-        [N.C5,N.B4,N.C5,N.D5, N.C5,N.B4,N.A4,N.G4],
-        // bar10
-        [N.A4,N.C5,N.B4,N.A4, N.G4,N.A4,N.B4,N.A4],
-        // bar11（降落）
-        [N.G4,N.F4,N.E4,N.D4, N.E4,N.F4,N.E4,0],
-      ];
-      melA.forEach((notes, bi) => {
-        const bt = t + (bi+4)*bar;
-        notes.forEach((freq, ni) => {
-          if (freq) sq(freq, bt+ni*beat*0.5, beat*0.45, 0.065);
-        });
-      });
-
-      // 低音線（A段，強悍 8分音符 riff）
-      const bassA_pattern = [
-        [N.A2,0,N.A2,N.C3, N.E3,N.C3,N.A2,0],
-        [N.A2,0,N.A2,N.B2, N.C3,N.B2,N.A2,N.G2||N.A2],
-        [N.G2||N.A2,0,N.G2||N.A2,N.B2, N.D3,N.B2,N.G2||N.A2,0],
-        [N.A2,0,N.C3,0, N.E3,0,N.C3,N.A2],
-      ];
-      for (let bi=0; bi<8; bi++) {
-        const bt = t + (bi+4)*bar;
-        const pat = bassA_pattern[bi%4];
-        pat.forEach((freq, ni) => {
-          if (freq) saw(freq, bt+ni*beat*0.5, beat*0.42, 0.11);
-        });
-      }
-
-      // 和弦pad（A段）
-      const chordsA = [[N.A3,N.C4,N.E4],[N.G3,N.B3,N.D4],[N.F3,N.A3,N.C4],[N.E3,N.G3||N.A3,N.B3]];
-      for (let bi=0; bi<8; bi++) {
-        const bt = t + (bi+4)*bar;
-        chordsA[bi%4].forEach(f => pad(f, bt, bar*0.92, 0.035));
-      }
-
-      // 打擊（A段：強力標準 rock beat）
-      for (let bi=0; bi<8; bi++) {
-        const bt = t + (bi+4)*bar;
-        crash(bt + (bi===0 ? 0 : bar*99)); // crash只在第一拍
-        kick(bt); kick2(bt+beat*0.75);
-        kick(bt+beat*2); kick2(bt+beat*2.5);
-        snare(bt+beat); snare(bt+beat*3);
-        snareGhost(bt+beat*1.5); snareGhost(bt+beat*3.5);
-        for (let i=0;i<16;i++) hh(bt+i*beat*0.25, i%2===0?0.09:0.05);
-        if (bi%2===1) hhO(bt+beat*1.75, 0.12);
-      }
-
-      // ════ 段落 B（小節 12-19）：橋段，緊張感升高 ════
-      const melB = [
-        [N.A5,N.G5,N.F5,N.E5, N.D5,N.E5,N.F5,N.E5],
-        [N.D5,N.C5,N.D5,N.E5, N.D5,N.C5,N.B4,N.A4],
-        [N.B4,N.C5,N.D5,N.E5, N.F5,N.E5,N.D5,N.C5],
-        [N.D5,N.E5,N.F5,N.E5, N.D5,N.C5,N.B4,N.C5],
-        [N.A4,N.C5,N.E5,N.C5, N.A4,N.G4,N.A4,N.C5],
-        [N.E5,N.D5,N.C5,N.B4, N.C5,N.B4,N.A4,N.G4],
-        [N.A4,N.B4,N.C5,N.D5, N.E5,N.F5,N.E5,N.D5],
-        [N.C5,N.B4,N.A4,N.G4, N.A4,0,0,0],
-      ];
-      melB.forEach((notes, bi) => {
-        const bt = t + (bi+12)*bar;
-        notes.forEach((freq, ni) => {
-          if (freq) sq(freq, bt+ni*beat*0.5, beat*0.43, 0.06);
-        });
-      });
-
-      // 低音（B段，更狂野）
-      for (let bi=0; bi<8; bi++) {
-        const bt = t + (bi+12)*bar;
-        const freqs = bi%2===0
-          ? [N.A2,N.A2,N.C3,N.E3, N.A2,N.G2||N.A2,N.A2,N.C3]
-          : [N.E3,N.D3,N.C3,N.B2, N.A2,N.B2,N.C3,N.E3];
-        freqs.forEach((f,ni)=>{ if(f) saw(f, bt+ni*beat*0.5, beat*0.4, 0.12); });
-      }
-
-      // 打擊（B段：更狂暴，加連踢）
-      for (let bi=0; bi<8; bi++) {
-        const bt = t + (bi+12)*bar;
-        kick(bt); kick(bt+beat*0.5); // 雙踢
-        kick(bt+beat*2); kick2(bt+beat*2.75);
-        snare(bt+beat); snare(bt+beat*3);
-        snareGhost(bt+beat*0.75); snareGhost(bt+beat*1.75);
-        for (let i=0;i<16;i++) hh(bt+i*beat*0.25, 0.08);
-        if (bi===3||bi===7) { // tom fill
-          tom(bt+beat*3+beat*0.25, 180, 0.25);
-          tom(bt+beat*3+beat*0.5,  150, 0.25);
-          tom(bt+beat*3+beat*0.75, 120, 0.25);
-        }
-      }
-
-      // ════ 段落 A'（小節 20-27）：主旋律回歸，加和聲 ════
-      melA.forEach((notes, bi) => {
-        const bt = t + (bi+20)*bar;
-        notes.forEach((freq, ni) => {
-          if (freq) {
-            sq(freq, bt+ni*beat*0.5, beat*0.45, 0.065);
-            // 五度和聲
-            pad(freq*1.5, bt+ni*beat*0.5, beat*0.4, 0.02);
-          }
-        });
-      });
-      for (let bi=0; bi<8; bi++) {
-        const bt = t + (bi+20)*bar;
-        const pat = bassA_pattern[bi%4];
-        pat.forEach((freq, ni) => {
-          if (freq) saw(freq, bt+ni*beat*0.5, beat*0.42, 0.11);
-        });
-        chordsA[bi%4].forEach(f => pad(f, bt, bar*0.92, 0.03));
-        kick(bt); kick2(bt+beat*0.75);
-        kick(bt+beat*2); kick2(bt+beat*2.5);
-        snare(bt+beat); snare(bt+beat*3);
-        snareGhost(bt+beat*1.5);
-        for (let i=0;i<16;i++) hh(bt+i*beat*0.25, i%2===0?0.09:0.05);
-      }
-
-      // ════ FILL（小節 28-31）：收尾過渡 ════
-      for (let bi=0; bi<4; bi++) {
-        const bt = t + (bi+28)*bar;
-        kick(bt); kick(bt+beat); kick(bt+beat*2); kick(bt+beat*3);
-        snare(bt+beat*0.5); snare(bt+beat*1.5);
-        snare(bt+beat*2.5); snare(bt+beat*3.5);
-        for (let i=0;i<8;i++) hh(bt+i*beat*0.5, 0.07);
-        // 下行旋律hint
-        [N.A4,N.G4,N.F4,N.E4].forEach((f,i)=>
-          sq(f, bt+i*beat, beat*0.9, 0.05)
-        );
-        saw(N.A2, bt, bar*0.95, 0.12);
-      }
-      crash(t + 28*bar);
-
-      const totalDur = 32 * bar * 1000;
-      this._battleTimer = setTimeout(playLoop, totalDur - 100);
-    };
-    playLoop();
+    if (!this._battleAudio) {
+      this._battleAudio = new Audio('battle.mp3');
+      this._battleAudio.loop = true;
+      this._battleAudio.volume = 0.6;
+    }
+    this._battleAudio.play().catch(()=>{});
   },
 };
 
@@ -7754,8 +7417,9 @@ window.toggleMute = () => {
   AUDIO.muted = !AUDIO.muted;
   localStorage.setItem('sfx_muted', AUDIO.muted ? '1' : '0');
   AUDIO._updateBtn();
+  if (AUDIO._exploreAudio) AUDIO._exploreAudio.muted = AUDIO.muted;
+  if (AUDIO._battleAudio)  AUDIO._battleAudio.muted  = AUDIO.muted;
   if (!AUDIO.muted) {
-    // 恢復 BGM
     const type = AUDIO.bgmType;
     AUDIO.bgmType = null;
     if (type === 'battle') AUDIO.playBattleBgm();
@@ -7784,6 +7448,8 @@ window.showWorldBossResult  = showWorldBossResult;
 window.loadWorldBoss        = loadWorldBoss;
 window.wbSwitchTab          = wbSwitchTab;
 window.renderGuildTab       = renderGuildTab;
+window.approveGuildJoin     = approveGuildJoin;
+window.denyGuildJoin        = denyGuildJoin;
 </script>
 </body>
 </html>
