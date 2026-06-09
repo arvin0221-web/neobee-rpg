@@ -669,8 +669,8 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
     </div><!-- end tab-content -->
 
     <!-- VERSION FOOTER -->
-    <div style="text-align:center;padding:12px 0 8px;font-size:11px;color:var(--text3);letter-spacing:2px;cursor:default;user-select:none"
-      onclick="(function(){window._erudaTap=(window._erudaTap||0)+1;if(window._erudaTap>=5){window._erudaTap=0;if(window.eruda){eruda.show();return;}var s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/eruda';document.head.appendChild(s);s.onload=function(){eruda.init();eruda.show();}}})()">v1.1.65</div>
+    <div style="text-align:center;padding:3px 0;font-size:11px;color:var(--text3);letter-spacing:2px;cursor:default;user-select:none;display:inline-block;margin:0 auto;width:100%"
+      onclick="(function(){window._erudaTap=(window._erudaTap||0)+1;if(window._erudaTap>=5){window._erudaTap=0;if(window.eruda){eruda.show();return;}var s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/eruda';document.head.appendChild(s);s.onload=function(){eruda.init();eruda.show();}}})()">v1.1.69</div>
 
   </div>
 </div>
@@ -1098,6 +1098,11 @@ const SKILLS_DEF = [
   {id:'暴徒',   name:'暴徒',   desc:'血量低於20%時傷害+50%，攻擊特效變為紅色斬擊。每升1級額外+15%傷害加成。',                      baseCost:1000,  maxLvOverride:null, costMult:10},
   {id:'致命一擊',name:'致命一擊',desc:'每次攻擊有1%機率讓對手瞬間喪命（特效炸裂）。每升1級+1%機率。',                             baseCost:1000,  maxLvOverride:null, costMult:10},
   {id:'絕對防禦',name:'絕對防禦',desc:'每次受到攻擊有5%機率完全免疫傷害。每升1級+5%機率。',                                       baseCost:1000,  maxLvOverride:null, costMult:10},
+];
+
+// 隱藏技能（不出現在購買頁面，只能手動從資料庫新增）
+const HIDDEN_SKILLS = [
+  { id:'王者鬥氣', applyAtk: (lv) => lv } // 每級 +1 基礎攻擊
 ];
 
 const JOBS_DEF = [
@@ -1635,7 +1640,25 @@ function renderSkillsTab() {
       </button>
     </div>`;
   }
-  document.getElementById('skills-grid').innerHTML = bannerHtml + `<div class="skills-grid">${skillsHtml}</div>`;
+  // 隱藏技能：只有擁有者才能看到
+  let hiddenHtml = '';
+  for (const hs of HIDDEN_SKILLS) {
+    const lv = (p.skills || {})[hs.id] || 0;
+    if (lv <= 0) continue;
+    hiddenHtml += `<div class="skill-card" style="border-color:#c084fc44;background:linear-gradient(135deg,#1a0a2e,#0f0a1e)">
+      <div class="skill-name" style="color:#c084fc">✦ ${hs.id}</div>
+      <div class="skill-desc" style="color:#a78bfa">基礎攻擊 +${lv}（每級 +1，上限 Lv.1000）</div>
+      <div class="skill-level">
+        <div class="skill-lvl-badge" style="background:#7c3aed22;border-color:#7c3aed44;color:#c084fc">Lv.${lv}</div>
+        <div class="skill-cap" style="color:#7c3aed">/ 上限 Lv.1000</div>
+        <div style="margin-left:auto"><span style="background:#c084fc22;color:#c084fc;border:1px solid #c084fc44;border-radius:6px;padding:2px 8px;font-size:11px">隱藏技能</span></div>
+      </div>
+    </div>`;
+  }
+
+  document.getElementById('skills-grid').innerHTML = bannerHtml +
+    `<div class="skills-grid">${skillsHtml}</div>` +
+    (hiddenHtml ? `<div style="margin-top:16px;font-size:11px;color:#7c3aed;letter-spacing:2px;margin-bottom:8px">✦ 特殊技能</div><div class="skills-grid">${hiddenHtml}</div>` : '');
 }
 
 window.upgradeSkill = async (sid) => {
@@ -2177,10 +2200,15 @@ async function joinRoom(code) {
   const rank = getRank(G.player.exp||0);
   await update(ref(db, `rooms2/${code}/members/${G.uid}`), { name: G.player.name, uid: G.uid, rankKey: rank.key, rankName: rank.name, isBot: false, ready: false });
   listenToRoom(code);
-  // Fetch startStage from room
   const snap = await get(ref(db, `rooms2/${code}`));
-  const startStageNum = snap.exists() ? (snap.val().startStage || 1) : 1;
-  showRoomWaiting(code, false, startStageNum);
+  const room = snap.exists() ? snap.val() : {};
+  const startStageNum = room.startStage || 1;
+  if (room.isPvp) {
+    // PVP 非房主：顯示 PVP 等待畫面（含準備按鈕）
+    showPvpWaiting(code, false, room.teamSize || 3, room.pvpPts || 0);
+  } else {
+    showRoomWaiting(code, false, startStageNum);
+  }
 }
 
 function showRoomWaiting(code, isLeader, startStageNum) {
@@ -2441,14 +2469,17 @@ async function initGame(members, roomId, startStageNum) {
   const hostUid  = realMems.length > 0 ? (realMems[0].uid || realMems[0].name) : G.uid;
   const iAmHost  = (hostUid === G.uid);
 
-  // Pre-load skills for all real players from Firebase using their uid
+  // Pre-load skills AND equipment for all real players from Firebase
   const playerSkillsMap = {}; // keyed by uid
+  const playerEquipMap  = {}; // keyed by uid: { inventory, equipped }
   await Promise.all(realMems.map(async m => {
     const uid = m.uid || m.name;
     try {
-      const snap = await get(ref(db, `players/${uid}/skills`));
-      playerSkillsMap[uid] = snap.exists() ? (snap.val() || {}) : {};
-    } catch(e) { playerSkillsMap[uid] = {}; }
+      const snap = await get(ref(db, `players/${uid}`));
+      const data = snap.exists() ? snap.val() : {};
+      playerSkillsMap[uid] = data.skills   || {};
+      playerEquipMap[uid]  = { inventory: data.inventory || [], equipped: data.equipped || {} };
+    } catch(e) { playerSkillsMap[uid] = {}; playerEquipMap[uid] = {inventory:[],equipped:{}}; }
   }));
 
   // Calculate accumulated attribute points for skipped stages (stages 1 ~ startStageNum-1)
@@ -2491,12 +2522,21 @@ async function initGame(members, roomId, startStageNum) {
         hp: theirRank.hp, maxHp: theirRank.hp, atk: theirRank.atk, def: theirRank.def,
         rankKey: m.rankKey, rankName: m.rankName,
         skills: playerSkillsMap[theirUid] || {}, allocDone:false,
-        skippedPts });
+        skippedPts, equippedItems:{},
+        _equipData: playerEquipMap[theirUid] || {inventory:[],equipped:{}} });
     }
   }
   // Load equipment onto self fighter
   const meSelf = team.find(m => m.isMe);
   if (meSelf) loadEquipmentOntoFighter(meSelf);
+
+  // Load equipment for real teammates (using their Firebase data)
+  team.forEach(m => {
+    if (!m.isMe && !m.isBot && m._equipData) {
+      loadEquipmentFromData(m, m._equipData.inventory, m._equipData.equipped);
+      delete m._equipData;
+    }
+  });
 
   // 讀取公會等級
   let guildLevel = 0;
@@ -3268,6 +3308,8 @@ function startBattle() {
   const gs = G.gameState;
   console.log('[startBattle] roomId=', gs.roomId, 'isHost=', gs.isHost, 'team=', gs.team?.length, 'enemies=', gs.enemies?.length);
   AUDIO.playBattleBgm();
+  // 套用隱藏技能到所有真人隊友
+  gs.team.forEach(m => applyHiddenSkills(m));
   gs.battleActive = true;
   gs.pendingAlloc = false;
   gs.waitingForPlayer = false;
@@ -4859,6 +4901,7 @@ window.equipItem = async (uid) => {
   }
   const eq = { ...(G.player.equipped || {}), [item.slot]: uid };
   G.player.equipped = eq;
+  G.player.inventory = inv; // persist templateId fix
   await update(ref(db, `players/${G.uid}`), { equipped: eq, inventory: inv });
   renderEquipTab();
   updateUI();
@@ -5013,19 +5056,41 @@ function applyTrinketDeath(attacker, gs) {
 }
 
 // Load equipped items onto a fighter object before battle
+// 套用隱藏技能到 fighter 基礎屬性（在 startBattle 前呼叫）
+function applyHiddenSkills(fighter) {
+  if (fighter.isBot || fighter.isMonster) return;
+  const skills = fighter.skills || {};
+  for (const hs of HIDDEN_SKILLS) {
+    const lv = skills[hs.id] || 0;
+    if (lv <= 0) continue;
+    if (hs.applyAtk) {
+      const bonus = hs.applyAtk(lv);
+      fighter.atk = (fighter.atk || 0) + bonus;
+    }
+  }
+}
+
+// icon → templateId lookup（用於修復舊裝備沒有 templateId 的問題）
+function getIconToTemplateId() {
+  const map = {};
+  for (const arr of Object.values(EQ_TEMPLATES))
+    for (const tmpl of arr) map[tmpl.icon] = tmpl.id;
+  return map;
+}
+
+// 給自己用：從 G.player 載入裝備
 function loadEquipmentOntoFighter(fighter) {
   if (fighter.isBot || fighter.isMonster) return;
-  const inv = G.player.inventory || [];
-  const eq  = G.player.equipped  || {};
+  loadEquipmentFromData(fighter, G.player.inventory || [], G.player.equipped || {});
+}
+
+// 通用版：傳入 inventory 和 equipped 資料
+function loadEquipmentFromData(fighter, inventory, equipped) {
+  if (fighter.isBot || fighter.isMonster) return;
   fighter.equippedItems = {};
-
-  // icon 是固定不變的，用來反查 templateId（name 可能被改過）
-  const iconToTemplateId = {};
-  for (const arr of Object.values(EQ_TEMPLATES))
-    for (const tmpl of arr) iconToTemplateId[tmpl.icon] = tmpl.id;
-
-  for (const [slot, uid] of Object.entries(eq)) {
-    const item = inv.find(i => i.uid === uid);
+  const iconToTemplateId = getIconToTemplateId();
+  for (const [slot, uid] of Object.entries(equipped)) {
+    const item = inventory.find(i => i.uid === uid);
     if (!item) continue;
     if (!item.templateId && item.icon)
       item.templateId = iconToTemplateId[item.icon] || null;
@@ -5187,9 +5252,15 @@ async function initDungeon(members, roomId, rankIdx) {
   const iAmHost = hostUid === G.uid;
 
   const playerSkillsMap = {};
+  const playerEquipMapD = {};
   await Promise.all(realMems.map(async m => {
     const uid = m.uid||m.name;
-    try { const s = await get(ref(db, `players/${uid}/skills`)); playerSkillsMap[uid] = s.exists()?(s.val()||{}):{};} catch(e){playerSkillsMap[uid]={};}
+    try {
+      const snap = await get(ref(db, `players/${uid}`));
+      const data = snap.exists() ? snap.val() : {};
+      playerSkillsMap[uid]  = data.skills   || {};
+      playerEquipMapD[uid]  = { inventory: data.inventory||[], equipped: data.equipped||{} };
+    } catch(e) { playerSkillsMap[uid]={}; playerEquipMapD[uid]={inventory:[],equipped:{}}; }
   }));
 
   // Build boss
@@ -5224,12 +5295,19 @@ async function initDungeon(members, roomId, rankIdx) {
       team.push({ name:m.name, uid:theirUid, isBot:false, isMe:false,
         hp:theirR.hp, maxHp:theirR.hp, atk:theirR.atk, def:theirR.def,
         rankKey:m.rankKey, rankName:m.rankName,
-        skills:playerSkillsMap[theirUid]||{}, allocDone:false, skippedPts:0 });
+        skills:playerSkillsMap[theirUid]||{}, allocDone:false, skippedPts:0,
+        equippedItems:{}, _equipData: playerEquipMapD[theirUid]||{inventory:[],equipped:{}} });
     }
   }
-  // Load equipment onto self
+  // Load equipment onto self and all real teammates
   const me = team.find(m => m.isMe);
   if (me) loadEquipmentOntoFighter(me);
+  team.forEach(m => {
+    if (!m.isMe && !m.isBot && m._equipData) {
+      loadEquipmentFromData(m, m._equipData.inventory, m._equipData.equipped);
+      delete m._equipData;
+    }
+  });
 
   // 讀取公會等級
   let dungeonGuildLevel = 0;
@@ -5868,11 +5946,17 @@ async function initPvp(room, roomId) {
   const hostUid = realMems[0]?.uid || G.uid;
   const iAmHost = hostUid === G.uid;
 
-  // Load skills for real players
-  const skillsMap = {};
+  // Load skills AND equipment for real players
+  const skillsMap  = {};
+  const equipMapPvp = {};
   await Promise.all(realMems.map(async m => {
     const uid = m.uid||m.name;
-    try { const s = await get(ref(db,`players/${uid}/skills`)); skillsMap[uid] = s.exists()?(s.val()||{}):{};} catch(e){skillsMap[uid]={};}
+    try {
+      const snap = await get(ref(db,`players/${uid}`));
+      const data = snap.exists() ? snap.val() : {};
+      skillsMap[uid]   = data.skills   || {};
+      equipMapPvp[uid] = { inventory: data.inventory||[], equipped: data.equipped||{} };
+    } catch(e) { skillsMap[uid]={}; equipMapPvp[uid]={inventory:[],equipped:{}}; }
   }));
 
   const buildFighter = (uid, isPvpEnemy) => {
@@ -5891,7 +5975,8 @@ async function initPvp(room, roomId) {
       hp:rankDef.hp, maxHp:rankDef.hp, atk:rankDef.atk, def:rankDef.def,
       rankKey:m.rankKey, rankName:m.rankName,
       skills: isMe ? (G.player.skills||{}) : (skillsMap[m.uid]||{}),
-      allocDone: pvpPts===0, pvpPts, allocExtra:{hp:0,atk:0,def:0}, equippedItems:{} };
+      allocDone: pvpPts===0, pvpPts, allocExtra:{hp:0,atk:0,def:0}, equippedItems:{},
+      _equipData: isMe ? null : (equipMapPvp[m.uid]||{inventory:[],equipped:{}}) };
   };
 
   // Determine which team current player is on
@@ -5902,10 +5987,15 @@ async function initPvp(room, roomId) {
   const team    = myTeamUids.map(uid => buildFighter(uid, false)).filter(Boolean);
   const enemies = foeTeamUids.map(uid => buildFighter(uid, true)).filter(Boolean);
 
-  // Load equipment onto self
+  // Load equipment onto self and all real teammates (both team and enemies)
   const me = team.find(m => m.isMe);
   if (me) loadEquipmentOntoFighter(me);
-  await loadTeammateEquipment(team);
+  [...team, ...enemies].forEach(m => {
+    if (!m.isMe && !m.isBot && m._equipData) {
+      loadEquipmentFromData(m, m._equipData.inventory, m._equipData.equipped);
+      delete m._equipData;
+    }
+  });
 
   G.gameState = {
     stage:1, team, enemies, currentTurn:0, turnOrder:[],
