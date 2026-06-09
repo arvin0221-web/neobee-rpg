@@ -670,7 +670,7 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
 
     <!-- VERSION FOOTER -->
     <div style="text-align:center;padding:3px 0;font-size:11px;color:var(--text3);letter-spacing:2px;cursor:default;user-select:none;display:inline-block;margin:0 auto;width:100%"
-      onclick="(function(){window._erudaTap=(window._erudaTap||0)+1;if(window._erudaTap>=5){window._erudaTap=0;if(window.eruda){eruda.show();return;}var s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/eruda';document.head.appendChild(s);s.onload=function(){eruda.init();eruda.show();}}})()">v1.1.70</div>
+      onclick="(function(){window._erudaTap=(window._erudaTap||0)+1;if(window._erudaTap>=5){window._erudaTap=0;if(window.eruda){eruda.show();return;}var s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/eruda';document.head.appendChild(s);s.onload=function(){eruda.init();eruda.show();}}})()">v1.1.71</div>
 
   </div>
 </div>
@@ -1102,7 +1102,8 @@ const SKILLS_DEF = [
 
 // 隱藏技能（不出現在購買頁面，只能手動從資料庫新增）
 const HIDDEN_SKILLS = [
-  { id:'王者鬥氣', applyAtk: (lv) => lv } // 每級 +1 基礎攻擊
+  { id:'王者鬥氣', applyAtk: (lv) => lv },    // 每級 +1 基礎攻擊
+  { id:'無畏',     maxLv: 1, applyDef: () => 'zero' } // 防禦歸0
 ];
 
 const JOBS_DEF = [
@@ -1645,12 +1646,13 @@ function renderSkillsTab() {
   for (const hs of HIDDEN_SKILLS) {
     const lv = (p.skills || {})[hs.id] || 0;
     if (lv <= 0) continue;
+    const hsDesc = hs.applyDef ? '防禦永久歸零（Lv.1 滿級）' : `基礎攻擊 +${lv}（每級 +1，上限 Lv.1000）`;
     hiddenHtml += `<div class="skill-card" style="border-color:#c084fc44;background:linear-gradient(135deg,#1a0a2e,#0f0a1e)">
       <div class="skill-name" style="color:#c084fc">✦ ${hs.id}</div>
-      <div class="skill-desc" style="color:#a78bfa">基礎攻擊 +${lv}（每級 +1，上限 Lv.1000）</div>
+      <div class="skill-desc" style="color:#a78bfa">${hsDesc}</div>
       <div class="skill-level">
         <div class="skill-lvl-badge" style="background:#7c3aed22;border-color:#7c3aed44;color:#c084fc">Lv.${lv}</div>
-        <div class="skill-cap" style="color:#7c3aed">/ 上限 Lv.1000</div>
+        <div class="skill-cap" style="color:#7c3aed">/ 上限 Lv.${hs.maxLv||1000}</div>
         <div style="margin-left:auto"><span style="background:#c084fc22;color:#c084fc;border:1px solid #c084fc44;border-radius:6px;padding:2px 8px;font-size:11px">隱藏技能</span></div>
       </div>
     </div>`;
@@ -5066,6 +5068,9 @@ function applyHiddenSkills(fighter) {
     if (hs.applyAtk) {
       const bonus = hs.applyAtk(lv);
       fighter.atk = (fighter.atk || 0) + bonus;
+    }
+    if (hs.applyDef === 'zero' || hs.applyDef?.() === 'zero') {
+      fighter.def = 0;
     }
   }
 }
