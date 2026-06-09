@@ -670,7 +670,7 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
 
     <!-- VERSION FOOTER -->
     <div style="text-align:center;padding:3px 0;font-size:11px;color:var(--text3);letter-spacing:2px;cursor:default;user-select:none;display:inline-block;margin:0 auto;width:100%"
-      onclick="(function(){window._erudaTap=(window._erudaTap||0)+1;if(window._erudaTap>=5){window._erudaTap=0;if(window.eruda){eruda.show();return;}var s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/eruda';document.head.appendChild(s);s.onload=function(){eruda.init();eruda.show();}}})()">v1.1.74</div>
+      onclick="(function(){window._erudaTap=(window._erudaTap||0)+1;if(window._erudaTap>=5){window._erudaTap=0;if(window.eruda){eruda.show();return;}var s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/eruda';document.head.appendChild(s);s.onload=function(){eruda.init();eruda.show();}}})()">v1.1.75</div>
 
   </div>
 </div>
@@ -2254,6 +2254,9 @@ function showRoomWaiting(code, isLeader, startStageNum) {
       <button class="btn btn-danger" onclick="leaveRoom()">離開房間</button>
       ${friendsHtml}`;
   }
+  // 普通等待室顯示頂部槽位
+  const slotsEl = document.getElementById('matchTeamSlots');
+  if (slotsEl) slotsEl.style.display = '';
   renderMatchTeam();
   showLobbyChat();
   setTimeout(populateWaitingRoomFriends, 100);
@@ -4433,14 +4436,14 @@ function fxHitFlash(fxEl) {
 }
 
 /* 傷害數字 */
-function fxDamageNumber(fxEl, dmg, isCrit, _u1, _u2, isThorn) {
+function fxDamageNumber(fxEl, dmg, isCrit, _u1, _u2, isThorn, isHeal=false) {
   if (!fxEl) return;
   const num = document.createElement('div');
   num.className = 'fx-dmg';
-  const color = isThorn ? '#3ecfcf' : isCrit ? '#ffe066' : '#ff6666';
-  const prefix = isThorn ? '↩' : isCrit ? '💥' : '';
+  const color = isHeal ? '#4ade80' : isThorn ? '#3ecfcf' : isCrit ? '#ffe066' : '#ff6666';
+  const prefix = isHeal ? '♥' : isThorn ? '↩' : isCrit ? '💥' : '';
   num.style.cssText = `color:${color};font-size:${isCrit?'26px':'20px'};top:35%`;
-  num.textContent = `${prefix}-${dmg}`;
+  num.textContent = isHeal ? `${prefix}+${dmg}` : `${prefix}-${dmg}`;
   fxEl.appendChild(num);
   setTimeout(() => num.remove(), 950);
 }
@@ -5030,7 +5033,7 @@ function applySickleHeal(attacker, dmg) {
     AUDIO.sfxHeal();
     requestAnimationFrame(() => {
       const idx = G.gameState.team.indexOf(attacker);
-      if (idx >= 0) fxDamageNumber(getFxEl(false, idx), actual, false, true, false, false);
+      if (idx >= 0) fxDamageNumber(getFxEl(false, idx), actual, false, false, false, false, true);
     });
   }
 }
@@ -5048,7 +5051,7 @@ function applyArmorHeal(defender, dmgReceived) {
     defender.hp = Math.min(defender.maxHp, defender.hp + heal);
     addLog(`😇 <span class="green">${defender.name}</span> ${defender.equippedItems?.armor?.name||'天使聖鎧'}！恢復 <span class="green">${heal}</span> 血量`);
     const { isEnemy: dIE, idx: dIdx } = getTargetIndex(defender);
-    requestAnimationFrame(() => fxDamageNumber(getFxEl(dIE, dIdx), heal, false, false, true, false));
+    requestAnimationFrame(() => fxDamageNumber(getFxEl(dIE, dIdx), heal, false, false, false, false, true));
   }
 }
 
@@ -5844,6 +5847,9 @@ function showPvpWaiting(code, isLeader, size, pts) {
       ${friendsHtml}`;
     listenForJoinRequests(code);
     renderPvpTeams(code);
+    // 監聽 members 變動，自動更新隊伍和開始按鈕狀態
+    if (G.listeners.pvpMembers) { try { off(ref(db, `rooms2/${code}/members`)); } catch(e){} }
+    G.listeners.pvpMembers = onValue(ref(db, `rooms2/${code}/members`), () => renderPvpTeams(code));
   } else {
     document.getElementById('pvpSetupPanel').style.display = 'none';
     document.getElementById('pvpUnassignedPanel').style.display = 'none';
@@ -5853,7 +5859,9 @@ function showPvpWaiting(code, isLeader, size, pts) {
       <button class="btn btn-danger" onclick="leaveRoom()">離開</button>
       ${friendsHtml}`;
   }
-  renderMatchTeam();
+  // PVP 等待室不需要頂部槽位格
+  const slotsEl = document.getElementById('matchTeamSlots');
+  if (slotsEl) slotsEl.style.display = 'none';
   showLobbyChat();
   setTimeout(populateWaitingRoomFriends, 100);
 }
@@ -6784,6 +6792,7 @@ window.approveGuildJoin = async (gid, uid, name) => {
   await set(ref(db, `guildJoinResp/${uid}`), { approved: true, guildName: g.name, ts: Date.now() });
   notify(`已同意 ${name} 加入公會`, 'ok');
   _removeGuildReqEntry(uid);
+  if (G.currentTab === 'guild') renderGuildTab();
 };
 
 window.denyGuildJoin = async (gid, uid) => {
@@ -6815,13 +6824,12 @@ function listenGuildJoinResponse() {
     const resp = snap.val();
     await remove(ref(db, `guildJoinResp/${G.uid}`));
     if (resp.approved) {
-      // 同步更新本地玩家資料
-      const gidSnap = await get(ref(db, `players/${G.uid}/guildId`));
-      if (gidSnap.exists()) G.player.guildId = gidSnap.val();
+      // 從 Firebase 重新讀取完整玩家資料
+      const playerSnap = await get(ref(db, `players/${G.uid}`));
+      if (playerSnap.exists()) G.player = { ...G.player, ...playerSnap.val() };
       notify(`🎉 已獲准加入「${resp.guildName}」！`, 'ok');
-      // 無論在哪個 tab 都重新載入公會資料
       G._myGuild = null;
-      if (G.currentTab === 'guild') renderGuildTab();
+      renderGuildTab(); // 無論在哪個 tab 都立即更新公會頁
     } else {
       notify('入會申請被拒絕', 'err');
     }
