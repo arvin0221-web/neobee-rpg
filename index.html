@@ -670,7 +670,7 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
 
     <!-- VERSION FOOTER -->
     <div style="text-align:center;padding:3px 0;font-size:11px;color:var(--text3);letter-spacing:2px;cursor:default;user-select:none;display:inline-block;margin:0 auto;width:100%"
-      onclick="(function(){window._erudaTap=(window._erudaTap||0)+1;if(window._erudaTap>=5){window._erudaTap=0;if(window.eruda){eruda.show();return;}var s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/eruda';document.head.appendChild(s);s.onload=function(){eruda.init();eruda.show();}}})()">v1.1.72</div>
+      onclick="(function(){window._erudaTap=(window._erudaTap||0)+1;if(window._erudaTap>=5){window._erudaTap=0;if(window.eruda){eruda.show();return;}var s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/eruda';document.head.appendChild(s);s.onload=function(){eruda.init();eruda.show();}}})()">v1.1.74</div>
 
   </div>
 </div>
@@ -6767,7 +6767,6 @@ function listenGuildJoinRequests() {
 }
 
 window.approveGuildJoin = async (gid, uid, name) => {
-  // Re-check space
   const gs2 = await get(ref(db, `guilds/${gid}`));
   if (!gs2.exists()) return;
   const g = gs2.val();
@@ -6775,21 +6774,38 @@ window.approveGuildJoin = async (gid, uid, name) => {
   if (members.length >= 5) {
     notify(`公會已滿，無法接受 ${name} 的申請`, 'err');
     await remove(ref(db, `guildJoinReqs/${gid}/${uid}`));
+    _removeGuildReqEntry(uid);
     return;
   }
   if (!members.includes(uid)) members.push(uid);
   await set(ref(db, `guilds/${gid}/members`), members);
   await set(ref(db, `players/${uid}/guildId`), gid);
   await remove(ref(db, `guildJoinReqs/${gid}/${uid}`));
-  // Notify applicant
   await set(ref(db, `guildJoinResp/${uid}`), { approved: true, guildName: g.name, ts: Date.now() });
   notify(`已同意 ${name} 加入公會`, 'ok');
+  _removeGuildReqEntry(uid);
 };
 
 window.denyGuildJoin = async (gid, uid) => {
   await remove(ref(db, `guildJoinReqs/${gid}/${uid}`));
   await set(ref(db, `guildJoinResp/${uid}`), { approved: false, ts: Date.now() });
+  _removeGuildReqEntry(uid);
 };
+
+function _removeGuildReqEntry(uid) {
+  // 移除該筆申請 DOM
+  const list = document.getElementById('guildJoinReqList');
+  if (!list) return;
+  list.querySelectorAll('div').forEach(row => {
+    if (row.innerHTML.includes(`approveGuildJoin`) && row.innerHTML.includes(`'${uid}'`)) row.remove();
+    if (row.innerHTML.includes(`denyGuildJoin`) && row.innerHTML.includes(`'${uid}'`)) row.remove();
+  });
+  // 若列表空了就隱藏 panel
+  if (list.children.length === 0) {
+    const panel = document.getElementById('guildJoinReqPanel');
+    if (panel) panel.classList.add('hidden');
+  }
+}
 
 // Listen for guild join response (for applicant)
 function listenGuildJoinResponse() {
@@ -6799,7 +6815,12 @@ function listenGuildJoinResponse() {
     const resp = snap.val();
     await remove(ref(db, `guildJoinResp/${G.uid}`));
     if (resp.approved) {
+      // 同步更新本地玩家資料
+      const gidSnap = await get(ref(db, `players/${G.uid}/guildId`));
+      if (gidSnap.exists()) G.player.guildId = gidSnap.val();
       notify(`🎉 已獲准加入「${resp.guildName}」！`, 'ok');
+      // 無論在哪個 tab 都重新載入公會資料
+      G._myGuild = null;
       if (G.currentTab === 'guild') renderGuildTab();
     } else {
       notify('入會申請被拒絕', 'err');
