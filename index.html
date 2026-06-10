@@ -670,7 +670,7 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
 
     <!-- VERSION FOOTER -->
     <div style="text-align:center;padding:3px 0;font-size:11px;color:var(--text3);letter-spacing:2px;cursor:default;user-select:none;display:inline-block;margin:0 auto;width:100%"
-      onclick="(function(){window._erudaTap=(window._erudaTap||0)+1;if(window._erudaTap>=5){window._erudaTap=0;if(window.eruda){eruda.show();return;}var s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/eruda';document.head.appendChild(s);s.onload=function(){eruda.init();eruda.show();}}})()">v1.1.76</div>
+      onclick="(function(){window._erudaTap=(window._erudaTap||0)+1;if(window._erudaTap>=5){window._erudaTap=0;if(window.eruda){eruda.show();return;}var s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/eruda';document.head.appendChild(s);s.onload=function(){eruda.init();eruda.show();}}})()">v1.1.77</div>
 
   </div>
 </div>
@@ -6739,26 +6739,25 @@ window.doGuildInvite = async () => {
 };
 
 // Listen for incoming guild join REQUESTS (for guild leader)
-function listenGuildJoinRequests() {
+// 只監聽自己公會的申請節點，避免整個 guildJoinReqs 的競爭條件
+async function listenGuildJoinRequests() {
   if (!G.uid) return;
-  onValue(ref(db, `guildJoinReqs`), async snap => {
+  // 找自己是否是某公會的會長
+  const myGuildSnap = await get(ref(db, `players/${G.uid}/guildId`));
+  if (!myGuildSnap.exists() || !myGuildSnap.val()) return;
+  const myGuildId = myGuildSnap.val();
+  const leaderSnap = await get(ref(db, `guilds/${myGuildId}/leader`));
+  if (!leaderSnap.exists() || leaderSnap.val() !== G.uid) return;
+
+  // 只監聽自己公會的申請
+  onValue(ref(db, `guildJoinReqs/${myGuildId}`), snap => {
     const panel = document.getElementById('guildJoinReqPanel');
     const list  = document.getElementById('guildJoinReqList');
     if (!panel || !list) return;
-
-    // Only show requests for guilds this player leads
-    const myGuildSnap = await get(ref(db, `players/${G.uid}/guildId`));
-    if (!myGuildSnap.exists() || !myGuildSnap.val()) { panel.classList.add('hidden'); return; }
-    const myGuildId = myGuildSnap.val();
-
-    const leaderSnap = await get(ref(db, `guilds/${myGuildId}/leader`));
-    if (!leaderSnap.exists() || leaderSnap.val() !== G.uid) { panel.classList.add('hidden'); return; }
-
-    if (!snap.exists() || !snap.val()[myGuildId]) { panel.classList.add('hidden'); return; }
-    const reqs = snap.val()[myGuildId];
+    if (!snap.exists()) { panel.classList.add('hidden'); return; }
+    const reqs = snap.val() || {};
     const entries = Object.entries(reqs);
     if (!entries.length) { panel.classList.add('hidden'); return; }
-
     panel.classList.remove('hidden');
     list.innerHTML = '';
     for (const [uid, req] of entries) {
@@ -6782,71 +6781,64 @@ window.approveGuildJoin = async (gid, uid, name) => {
   if (members.length >= 5) {
     notify(`公會已滿，無法接受 ${name} 的申請`, 'err');
     await remove(ref(db, `guildJoinReqs/${gid}/${uid}`));
-    _removeGuildReqEntry(uid);
     return;
   }
   if (!members.includes(uid)) members.push(uid);
+  // 依序寫入，確保所有操作完成再通知申請者
   await set(ref(db, `guilds/${gid}/members`), members);
   await set(ref(db, `players/${uid}/guildId`), gid);
   await remove(ref(db, `guildJoinReqs/${gid}/${uid}`));
+  // 最後才寫通知，確保資料已就緒
   await set(ref(db, `guildJoinResp/${uid}`), { approved: true, guildName: g.name, ts: Date.now() });
   notify(`已同意 ${name} 加入公會`, 'ok');
-  _removeGuildReqEntry(uid);
   if (G.currentTab === 'guild') renderGuildTab();
 };
 
 window.denyGuildJoin = async (gid, uid) => {
   await remove(ref(db, `guildJoinReqs/${gid}/${uid}`));
   await set(ref(db, `guildJoinResp/${uid}`), { approved: false, ts: Date.now() });
-  _removeGuildReqEntry(uid);
 };
 
-function _removeGuildReqEntry(uid) {
-  const list = document.getElementById('guildJoinReqList');
-  if (!list) return;
-  // 找包含此 uid 的任何按鈕的父行
-  list.querySelectorAll('div').forEach(row => {
-    if (row.innerHTML.includes(uid)) row.remove();
-  });
-  setTimeout(() => {
-    if (!list || list.children.length === 0) {
-      const panel = document.getElementById('guildJoinReqPanel');
-      if (panel) panel.classList.add('hidden');
-    }
-  }, 50);
-}
-
 // Listen for guild join response (for applicant)
+// 用 onChildAdded 只觸發一次，不會因 remove 再次觸發
 function listenGuildJoinResponse() {
   if (!G.uid) return;
+  // 先檢查是否有未處理的回應
+  get(ref(db, `guildJoinResp/${G.uid}`)).then(async snap => {
+    if (snap.exists()) await handleGuildJoinResp(snap.val());
+  });
+  // 監聽新回應
   onValue(ref(db, `guildJoinResp/${G.uid}`), async snap => {
     if (!snap.exists()) return;
-    const resp = snap.val();
-    // 先刪除通知節點，避免重複處理
-    await remove(ref(db, `guildJoinResp/${G.uid}`));
-    if (!resp.approved) {
-      notify('入會申請被拒絕', 'err');
-      return;
-    }
-    // 重新從 Firebase 讀取玩家資料（含最新 guildId）
-    try {
-      const playerSnap = await get(ref(db, `players/${G.uid}`));
-      if (playerSnap.exists()) {
-        const data = playerSnap.val();
-        G.player = { ...G.player, ...data };
-      }
-    } catch(e) {}
-    G._myGuild = null;
-    notify(`🎉 已獲准加入「${resp.guildName || '公會'}」！`, 'ok');
-    // 強制更新公會頁
-    const guildTab = document.getElementById('tab-guild');
-    if (guildTab && !guildTab.classList.contains('hidden')) {
-      renderGuildTab();
-    } else {
-      // 切換到公會頁讓玩家看到結果
-      switchTab('guild');
-    }
+    await handleGuildJoinResp(snap.val());
   });
+}
+
+let _guildRespProcessed = false; // 防止重複處理
+async function handleGuildJoinResp(resp) {
+  if (_guildRespProcessed) return;
+  if (!resp || !resp.ts) return;
+  // 若是舊的回應（超過10分鐘），忽略
+  if (Date.now() - resp.ts > 10 * 60 * 1000) {
+    await remove(ref(db, `guildJoinResp/${G.uid}`));
+    return;
+  }
+  _guildRespProcessed = true;
+  await remove(ref(db, `guildJoinResp/${G.uid}`));
+  setTimeout(() => { _guildRespProcessed = false; }, 3000);
+
+  if (!resp.approved) {
+    notify('入會申請被拒絕', 'err');
+    return;
+  }
+  // 確認 Firebase 上的 guildId 已更新
+  const playerSnap = await get(ref(db, `players/${G.uid}`));
+  if (playerSnap.exists()) {
+    G.player = { ...G.player, ...playerSnap.val() };
+  }
+  G._myGuild = null;
+  notify(`🎉 已獲准加入「${resp.guildName || '公會'}」！`, 'ok');
+  switchTab('guild');
 }
 
 // Listen for incoming guild invites
