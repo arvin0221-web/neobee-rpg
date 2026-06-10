@@ -670,7 +670,7 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
 
     <!-- VERSION FOOTER -->
     <div style="text-align:center;padding:3px 0;font-size:11px;color:var(--text3);letter-spacing:2px;cursor:default;user-select:none;display:inline-block;margin:0 auto;width:100%"
-      onclick="(function(){window._erudaTap=(window._erudaTap||0)+1;if(window._erudaTap>=5){window._erudaTap=0;if(window.eruda){eruda.show();return;}var s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/eruda';document.head.appendChild(s);s.onload=function(){eruda.init();eruda.show();}}})()">v1.1.78</div>
+      onclick="(function(){window._erudaTap=(window._erudaTap||0)+1;if(window._erudaTap>=5){window._erudaTap=0;if(window.eruda){eruda.show();return;}var s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/eruda';document.head.appendChild(s);s.onload=function(){eruda.init();eruda.show();}}})()">v1.1.79</div>
 
   </div>
 </div>
@@ -952,6 +952,21 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
       <div class="battle-hint" id="battleHint" style="min-height:22px"></div>
       <div class="battle-log" id="battleLog"></div>
       <div class="battle-controls" id="battleControls"></div>
+      <div style="text-align:center;margin-top:10px">
+        <button onclick="confirmQuitBattle()" style="background:transparent;border:1px solid #555;border-radius:8px;padding:6px 18px;font-size:12px;color:var(--text3);cursor:pointer">⚑ 退出戰鬥</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: Quit Battle Confirm -->
+<div id="quitBattleModal" class="modal-overlay hidden">
+  <div class="modal-card" style="max-width:340px;width:90%;text-align:center">
+    <div style="font-size:20px;margin-bottom:8px">⚑ 退出戰鬥</div>
+    <div id="quitBattleMsg" style="font-size:13px;color:var(--text2);margin-bottom:20px;line-height:1.8"></div>
+    <div class="modal-actions">
+      <button class="btn btn-danger" onclick="doQuitBattle()">確定退出</button>
+      <button class="btn btn-secondary" onclick="closeModal('quitBattleModal')">繼續戰鬥</button>
     </div>
   </div>
 </div>
@@ -4816,6 +4831,103 @@ window.nextStage = () => {
   }
 };
 
+// ===== 戰鬥中退出系統 =====
+window.confirmQuitBattle = () => {
+  const gs = G.gameState;
+  if (!gs || !gs.battleActive) return;
+  const solo = isSolo();
+  const isPvp = gs.isPvp;
+  const isDungeon = gs.isDungeon;
+  const isWB = gs.isWorldBoss;
+
+  let msg = '';
+  if (isPvp) {
+    msg = 'PVP 退出將直接判負，確定要退出？';
+  } else if (isWB) {
+    msg = '退出後本次造成的傷害仍會保留記錄。';
+  } else if (solo) {
+    msg = '退出後已完成關卡的獎勵會保留，目前這關的獎勵不會獲得。';
+  } else {
+    msg = '聯機退出後，你的角色將由人機託管繼續戰鬥。';
+  }
+  document.getElementById('quitBattleMsg').innerHTML = msg;
+  document.getElementById('quitBattleModal').classList.remove('hidden');
+};
+
+window.doQuitBattle = async () => {
+  closeModal('quitBattleModal');
+  const gs = G.gameState;
+  if (!gs) return;
+
+  if (gs.isPvp) {
+    // PVP 直接退出判負
+    await exitPvp();
+    return;
+  }
+
+  if (gs.isWorldBoss) {
+    // 世界Boss：結算目前傷害後退出
+    await showWorldBossResult(false);
+    return;
+  }
+
+  if (isSolo()) {
+    // 單人：直接退出，不給目前關獎勵
+    AUDIO.playExploreBgm();
+    document.getElementById('gameScreen').classList.add('hidden');
+    document.getElementById('resultOverlay').classList.add('hidden');
+    document.getElementById('dungeonResultOverlay').classList.add('hidden');
+    hideGameChat();
+    const tid = G.teamId;
+    if (tid) {
+      ['alloc','gameMembers','battle','battleLog','nextStage','actions','joinRequests'].forEach(key => {
+        try { if (G.listeners[key]) off(ref(db, `rooms2/${tid}/${key === 'gameMembers' ? 'presence' : key}`)); } catch(e){}
+        G.listeners[key] = null;
+      });
+      try { await remove(ref(db, `rooms2/${tid}`)); } catch(e){}
+      G.teamId = null;
+    }
+    G.gameState = null;
+    if (gs.isDungeon) switchTab('dungeon');
+    else switchTab('play');
+    return;
+  }
+
+  // 聯機：把自己變成人機託管
+  const me = gs.team.find(m => m.isMe);
+  if (!me) { await exitGame(); return; }
+
+  // 轉為 bot 繼續由 host 控制
+  me.isMe = false;
+  me.isBot = true;
+  me.botJobUsedThisStage = false;
+  // 如果自己是 host，轉移 host 給其他真人
+  if (gs.isHost) {
+    const nextReal = gs.team.find(m => !m.isBot && !m.isSummon && m !== me);
+    if (nextReal) {
+      gs.hostName = nextReal.uid;
+      gs.isHost = false;
+      // 寫入新 host
+      if (gs.roomId) await set(ref(db, `rooms2/${gs.roomId}/hostUid`), nextReal.uid);
+    }
+  }
+  // 離開 presence
+  if (gs.roomId && G.player?.name) {
+    try { await remove(ref(db, `rooms2/${gs.roomId}/presence/${G.player.name}`)); } catch(e){}
+  }
+  // 停止 UI 監聽，但 host 端繼續跑
+  try { if (G.listeners.battleLog) off(ref(db, `rooms2/${gs.roomId}/battleLog`)); } catch(e){}
+  G.listeners.battleLog = null;
+
+  AUDIO.playExploreBgm();
+  document.getElementById('gameScreen').classList.add('hidden');
+  hideGameChat();
+  G.gameState = null;
+  G.teamId = null;
+  notify('已退出，由人機接替繼續戰鬥', 'ok');
+  switchTab('play');
+};
+
 window.exitGame = async () => {
   AUDIO.playExploreBgm();
   document.getElementById('gameScreen').classList.add('hidden');
@@ -6498,6 +6610,8 @@ window.equipItem         = equipItem;
 window.unequipItem       = unequipItem;
 window.equipDroppedItem  = equipDroppedItem;
 window.exitDungeon       = exitDungeon;
+window.confirmQuitBattle = confirmQuitBattle;
+window.doQuitBattle      = doQuitBattle;
 window.showPlayerProfile = showPlayerProfile;
 window.selectBotJob      = selectBotJob;
 window.showCreatePvp     = showCreatePvp;
