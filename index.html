@@ -670,7 +670,7 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
 
     <!-- VERSION FOOTER -->
     <div style="text-align:center;padding:3px 0;font-size:11px;color:var(--text3);letter-spacing:2px;cursor:default;user-select:none;display:inline-block;margin:0 auto;width:100%"
-      onclick="(function(){window._erudaTap=(window._erudaTap||0)+1;if(window._erudaTap>=5){window._erudaTap=0;if(window.eruda){eruda.show();return;}var s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/eruda';document.head.appendChild(s);s.onload=function(){eruda.init();eruda.show();}}})()">v1.1.77</div>
+      onclick="(function(){window._erudaTap=(window._erudaTap||0)+1;if(window._erudaTap>=5){window._erudaTap=0;if(window.eruda){eruda.show();return;}var s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/eruda';document.head.appendChild(s);s.onload=function(){eruda.init();eruda.show();}}})()">v1.1.78</div>
 
   </div>
 </div>
@@ -6803,12 +6803,12 @@ window.approveGuildJoin = async (gid, uid, name) => {
   if (!members.includes(uid)) members.push(uid);
   dbg('approve: writing members len='+members.length);
   await set(ref(db, `guilds/${gid}/members`), members);
-  dbg('approve: writing guildId');
-  await set(ref(db, `players/${uid}/guildId`), gid);
   dbg('approve: removing req');
   await remove(ref(db, `guildJoinReqs/${gid}/${uid}`));
   dbg('approve: writing resp');
-  await set(ref(db, `guildJoinResp/${uid}`), { approved: true, guildName: g.name, ts: Date.now() });
+  // 不直接寫申請者的 players 節點（安全規則不允許），
+  // 改讓申請者收到批准通知後自己寫自己的 guildId
+  await set(ref(db, `guildJoinResp/${uid}`), { approved: true, guildName: g.name, guildId: gid, ts: Date.now() });
   dbg('approve: done');
   notify(`已同意 ${name} 加入公會`, 'ok');
   if (G.currentTab === 'guild') renderGuildTab();
@@ -6852,12 +6852,11 @@ async function handleGuildJoinResp(resp) {
     notify('入會申請被拒絕', 'err');
     return;
   }
-  dbg('handleResp: approved reading player');
-  const playerSnap = await get(ref(db, `players/${G.uid}`));
-  if (playerSnap.exists()) {
-    G.player = { ...G.player, ...playerSnap.val() };
-    dbg('handleResp: guildId='+G.player.guildId);
-  }
+  dbg('handleResp: approved, writing own guildId');
+  // 申請者自己寫自己的 guildId（安全規則允許）
+  await set(ref(db, `players/${G.uid}/guildId`), resp.guildId);
+  G.player.guildId = resp.guildId;
+  dbg('handleResp: guildId='+resp.guildId);
   G._myGuild = null;
   notify(`🎉 已獲准加入「${resp.guildName || '公會'}」！`, 'ok');
   dbg('handleResp: switchTab guild');
