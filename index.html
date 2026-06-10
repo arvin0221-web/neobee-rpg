@@ -6774,8 +6774,9 @@ async function listenGuildJoinRequests() {
 }
 
 window.approveGuildJoin = async (gid, uid, name) => {
+  console.log('[approveGuildJoin] start', gid, uid, name);
   const gs2 = await get(ref(db, `guilds/${gid}`));
-  if (!gs2.exists()) return;
+  if (!gs2.exists()) { console.log('[approveGuildJoin] guild not found'); return; }
   const g = gs2.val();
   const members = [...(g.members || [])];
   if (members.length >= 5) {
@@ -6784,12 +6785,15 @@ window.approveGuildJoin = async (gid, uid, name) => {
     return;
   }
   if (!members.includes(uid)) members.push(uid);
-  // 依序寫入，確保所有操作完成再通知申請者
+  console.log('[approveGuildJoin] writing members', members);
   await set(ref(db, `guilds/${gid}/members`), members);
+  console.log('[approveGuildJoin] writing guildId to player');
   await set(ref(db, `players/${uid}/guildId`), gid);
+  console.log('[approveGuildJoin] removing req');
   await remove(ref(db, `guildJoinReqs/${gid}/${uid}`));
-  // 最後才寫通知，確保資料已就緒
+  console.log('[approveGuildJoin] writing resp');
   await set(ref(db, `guildJoinResp/${uid}`), { approved: true, guildName: g.name, ts: Date.now() });
+  console.log('[approveGuildJoin] done');
   notify(`已同意 ${name} 加入公會`, 'ok');
   if (G.currentTab === 'guild') renderGuildTab();
 };
@@ -6816,10 +6820,11 @@ function listenGuildJoinResponse() {
 
 let _guildRespProcessed = false; // 防止重複處理
 async function handleGuildJoinResp(resp) {
+  console.log('[handleGuildJoinResp] called', resp, 'processed=', _guildRespProcessed);
   if (_guildRespProcessed) return;
-  if (!resp || !resp.ts) return;
-  // 若是舊的回應（超過10分鐘），忽略
+  if (!resp || !resp.ts) { console.log('[handleGuildJoinResp] no ts, skip'); return; }
   if (Date.now() - resp.ts > 10 * 60 * 1000) {
+    console.log('[handleGuildJoinResp] expired, removing');
     await remove(ref(db, `guildJoinResp/${G.uid}`));
     return;
   }
@@ -6831,13 +6836,15 @@ async function handleGuildJoinResp(resp) {
     notify('入會申請被拒絕', 'err');
     return;
   }
-  // 確認 Firebase 上的 guildId 已更新
+  console.log('[handleGuildJoinResp] approved! reading player data');
   const playerSnap = await get(ref(db, `players/${G.uid}`));
   if (playerSnap.exists()) {
     G.player = { ...G.player, ...playerSnap.val() };
+    console.log('[handleGuildJoinResp] G.player.guildId=', G.player.guildId);
   }
   G._myGuild = null;
   notify(`🎉 已獲准加入「${resp.guildName || '公會'}」！`, 'ok');
+  console.log('[handleGuildJoinResp] calling switchTab guild');
   switchTab('guild');
 }
 
