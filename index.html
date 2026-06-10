@@ -6773,10 +6773,26 @@ async function listenGuildJoinRequests() {
   });
 }
 
+function dbg(msg) {
+  // 顯示在畫面上的 debug 訊息
+  let el = document.getElementById('_dbgOverlay');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = '_dbgOverlay';
+    el.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:99999;background:#000c;color:#0f0;font-size:11px;padding:6px;max-height:40vh;overflow-y:auto;font-family:monospace;pointer-events:none';
+    document.body.appendChild(el);
+  }
+  const line = document.createElement('div');
+  line.textContent = new Date().toLocaleTimeString() + ' ' + msg;
+  el.appendChild(line);
+  el.scrollTop = el.scrollHeight;
+  console.log('[DBG]', msg);
+}
+
 window.approveGuildJoin = async (gid, uid, name) => {
-  console.log('[approveGuildJoin] start', gid, uid, name);
+  dbg('approveGuildJoin start gid='+gid+' uid='+uid.slice(0,8));
   const gs2 = await get(ref(db, `guilds/${gid}`));
-  if (!gs2.exists()) { console.log('[approveGuildJoin] guild not found'); return; }
+  if (!gs2.exists()) { dbg('approve: guild not found'); return; }
   const g = gs2.val();
   const members = [...(g.members || [])];
   if (members.length >= 5) {
@@ -6785,15 +6801,15 @@ window.approveGuildJoin = async (gid, uid, name) => {
     return;
   }
   if (!members.includes(uid)) members.push(uid);
-  console.log('[approveGuildJoin] writing members', members);
+  dbg('approve: writing members len='+members.length);
   await set(ref(db, `guilds/${gid}/members`), members);
-  console.log('[approveGuildJoin] writing guildId to player');
+  dbg('approve: writing guildId');
   await set(ref(db, `players/${uid}/guildId`), gid);
-  console.log('[approveGuildJoin] removing req');
+  dbg('approve: removing req');
   await remove(ref(db, `guildJoinReqs/${gid}/${uid}`));
-  console.log('[approveGuildJoin] writing resp');
+  dbg('approve: writing resp');
   await set(ref(db, `guildJoinResp/${uid}`), { approved: true, guildName: g.name, ts: Date.now() });
-  console.log('[approveGuildJoin] done');
+  dbg('approve: done');
   notify(`已同意 ${name} 加入公會`, 'ok');
   if (G.currentTab === 'guild') renderGuildTab();
 };
@@ -6820,11 +6836,11 @@ function listenGuildJoinResponse() {
 
 let _guildRespProcessed = false; // 防止重複處理
 async function handleGuildJoinResp(resp) {
-  console.log('[handleGuildJoinResp] called', resp, 'processed=', _guildRespProcessed);
+  dbg('handleResp called approved='+resp?.approved+' processed='+_guildRespProcessed);
   if (_guildRespProcessed) return;
-  if (!resp || !resp.ts) { console.log('[handleGuildJoinResp] no ts, skip'); return; }
+  if (!resp || !resp.ts) { dbg('handleResp: no ts skip'); return; }
   if (Date.now() - resp.ts > 10 * 60 * 1000) {
-    console.log('[handleGuildJoinResp] expired, removing');
+    dbg('handleResp: expired removing');
     await remove(ref(db, `guildJoinResp/${G.uid}`));
     return;
   }
@@ -6836,15 +6852,15 @@ async function handleGuildJoinResp(resp) {
     notify('入會申請被拒絕', 'err');
     return;
   }
-  console.log('[handleGuildJoinResp] approved! reading player data');
+  dbg('handleResp: approved reading player');
   const playerSnap = await get(ref(db, `players/${G.uid}`));
   if (playerSnap.exists()) {
     G.player = { ...G.player, ...playerSnap.val() };
-    console.log('[handleGuildJoinResp] G.player.guildId=', G.player.guildId);
+    dbg('handleResp: guildId='+G.player.guildId);
   }
   G._myGuild = null;
   notify(`🎉 已獲准加入「${resp.guildName || '公會'}」！`, 'ok');
-  console.log('[handleGuildJoinResp] calling switchTab guild');
+  dbg('handleResp: switchTab guild');
   switchTab('guild');
 }
 
