@@ -670,7 +670,7 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
 
     <!-- VERSION FOOTER -->
     <div style="text-align:center;padding:3px 0;font-size:11px;color:var(--text3);letter-spacing:2px;cursor:default;user-select:none;display:inline-block;margin:0 auto;width:100%"
-      onclick="(function(){window._erudaTap=(window._erudaTap||0)+1;if(window._erudaTap>=5){window._erudaTap=0;if(window.eruda){eruda.show();return;}var s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/eruda';document.head.appendChild(s);s.onload=function(){eruda.init();eruda.show();}}})()">v1.1.79</div>
+      onclick="(function(){window._erudaTap=(window._erudaTap||0)+1;if(window._erudaTap>=5){window._erudaTap=0;if(window.eruda){eruda.show();return;}var s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/eruda';document.head.appendChild(s);s.onload=function(){eruda.init();eruda.show();}}})()">v1.1.81</div>
 
   </div>
 </div>
@@ -875,6 +875,11 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
 
 <!-- GAME SCREEN -->
 <div id="gameScreen" class="hidden">
+  <!-- 退出戰鬥按鈕（固定右上角，不與聊天重疊） -->
+  <button id="quitBattleBtn" onclick="confirmQuitBattle()" class="hidden"
+    style="position:fixed;top:12px;right:12px;z-index:400;background:rgba(0,0,0,0.6);border:1px solid #555;border-radius:8px;padding:6px 12px;font-size:12px;color:#aaa;cursor:pointer">
+    ⚑ 退出
+  </button>
   <div class="game-container">
     <div class="game-header">
       <div class="game-stage" id="gameStageText">第 1 關</div>
@@ -952,9 +957,6 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
       <div class="battle-hint" id="battleHint" style="min-height:22px"></div>
       <div class="battle-log" id="battleLog"></div>
       <div class="battle-controls" id="battleControls"></div>
-      <div style="text-align:center;margin-top:10px">
-        <button onclick="confirmQuitBattle()" style="background:transparent;border:1px solid #555;border-radius:8px;padding:6px 18px;font-size:12px;color:var(--text3);cursor:pointer">⚑ 退出戰鬥</button>
-      </div>
     </div>
   </div>
 </div>
@@ -1109,7 +1111,12 @@ const STAGE_CONFIG = [
   {stage:12,playerPts:10,monsterPts:290, exp:1000000, gold:2400000, enemyCount:5},
   {stage:13,playerPts:5, monsterPts:320, exp:1500000, gold:3600000, enemyCount:5},
   {stage:14,playerPts:5, monsterPts:360, exp:2500000, gold:6000000, enemyCount:5},
-  {stage:15,playerPts:5, monsterPts:410, exp:4000000, gold:9600000, enemyCount:5}
+  {stage:15,playerPts:5, monsterPts:410, exp:4000000,   gold:9600000,   enemyCount:5},
+  {stage:16,playerPts:5, monsterPts:490, exp:9000000,   gold:20000000,  enemyCount:5},
+  {stage:17,playerPts:5, monsterPts:590, exp:20000000,  gold:50000000,  enemyCount:5},
+  {stage:18,playerPts:5, monsterPts:720, exp:50000000,  gold:120000000, enemyCount:5},
+  {stage:19,playerPts:5, monsterPts:850, exp:120000000, gold:250000000, enemyCount:5},
+  {stage:20,playerPts:5, monsterPts:1000,exp:250000000, gold:600000000, enemyCount:5}
 ];
 const SKILLS_DEF = [
   {id:'反傷',   name:'反傷',   desc:'受到傷害時，將傷害的5%返還給攻擊者（最低1點）。每升1級+7%。',                                  baseCost:1000,  maxLvOverride:null, costMult:15},
@@ -3341,6 +3348,8 @@ function startBattle() {
   // 套用隱藏技能到所有真人隊友
   gs.team.forEach(m => applyHiddenSkills(m));
   gs.battleActive = true;
+  const qBtn = document.getElementById('quitBattleBtn');
+  if (qBtn) qBtn.classList.remove('hidden');
   gs.pendingAlloc = false;
   gs.waitingForPlayer = false;
   gs.roundNum = 1;
@@ -6234,6 +6243,7 @@ window.exitPvp = async () => {
   document.getElementById('pvpResultOverlay').classList.add('hidden');
   document.getElementById('gameScreen').classList.add('hidden');
   document.getElementById('resultOverlay').classList.add('hidden');
+  const _qb2 = document.getElementById('quitBattleBtn'); if (_qb2) _qb2.classList.add('hidden');
   hideGameChat();
   G.isPvp = false;
   const tid = G.teamId;
