@@ -670,7 +670,7 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
 
     <!-- VERSION FOOTER -->
     <div style="text-align:center;padding:3px 0;font-size:11px;color:var(--text3);letter-spacing:2px;cursor:default;user-select:none;display:inline-block;margin:0 auto;width:100%"
-      onclick="(function(){window._erudaTap=(window._erudaTap||0)+1;if(window._erudaTap>=5){window._erudaTap=0;if(window.eruda){eruda.show();return;}var s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/eruda';document.head.appendChild(s);s.onload=function(){eruda.init();eruda.show();}}})()">v1.1.84</div>
+      onclick="(function(){window._erudaTap=(window._erudaTap||0)+1;if(window._erudaTap>=5){window._erudaTap=0;if(window.eruda){eruda.show();return;}var s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/eruda';document.head.appendChild(s);s.onload=function(){eruda.init();eruda.show();}}})()">v1.1.86</div>
 
   </div>
 </div>
@@ -2833,6 +2833,316 @@ function sendSkillRequest(jobId, targetIdx) {
 }
 
 // Host executes active skill
+
+// ===== 職業主動技能特效 =====
+
+// 盾戰士：己方全體綠色魔法陣（3秒）
+function fxShieldMagicCircle() {
+  const gs = G.gameState;
+  if (!gs) return;
+  gs.team.forEach((m, i) => {
+    if (m.hp <= 0) return;
+    const card = getFxCard(false, i);
+    if (!card) return;
+    const svg = document.createElementNS('http://www.w3.org/2000/svg','svg');
+    svg.style.cssText = 'position:absolute;inset:-8px;width:calc(100%+16px);height:calc(100%+16px);pointer-events:none;z-index:28;overflow:visible';
+    const cx = 50, cy = 50;
+    // 外圈
+    const circle1 = document.createElementNS('http://www.w3.org/2000/svg','circle');
+    circle1.setAttribute('cx','50%'); circle1.setAttribute('cy','50%');
+    circle1.setAttribute('r','47%');
+    circle1.style.cssText = 'fill:none;stroke:#22c55e;stroke-width:2;opacity:0.85;filter:drop-shadow(0 0 6px #22c55eaa)';
+    // 內圈
+    const circle2 = document.createElementNS('http://www.w3.org/2000/svg','circle');
+    circle2.setAttribute('cx','50%'); circle2.setAttribute('cy','50%');
+    circle2.setAttribute('r','35%');
+    circle2.style.cssText = 'fill:none;stroke:#4ade80;stroke-width:1.5;opacity:0.7';
+    // 六芒星線條
+    const hexPts = Array.from({length:6},(_,k)=>{
+      const a = k*60 - 90;
+      const r = 0.42;
+      return `${50+r*100*Math.cos(a*Math.PI/180)}% ${50+r*100*Math.sin(a*Math.PI/180)}%`;
+    });
+    const star = document.createElementNS('http://www.w3.org/2000/svg','polygon');
+    star.setAttribute('points', hexPts.join(' '));
+    star.style.cssText = 'fill:#22c55e22;stroke:#22c55e;stroke-width:1;opacity:0.8';
+    svg.appendChild(circle1); svg.appendChild(circle2); svg.appendChild(star);
+    card.appendChild(svg);
+
+    // 旋轉動畫
+    let angle = 0;
+    const rot = setInterval(() => {
+      angle += 2;
+      svg.style.transform = `rotate(${angle}deg)`;
+      svg.style.transformOrigin = 'center';
+    }, 30);
+
+    // 淡入
+    svg.style.opacity = '0';
+    svg.style.transition = 'opacity 300ms';
+    requestAnimationFrame(() => requestAnimationFrame(() => { svg.style.opacity = '1'; }));
+
+    // 3秒後淡出
+    setTimeout(() => {
+      clearInterval(rot);
+      svg.style.transition = 'opacity 600ms';
+      svg.style.opacity = '0';
+      setTimeout(() => svg.remove(), 650);
+    }, 3000);
+  });
+  // 全體綠光覆蓋
+  gs.team.forEach((m, i) => {
+    if (m.hp <= 0) return;
+    const fxEl = getFxEl(false, i);
+    if (!fxEl) return;
+    const glow = document.createElement('div');
+    glow.style.cssText = 'position:absolute;inset:0;border-radius:10px;pointer-events:none;z-index:27;background:radial-gradient(circle,#22c55e33,transparent 70%);opacity:1;transition:opacity 3s ease-out';
+    fxEl.appendChild(glow);
+    setTimeout(() => { glow.style.opacity='0'; setTimeout(()=>glow.remove(),600); }, 2500);
+  });
+}
+
+// 刺客：絢麗長持續斬擊
+function fxAssassinSlash(fxEl, slashColor) {
+  if (!fxEl) return;
+  const card = fxEl.parentElement;
+  const W = card ? card.offsetWidth||120 : 120;
+  const H = card ? card.offsetHeight||90 : 90;
+  const color = slashColor || '#a855f7';
+  const glow = slashColor === 'red' ? '#ff3300' : '#c084fc';
+
+  const svg = document.createElementNS('http://www.w3.org/2000/svg','svg');
+  svg.style.cssText = `position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:26;overflow:visible`;
+  fxEl.appendChild(svg);
+
+  const defs = document.createElementNS('http://www.w3.org/2000/svg','defs');
+  const gid = 'ag'+Date.now();
+  const grad = document.createElementNS('http://www.w3.org/2000/svg','linearGradient');
+  grad.setAttribute('id',gid); grad.setAttribute('x1','0%'); grad.setAttribute('y1','0%');
+  grad.setAttribute('x2','100%'); grad.setAttribute('y2','0%');
+  [['0%','transparent'],['20%',glow,'0.4'],['50%','#ffffff','1'],['75%',glow,'0.7'],['100%','transparent']].forEach(([o,c,op])=>{
+    const s=document.createElementNS('http://www.w3.org/2000/svg','stop');
+    s.setAttribute('offset',o); s.setAttribute('stop-color',c);
+    if(op) s.setAttribute('stop-opacity',op);
+    grad.appendChild(s);
+  });
+  defs.appendChild(grad); svg.appendChild(defs);
+
+  const angle = -35, rad = angle*Math.PI/180;
+  const len = Math.sqrt(W*W+H*H)*1.2;
+  const cx=W*0.5, cy=H*0.48;
+  const x1=cx-Math.cos(rad)*len*0.5, y1=cy-Math.sin(rad)*len*0.5;
+  const x2=cx+Math.cos(rad)*len*0.5, y2=cy+Math.sin(rad)*len*0.5;
+
+  const mkL = (w, col, blur, op) => {
+    const l=document.createElementNS('http://www.w3.org/2000/svg','line');
+    l.setAttribute('x1',x1); l.setAttribute('y1',y1);
+    l.setAttribute('x2',x2); l.setAttribute('y2',y2);
+    l.style.cssText = `stroke:${col};stroke-width:${w};stroke-linecap:round;opacity:${op};${blur?'filter:blur('+blur+'px)':''}`;
+    return l;
+  };
+  const outerL = mkL(30, glow, 10, 0);
+  const glowL  = mkL(18, glow, 4, 0);
+  const coreL  = mkL(5, `url(#${gid})`, 0, 0);
+  const shineL = mkL(1.5,'#fff',0,0);
+  [outerL,glowL,coreL,shineL].forEach(l=>svg.appendChild(l));
+
+  // 快速出現
+  requestAnimationFrame(()=>{
+    [outerL,glowL,coreL,shineL].forEach(l=>{l.style.transition='opacity 40ms';});
+    outerL.style.opacity='0.4'; glowL.style.opacity='0.8'; coreL.style.opacity='1'; shineL.style.opacity='1';
+    // 1秒後緩慢淡出
+    setTimeout(()=>{
+      [outerL,glowL,coreL,shineL].forEach(l=>{l.style.transition='opacity 1000ms ease-in';});
+      outerL.style.opacity='0'; glowL.style.opacity='0'; coreL.style.opacity='0'; shineL.style.opacity='0';
+    }, 400);
+  });
+
+  const border = document.createElement('div');
+  border.style.cssText = `position:absolute;inset:0;border-radius:10px;pointer-events:none;z-index:25;box-shadow:inset 0 0 28px 8px ${glow}99,0 0 22px 6px ${glow}66;opacity:1;transition:opacity 1400ms ease-out`;
+  fxEl.appendChild(border);
+  requestAnimationFrame(()=>requestAnimationFrame(()=>{border.style.opacity='0';}));
+
+  setTimeout(()=>{svg.remove();border.remove();},1500);
+}
+
+// 冰霜法師：對方全體冰凍特效
+function fxFreezeAll() {
+  const gs = G.gameState;
+  if (!gs) return;
+  gs.enemies.forEach((e, i) => {
+    if (e.hp <= 0) return;
+    const card = getFxCard(true, i);
+    const fxEl = getFxEl(true, i);
+    if (!card || !fxEl) return;
+
+    // 冰藍覆蓋層
+    const ice = document.createElement('div');
+    ice.style.cssText = 'position:absolute;inset:0;border-radius:10px;pointer-events:none;z-index:28;background:linear-gradient(135deg,#bae6fd88,#0ea5e966,#38bdf844);border:2px solid #38bdf8aa;opacity:0;transition:opacity 250ms ease-out';
+    fxEl.appendChild(ice);
+    requestAnimationFrame(()=>requestAnimationFrame(()=>{ice.style.opacity='1';}));
+
+    // 冰晶粒子（向上飄）
+    for (let k=0; k<8; k++) {
+      setTimeout(()=>{
+        const px = 10+Math.random()*80, py = 20+Math.random()*60;
+        const star = document.createElement('div');
+        star.style.cssText = `position:absolute;left:${px}%;top:${py}%;width:6px;height:6px;pointer-events:none;z-index:29;color:#bae6fd;font-size:8px;animation:none;transition:transform 800ms ease-out,opacity 800ms ease-out;transform:translateY(0);opacity:1`;
+        star.textContent = '❄';
+        fxEl.appendChild(star);
+        requestAnimationFrame(()=>requestAnimationFrame(()=>{
+          star.style.transform=`translateY(-${15+Math.random()*20}px)`;
+          star.style.opacity='0';
+        }));
+        setTimeout(()=>star.remove(),850);
+      }, k*80);
+    }
+
+    // 冰凍光暈
+    const glow = document.createElement('div');
+    glow.style.cssText = 'position:absolute;inset:0;border-radius:10px;pointer-events:none;z-index:27;box-shadow:0 0 20px 6px #38bdf899,inset 0 0 16px 4px #bae6fd66;opacity:1;transition:opacity 1.5s ease-out';
+    fxEl.appendChild(glow);
+
+    // 1.8秒後消退
+    setTimeout(()=>{
+      ice.style.transition='opacity 600ms'; ice.style.opacity='0';
+      glow.style.opacity='0';
+      setTimeout(()=>{ice.remove(); glow.remove();},650);
+    },1800);
+  });
+}
+
+// 精靈術師：藤蔓纏繞特效
+function fxVinesBind(targetIdx) {
+  const fxEl = getFxEl(true, targetIdx);
+  const card  = getFxCard(true, targetIdx);
+  if (!fxEl || !card) return;
+  const W = card.offsetWidth||120;
+  const H = card.offsetHeight||90;
+
+  const svg = document.createElementNS('http://www.w3.org/2000/svg','svg');
+  svg.style.cssText = `position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:28;overflow:visible`;
+  fxEl.appendChild(svg);
+
+  // 藤蔓路徑（多條曲線纏繞邊框）
+  const vines = [
+    `M0,${H*0.3} Q${W*0.2},${H*0.1} ${W*0.4},${H*0.25} Q${W*0.6},${H*0.4} ${W*0.8},${H*0.2} Q${W},${H*0.05} ${W},${H*0.3}`,
+    `M0,${H*0.7} Q${W*0.15},${H*0.85} ${W*0.35},${H*0.75} Q${W*0.55},${H*0.65} ${W*0.75},${H*0.8} Q${W*0.9},${H*0.9} ${W},${H*0.7}`,
+    `M${W*0.1},0 Q${W*0.3},${H*0.15} ${W*0.2},${H*0.4} Q${W*0.1},${H*0.6} ${W*0.25},${H}`,
+    `M${W*0.7},0 Q${W*0.9},${H*0.2} ${W*0.8},${H*0.5} Q${W*0.7},${H*0.7} ${W*0.85},${H}`,
+  ];
+
+  vines.forEach((d, vi) => {
+    const path = document.createElementNS('http://www.w3.org/2000/svg','path');
+    path.setAttribute('d', d);
+    const len = 300;
+    path.style.cssText = `fill:none;stroke:#16a34a;stroke-width:3;stroke-linecap:round;opacity:0.9;filter:drop-shadow(0 0 3px #22c55eaa);stroke-dasharray:${len};stroke-dashoffset:${len}`;
+    svg.appendChild(path);
+    // 藤蔓生長動畫
+    setTimeout(()=>{
+      path.style.transition = `stroke-dashoffset ${300+vi*100}ms ease-out`;
+      path.style.strokeDashoffset = '0';
+      // 小葉子
+      for (let li=0; li<3; li++) {
+        const leaf = document.createElementNS('http://www.w3.org/2000/svg','text');
+        const t = 0.2+li*0.3;
+        // 粗略算路徑上的點
+        const lx = W*(0.1+vi*0.2+li*0.15), ly = H*(0.2+vi*0.2+li*0.15);
+        leaf.setAttribute('x', lx); leaf.setAttribute('y', ly);
+        leaf.setAttribute('font-size','10');
+        leaf.style.cssText = 'opacity:0;transition:opacity 300ms';
+        leaf.textContent = '🌿';
+        svg.appendChild(leaf);
+        setTimeout(()=>{ leaf.style.opacity='0.9'; },400+vi*100+li*80);
+      }
+    }, vi*80);
+  });
+
+  // 綠色光暈
+  const glow = document.createElement('div');
+  glow.style.cssText = 'position:absolute;inset:0;border-radius:10px;pointer-events:none;z-index:27;box-shadow:0 0 16px 5px #16a34a88,inset 0 0 12px 3px #22c55e44;border:2px solid #22c55e66;opacity:1;transition:opacity 2s ease-out';
+  fxEl.appendChild(glow);
+
+  // 淡出
+  setTimeout(()=>{
+    svg.style.transition='opacity 700ms'; svg.style.opacity='0';
+    glow.style.opacity='0';
+    setTimeout(()=>{svg.remove(); glow.remove();},750);
+  }, 3500);
+}
+
+// 爆炎法師：烈焰爆炸特效（比普通爆炸更猛，帶火柱）
+function fxFireBlast(fxEl, card, isChain=false) {
+  if (!card) return;
+  const W = card.offsetWidth||120;
+  const H = card.offsetHeight||90;
+  const cx=W/2, cy=H*0.45;
+
+  // 火焰覆蓋閃光
+  const flash = document.createElement('div');
+  flash.style.cssText = `position:absolute;inset:-4px;border-radius:12px;pointer-events:none;z-index:35;background:radial-gradient(circle,${isChain?'#ff6600dd':'#ff4400cc'} 0%,#ff880066 50%,transparent 80%);opacity:1;transition:opacity ${isChain?'300ms':'200ms'} ease-out`;
+  card.appendChild(flash);
+  requestAnimationFrame(()=>requestAnimationFrame(()=>{flash.style.opacity='0';}));
+  setTimeout(()=>flash.remove(), isChain?350:280);
+
+  // 衝擊波（火色）
+  [0,90,180].forEach((delay,ri)=>{
+    setTimeout(()=>{
+      const ring = document.createElement('div');
+      const sz=14;
+      ring.style.cssText = `position:absolute;left:${cx-sz/2}px;top:${cy-sz/2}px;width:${sz}px;height:${sz}px;border-radius:50%;border:${2.5-ri*0.5}px solid ${['#ff4400','#ff8800','#ffcc00'][ri]};pointer-events:none;z-index:33;box-shadow:0 0 ${12-ri*3}px ${['#ff4400','#ff8800','#ffcc00'][ri]}aa;transition:transform .5s cubic-bezier(.1,.6,.3,1),opacity .5s ease-out;`;
+      card.appendChild(ring);
+      requestAnimationFrame(()=>requestAnimationFrame(()=>{
+        ring.style.transform=`scale(${isChain?5:7})`;
+        ring.style.opacity='0';
+      }));
+      setTimeout(()=>ring.remove(),580);
+    },delay);
+  });
+
+  // 火花粒子
+  const cnt = isChain?14:20;
+  for (let k=0;k<cnt;k++){
+    const angle=(360/cnt)*k+Math.random()*12;
+    const dist=35+Math.random()*(isChain?45:60);
+    const sz=2+Math.random()*5;
+    const rad=angle*Math.PI/180;
+    const colors=['#ff4400','#ff8800','#ffcc00','#ffffff','#ff6600'];
+    setTimeout(()=>{
+      spawnParticle(card,{
+        x:cx-sz/2, y:cy-sz/2, size:sz,
+        color:colors[Math.floor(Math.random()*colors.length)],
+        tx:Math.cos(rad)*dist, ty:Math.sin(rad)*dist,
+        dur:500+Math.random()*350
+      });
+    },Math.random()*80);
+  }
+
+  // 上升火柱
+  for (let k=0;k<(isChain?5:8);k++){
+    setTimeout(()=>{
+      const x=cx+(Math.random()-.5)*W*0.7;
+      spawnParticle(card,{
+        x, y:cy, size:3+Math.random()*4,
+        color:['#ff4400','#ff8800','#ffcc00'][Math.floor(Math.random()*3)],
+        tx:(Math.random()-.5)*18, ty:-(30+Math.random()*45),
+        dur:450+Math.random()*300
+      });
+    },k*35);
+  }
+
+  // 卡片震動
+  let st=0;
+  const sh=setInterval(()=>{
+    const mag=st<2?10:5;
+    card.style.transform=`translate(${(Math.random()-.5)*mag}px,${(Math.random()-.5)*mag*.6}px)`;
+    if(++st>6){clearInterval(sh);card.style.transform='';}
+  },45);
+
+  card.style.boxShadow='0 0 28px 10px #ff440088';
+  setTimeout(()=>{card.style.boxShadow='';},500);
+}
+
 function executeActiveSkill(actor, targetIdx) {
   const gs = G.gameState;
   const job = JOBS_DEF.find(j => j.id === actor.job);
@@ -2840,7 +3150,6 @@ function executeActiveSkill(actor, targetIdx) {
   actor.activeUsed = (actor.activeUsed || 0) + 1;
 
   if (actor.job === '盾戰士') {
-    // Heal all: restore 30% of lost HP
     gs.team.forEach(m => {
       if (m.hp <= 0) return;
       const lost = m.maxHp - m.hp;
@@ -2851,6 +3160,7 @@ function executeActiveSkill(actor, targetIdx) {
       }
     });
     addLog(`🛡 <span style="color:#4f8ef7">${actor.name}</span> 使用守護之盾！全隊回血！`);
+    requestAnimationFrame(() => fxShieldMagicCircle());
   }
 
   else if (actor.job === '刺客') {
@@ -2895,7 +3205,7 @@ function executeActiveSkill(actor, targetIdx) {
     requestAnimationFrame(() => {
       const fxEl = getFxEl(defIsEnemy, defIdx);
       const card  = getFxCard(defIsEnemy, defIdx);
-      fxSlash(fxEl, false, false, brutish?'red':'#a855f7');
+      fxAssassinSlash(fxEl, brutish?'red':'#a855f7');
       setTimeout(() => {
         fxHitFlash(fxEl); fxParticles(card, dmg, isCrit, brutish?'red':'#a855f7');
         fxDamageNumber(fxEl, dmg, isCrit, false, false, brutish);
@@ -2924,7 +3234,7 @@ function executeActiveSkill(actor, targetIdx) {
       if (target.hp <= 0 && !saved) anyDied = true;
       addLog(`💥 ${target.name} 受到 <span class="red">${dmg}</span> 傷害${target.hp<=0?' 💀':''}`);
       writeBattleEvent({ type:'attack', attIsEnemy:false, attIdx:gs.team.indexOf(actor), defIsEnemy, defIdx, dmg, isCrit:false, isSlash:false, slashColor:'red', dying: target.hp<=0&&!saved });
-      requestAnimationFrame(() => { const fxEl=getFxEl(defIsEnemy,defIdx); const card=getFxCard(defIsEnemy,defIdx); fxHitFlash(fxEl); fxParticles(card,dmg,false,'red'); fxDamageNumber(fxEl,dmg,false,false,false,false); if(target.hp<=0&&!saved)setTimeout(()=>fxExplosion(fxEl,card),200); });
+      requestAnimationFrame(() => { const fxEl=getFxEl(defIsEnemy,defIdx); const card=getFxCard(defIsEnemy,defIdx); fxFireBlast(fxEl,card,false); fxDamageNumber(fxEl,dmg,false,false,false,false); });
     });
     renderBattle(); writeBattleState(); buildActiveSkillBar();
     if (anyDied) {
@@ -2941,7 +3251,7 @@ function executeActiveSkill(actor, targetIdx) {
             if (!saved) target.hp = Math.max(0, target.hp - dmg);
             addLog(`💥 ${target.name} 再受到 <span class="red">${dmg}</span> 傷害${target.hp<=0?' 💀':''}`);
             writeBattleEvent({ type:'attack', attIsEnemy:false, attIdx:gs.team.indexOf(actor), defIsEnemy, defIdx, dmg, isCrit:false, isSlash:false, dying: target.hp<=0&&!saved });
-            requestAnimationFrame(()=>{ const fxEl=getFxEl(defIsEnemy,defIdx); const card=getFxCard(defIsEnemy,defIdx); fxHitFlash(fxEl); fxParticles(card,dmg,true); if(target.hp<=0&&!saved)setTimeout(()=>fxExplosion(fxEl,card),100); });
+            requestAnimationFrame(()=>{ const fxEl=getFxEl(defIsEnemy,defIdx); const card=getFxCard(defIsEnemy,defIdx); fxFireBlast(fxEl,card,true); fxDamageNumber(fxEl,dmg,false,false,false,false); });
           });
           renderBattle(); writeBattleState();
         }
@@ -2961,15 +3271,14 @@ function executeActiveSkill(actor, targetIdx) {
     gs._silenced[targetIdx] = (gs._silenced[targetIdx] || 0) + 4;
     addLog(`✨ <span style="color:#10b981">${actor.name}</span> 封印 ${target.name}！4個回合無法攻擊！`);
     requestAnimationFrame(() => {
-      const fxEl = getFxEl(true, targetIdx);
-      const card  = getFxCard(true, targetIdx);
-      fxBlock(fxEl, card);
+      fxVinesBind(targetIdx);
     });
   }
 
   else if (actor.job === '冰霜法師') {
-    gs._frozenThisRound = gs.roundNum || 1; // enemies skip turns in this round
+    gs._frozenThisRound = gs.roundNum || 1;
     addLog(`❄ <span style="color:#38bdf8">${actor.name}</span> 冰封！所有敵人本回合無法攻擊，並受到已損失血量30%傷害！`);
+    requestAnimationFrame(() => fxFreezeAll());
     gs.enemies.forEach((target, i) => {
       if (target.hp <= 0) return;
       const lost = target.maxHp - target.hp;
@@ -2977,7 +3286,7 @@ function executeActiveSkill(actor, targetIdx) {
       target.hp = Math.max(0, target.hp - dmg);
       addLog(`❄ ${target.name} 受到冰霜傷害 <span class="cyan">${dmg}</span>${target.hp<=0?' 💀':''}`);
       writeBattleEvent({ type:'attack', attIsEnemy:false, attIdx:gs.team.indexOf(actor), defIsEnemy:true, defIdx:i, dmg, isCrit:false, isSlash:false, dying: target.hp<=0 });
-      requestAnimationFrame(() => { const fxEl=getFxEl(true,i); const card=getFxCard(true,i); fxHitFlash(fxEl); fxDamageNumber(fxEl,dmg,false,false,false,true); if(target.hp<=0)setTimeout(()=>fxExplosion(fxEl,card),200); });
+      requestAnimationFrame(() => { const fxEl=getFxEl(true,i); const card=getFxCard(true,i); fxDamageNumber(fxEl,dmg,false,false,false,true); if(target.hp<=0)setTimeout(()=>fxExplosion(fxEl,card),200); });
     });
   }
 
@@ -6288,32 +6597,62 @@ async function simOneTick(bot) {
   if (snap.exists()) {
     p = snap.val();
   } else {
-    // First run: initialise player
     p = { name: bot.name, uid, exp:0, gold:0, skills:{}, inventory:[], equipped:{}, createdAt: Date.now() };
   }
 
+  // ── 每個 bot 有固定「個性」（由 uid hash 決定，不每次亂）──
+  const uidHash = uid.split('').reduce((a,c)=>a+c.charCodeAt(0),0);
+  const personality = {
+    // 活躍度：0=幾乎不玩, 1=偶爾, 2=一般, 3=頻繁, 4=肝帝
+    activity:   (uidHash % 5),
+    // 偏好：0=純刷關, 1=重副本, 2=重技能, 3=均衡
+    playstyle:  (uidHash >> 2) % 4,
+    // 運氣：影響本次運行是否有額外爆發
+    lucky:      (uidHash >> 4) % 3,
+    // 技術：影響能打到幾關
+    skill:      (uidHash >> 6) % 4,
+  };
+
   const rankIdx = getRankIndex(p.exp || 0);
-  const rank = RANKS[rankIdx];
-  let exp  = p.exp  || 0;
-  let gold = p.gold || 0;
-  let skills   = { ...(p.skills   || {}) };
+  let exp    = p.exp   || 0;
+  let gold   = p.gold  || 0;
+  let skills = { ...(p.skills   || {}) };
   let inventory = [...(Array.isArray(p.inventory) ? p.inventory : Object.values(p.inventory || {}))];
   let equipped  = { ...(p.equipped  || {}) };
 
-  // ── 1. Simulate 2~4 normal runs ──
-  const runs = 2 + Math.floor(Math.random() * 3); // 2,3,4
+  // ── 1. 根據活躍度決定是否跑步、跑幾次 ──
+  // activity 0: 30% 機率根本不模擬這次
+  if (personality.activity === 0 && Math.random() > 0.3) {
+    // 懶惰 bot，這次什麼都不做
+    await set(ref(db, `players/${uid}`), { name:bot.name, uid, exp, gold, skills, inventory, equipped, createdAt: p.createdAt||Date.now() });
+    await set(ref(db, `nameIndex/${bot.name}`), uid);
+    return;
+  }
+
+  // 活躍度對應的基礎跑數
+  const baseRuns = [1, 1, 2, 3, 4][personality.activity];
+  // 加上隨機波動
+  const variance = Math.floor(Math.random() * (personality.activity + 2));
+  const runs = Math.max(0, baseRuns + variance - 1);
+
   for (let r = 0; r < runs; r++) {
-    // Determine end stage based on rank
+    // 技術決定能打到哪關
+    const skillBonus = personality.skill;
     let endStage;
-    if (rankIdx <= 2) {           // 黑鐵~白銀: end at stage 5 or 6
-      endStage = 5 + Math.floor(Math.random() * 2);
-    } else if (rankIdx <= 5) {    // 黃金~鑽石: end at stage 7~9
-      endStage = 7 + Math.floor(Math.random() * 3);
-    } else {                       // 翡翠以上: end at stage 9 or 10
-      endStage = 9 + Math.floor(Math.random() * 2);
+    if (rankIdx <= 1) {
+      endStage = 1 + skillBonus + Math.floor(Math.random() * 3);
+    } else if (rankIdx <= 3) {
+      endStage = 3 + skillBonus + Math.floor(Math.random() * 4);
+    } else if (rankIdx <= 6) {
+      endStage = 6 + skillBonus + Math.floor(Math.random() * 5);
+    } else {
+      endStage = 10 + skillBonus + Math.floor(Math.random() * (STAGE_CONFIG.length - 10));
     }
-    endStage = Math.min(endStage, STAGE_CONFIG.length);
-    // Accumulate rewards from stage 1 to endStage
+    // 偶爾超常發揮或失常
+    if (Math.random() < 0.1) endStage += 3; // 超常發揮
+    if (Math.random() < 0.15) endStage = Math.max(1, endStage - Math.floor(Math.random()*4)); // 失常
+    endStage = Math.max(1, Math.min(endStage, STAGE_CONFIG.length));
+
     for (let s = 1; s <= endStage; s++) {
       const cfg = STAGE_CONFIG[s-1];
       exp  += cfg.exp;
@@ -6321,46 +6660,59 @@ async function simOneTick(bot) {
     }
   }
 
-  // ── 2. Simulate 0~2 dungeon runs ──
-  const dungeonRuns = Math.floor(Math.random() * 3); // 0,1,2
+  // ── 2. 副本（依偏好決定次數）──
+  let dungeonRuns = 0;
+  if (personality.playstyle === 1) {       // 重副本
+    dungeonRuns = 1 + Math.floor(Math.random() * 4);
+  } else if (personality.playstyle === 3) { // 均衡
+    dungeonRuns = Math.floor(Math.random() * 3);
+  } else {
+    dungeonRuns = Math.random() < 0.4 ? 1 : 0;
+  }
+  // 活躍度低的人少跑副本
+  if (personality.activity <= 1) dungeonRuns = Math.min(dungeonRuns, 1);
+
   for (let d = 0; d < dungeonRuns; d++) {
-    // Pick a dungeon rank <= player rank, lean toward player rank
-    const maxDiff = rankIdx;
-    const diff = Math.max(0, maxDiff - Math.floor(Math.random() * 3));
-    // Award loot
+    const maxDiff = Math.min(rankIdx, DUNGEON_BOSS.length - 1);
+    const diff = Math.max(0, maxDiff - Math.floor(Math.random() * (3 + personality.skill)));
     const item = rollEquipItem(diff);
     inventory.push(item);
-    // No gold/exp reward for dungeon in sim (boss just drops gear)
   }
 
-  // ── 3. Equip best gear per slot ──
+  // ── 3. 裝備最佳 ──
   for (const slot of ['weapon','armor','trinket']) {
     const best = simBestEquip(inventory, slot);
     if (best) equipped[slot] = best.uid;
     else delete equipped[slot];
   }
 
-  // ── 4. Buy skills with available gold ──
-  // Determine max skill level allowed by rank
-  const maxLv = simMaxSkillLv(rankIdx);
-  // Shuffle skills for random purchase order
-  const shuffled = [...SKILLS_DEF].sort(() => Math.random() - 0.5);
-  for (const sd of shuffled) {
-    let lv = skills[sd.id] || 0;
-    const cap = sd.maxLvOverride !== null ? Math.min(sd.maxLvOverride, maxLv) : maxLv;
-    while (lv < cap) {
-      const cost = simSkillCost(sd, lv);
-      if (gold >= cost) { gold -= cost; lv++; } else break;
+  // ── 4. 買技能（依偏好和活躍度決定是否花時間買）──
+  const willBuySkills = personality.playstyle !== 1 || Math.random() < 0.5;
+  if (willBuySkills) {
+    const maxLv = simMaxSkillLv(rankIdx);
+    // 偏好技能型 bot 買得更積極
+    const buyAggressiveness = personality.playstyle === 2 ? 1.5 : 1;
+    const shuffled = [...SKILLS_DEF].sort(() => Math.random() - 0.5);
+    // 有些 bot 只買 1~3 種技能（偏好），有些全買
+    const maxSkillTypes = personality.playstyle === 2
+      ? SKILLS_DEF.length
+      : 1 + Math.floor(Math.random() * 4);
+    let bought = 0;
+    for (const sd of shuffled) {
+      if (bought >= maxSkillTypes) break;
+      let lv = skills[sd.id] || 0;
+      const cap = sd.maxLvOverride !== null ? Math.min(sd.maxLvOverride, maxLv) : maxLv;
+      while (lv < cap) {
+        const cost = simSkillCost(sd, lv);
+        if (gold >= cost * buyAggressiveness) { gold -= cost; lv++; } else break;
+      }
+      if (lv > 0) { skills[sd.id] = lv; bought++; }
+      else delete skills[sd.id];
     }
-    if (lv > 0) skills[sd.id] = lv;
-    else delete skills[sd.id];
   }
 
-  // ── 5. Write back to Firebase ──
-  const update_ = { name:bot.name, uid, exp, gold, skills, inventory, equipped,
-    createdAt: p.createdAt || Date.now() };
-  await set(ref(db, `players/${uid}`), update_);
-  // Also register in nameIndex
+  // ── 5. 寫回 Firebase ──
+  await set(ref(db, `players/${uid}`), { name:bot.name, uid, exp, gold, skills, inventory, equipped, createdAt: p.createdAt||Date.now() });
   await set(ref(db, `nameIndex/${bot.name}`), uid);
 }
 
