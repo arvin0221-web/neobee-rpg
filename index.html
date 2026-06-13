@@ -670,7 +670,7 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
 
     <!-- VERSION FOOTER -->
     <div style="text-align:center;padding:3px 0;font-size:11px;color:var(--text3);letter-spacing:2px;cursor:default;user-select:none;display:inline-block;margin:0 auto;width:100%"
-      onclick="(function(){window._erudaTap=(window._erudaTap||0)+1;if(window._erudaTap>=5){window._erudaTap=0;if(window.eruda){eruda.show();return;}var s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/eruda';document.head.appendChild(s);s.onload=function(){eruda.init();eruda.show();}}})()">v1.1.88</div>
+      onclick="(function(){window._erudaTap=(window._erudaTap||0)+1;if(window._erudaTap>=5){window._erudaTap=0;if(window.eruda){eruda.show();return;}var s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/eruda';document.head.appendChild(s);s.onload=function(){eruda.init();eruda.show();}}})()">v1.1.89</div>
 
   </div>
 </div>
@@ -2835,18 +2835,21 @@ function sendSkillRequest(jobId, targetIdx) {
 // Host executes active skill
 
 // ===== 職業主動技能特效 =====
-// 持續特效：附加到 gameScreen，用 getBoundingClientRect 定位，不受 renderBattle 清除影響
+// 用卡片 ID 每幀重新查找位置，不受 renderBattle 重建影響
 
-// 工具：在 gameScreen 上建立持續覆蓋層，對齊到某張卡片
-function makePersistOverlay(cardEl, zIndex=400) {
+function raf2(fn) { requestAnimationFrame(() => requestAnimationFrame(fn)); }
+
+// 建立持續覆蓋層，用 cardId 每幀定位
+function makePersistOverlay(cardId, zIndex=400) {
   const overlay = document.createElement('div');
-  overlay.style.cssText = `position:fixed;pointer-events:none;z-index:${zIndex}`;
+  overlay.style.cssText = `position:fixed;pointer-events:none;z-index:${zIndex};transition:none`;
   document.body.appendChild(overlay);
-  // 每幀更新位置跟隨卡片
   let alive = true;
   const update = () => {
-    if (!alive || !cardEl || !cardEl.isConnected) { overlay.remove(); return; }
-    const r = cardEl.getBoundingClientRect();
+    if (!alive) return;
+    const el = document.getElementById(cardId);
+    if (!el) { requestAnimationFrame(update); return; }
+    const r = el.getBoundingClientRect();
     overlay.style.left   = r.left   + 'px';
     overlay.style.top    = r.top    + 'px';
     overlay.style.width  = r.width  + 'px';
@@ -2854,300 +2857,297 @@ function makePersistOverlay(cardEl, zIndex=400) {
     requestAnimationFrame(update);
   };
   requestAnimationFrame(update);
-  overlay.destroy = () => { alive = false; overlay.remove(); };
+  overlay.kill = (fadeDur=0) => {
+    alive = false;
+    if (fadeDur > 0) {
+      overlay.style.transition = `opacity ${fadeDur}ms`;
+      overlay.style.opacity = '0';
+      setTimeout(() => overlay.remove(), fadeDur + 50);
+    } else {
+      overlay.remove();
+    }
+  };
   return overlay;
 }
 
-// raf2: 強制兩幀後觸發 transition
-function raf2(fn) { requestAnimationFrame(() => requestAnimationFrame(fn)); }
-
-// 儲存持續特效的清理函數
-const _persistFx = {};
-function clearPersistFx(key) {
-  if (_persistFx[key]) { _persistFx[key](); delete _persistFx[key]; }
+// 儲存需要提前清除的特效
+const _activeFx = {};
+function clearFx(key) {
+  if (_activeFx[key]) { _activeFx[key](); delete _activeFx[key]; }
 }
 
-// ── 盾戰士：己方全體旋轉魔法陣 3 秒 ──
+// ── 盾戰士：己方全體旋轉六芒星魔法陣 3 秒 ──
 function fxShieldMagicCircle() {
   const gs = G.gameState;
   if (!gs) return;
   gs.team.forEach((m, i) => {
     if (m.hp <= 0) return;
-    const card = getFxCard(false, i);
-    if (!card) return;
-    const overlay = makePersistOverlay(card, 420);
-    overlay.innerHTML = `<svg viewBox="0 0 100 100" width="100%" height="100%" xmlns="http://www.w3.org/2000/svg">
-      <defs><filter id="mgf"><feGaussianBlur stdDeviation="1.5"/></filter></defs>
-      <circle cx="50" cy="50" r="47" fill="none" stroke="#22c55e" stroke-width="1.8" filter="url(#mgf)" opacity="0.9"/>
-      <circle cx="50" cy="50" r="35" fill="none" stroke="#4ade80" stroke-width="1.2" opacity="0.7"/>
-      <circle cx="50" cy="50" r="22" fill="none" stroke="#22c55e" stroke-width="0.8" opacity="0.5"/>
-      <polygon points="50,6 88,68 12,68" fill="#22c55e1a" stroke="#22c55e" stroke-width="1.5"/>
-      <polygon points="50,94 12,32 88,32" fill="#22c55e1a" stroke="#22c55e" stroke-width="1.5"/>
-      <circle cx="50" cy="6"  r="2.5" fill="#4ade80"/>
-      <circle cx="88" cy="68" r="2.5" fill="#4ade80"/>
-      <circle cx="12" cy="68" r="2.5" fill="#4ade80"/>
-      <circle cx="50" cy="94" r="2.5" fill="#4ade80"/>
-      <circle cx="12" cy="32" r="2.5" fill="#4ade80"/>
-      <circle cx="88" cy="32" r="2.5" fill="#4ade80"/>
-      <circle cx="50" cy="50" r="3.5" fill="#22c55e88"/>
-    </svg>`;
+    const cardId = `fc-team-${i}`;
+    const overlay = makePersistOverlay(cardId, 420);
     overlay.style.borderRadius = '10px';
-    overlay.style.boxShadow = '0 0 18px 5px #22c55e66, inset 0 0 12px 3px #22c55e33';
+    overlay.style.boxShadow = '0 0 20px 7px #22c55e88, inset 0 0 14px 4px #22c55e44';
     overlay.style.opacity = '0';
     overlay.style.transition = 'opacity 300ms';
-    const svg = overlay.querySelector('svg');
-    let angle = 0;
-    const rot = setInterval(() => { angle += 1.2; svg.style.transform = `rotate(${angle}deg)`; svg.style.transformOrigin = '50% 50%'; }, 20);
+    overlay.innerHTML = `<svg id="_shield_svg_${i}" viewBox="0 0 100 100" width="100%" height="100%" xmlns="http://www.w3.org/2000/svg" style="position:absolute;inset:0">
+      <defs>
+        <filter id="sf${i}"><feGaussianBlur stdDeviation="1.2" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+      </defs>
+      <circle cx="50" cy="50" r="47" fill="none" stroke="#22c55e" stroke-width="2" filter="url(#sf${i})"/>
+      <circle cx="50" cy="50" r="36" fill="none" stroke="#4ade80" stroke-width="1.2" opacity="0.7"/>
+      <circle cx="50" cy="50" r="24" fill="none" stroke="#22c55e" stroke-width="0.8" opacity="0.5"/>
+      <polygon points="50,7 88.3,68.5 11.7,68.5" fill="#22c55e1a" stroke="#22c55e" stroke-width="1.5" filter="url(#sf${i})"/>
+      <polygon points="50,93 11.7,31.5 88.3,31.5" fill="#22c55e1a" stroke="#22c55e" stroke-width="1.5" filter="url(#sf${i})"/>
+      <circle cx="50" cy="7"    r="3" fill="#86efac"/>
+      <circle cx="88.3" cy="68.5" r="3" fill="#86efac"/>
+      <circle cx="11.7" cy="68.5" r="3" fill="#86efac"/>
+      <circle cx="50" cy="93"   r="3" fill="#86efac"/>
+      <circle cx="11.7" cy="31.5" r="3" fill="#86efac"/>
+      <circle cx="88.3" cy="31.5" r="3" fill="#86efac"/>
+      <circle cx="50" cy="50"   r="4" fill="#22c55e99"/>
+    </svg>`;
     raf2(() => { overlay.style.opacity = '1'; });
+    let angle = 0;
+    const svg = overlay.querySelector('svg');
+    const rot = setInterval(() => {
+      angle = (angle + 1.2) % 360;
+      svg.style.transform = `rotate(${angle}deg)`;
+      svg.style.transformOrigin = '50% 50%';
+    }, 20);
     setTimeout(() => {
       clearInterval(rot);
-      overlay.style.transition = 'opacity 700ms';
-      overlay.style.opacity = '0';
-      setTimeout(() => overlay.destroy(), 750);
+      overlay.kill(700);
     }, 3000);
   });
 }
 
-// ── 刺客：三層絢麗斬擊，1.5 秒淡出 ──
+// ── 刺客：三層絢麗斬擊，緩慢淡出 ──
 function fxAssassinSlash(fxEl, slashColor) {
-  if (!fxEl) return;
-  const card = fxEl.parentElement;
+  const card = fxEl?.parentElement;
+  if (!card) return;
+  // 找卡片 id
+  const cardId = card.id;
+  if (!cardId) return;
   const glow = slashColor === 'red' ? '#ff3300' : '#d946ef';
-  const overlay = makePersistOverlay(card, 421);
-  overlay.innerHTML = `<svg viewBox="0 0 120 90" width="100%" height="100%" xmlns="http://www.w3.org/2000/svg" style="overflow:visible">
+  const overlay = makePersistOverlay(cardId, 421);
+  overlay.style.borderRadius = '10px';
+  overlay.style.boxShadow = `0 0 30px 10px ${glow}99, inset 0 0 20px 6px ${glow}44`;
+  overlay.style.opacity = '0';
+  overlay.style.transition = 'opacity 40ms';
+  overlay.innerHTML = `<svg viewBox="0 0 100 80" width="100%" height="100%" xmlns="http://www.w3.org/2000/svg" style="position:absolute;inset:0;overflow:visible">
     <defs>
-      <linearGradient id="asg1" x1="0%" y1="0%" x2="100%" y2="0%">
+      <linearGradient id="slg${cardId}" x1="0%" y1="0%" x2="100%" y2="0%">
         <stop offset="0%" stop-color="transparent"/>
-        <stop offset="20%" stop-color="${glow}" stop-opacity="0.4"/>
-        <stop offset="50%" stop-color="white" stop-opacity="1"/>
-        <stop offset="75%" stop-color="${glow}" stop-opacity="0.5"/>
+        <stop offset="15%" stop-color="${glow}" stop-opacity="0.4"/>
+        <stop offset="45%" stop-color="white" stop-opacity="1"/>
+        <stop offset="70%" stop-color="${glow}" stop-opacity="0.5"/>
         <stop offset="100%" stop-color="transparent"/>
       </linearGradient>
-      <filter id="asglow"><feGaussianBlur stdDeviation="4"/></filter>
+      <filter id="slgf"><feGaussianBlur stdDeviation="4"/></filter>
+      <filter id="slgf2"><feGaussianBlur stdDeviation="2"/></filter>
     </defs>
-    <!-- 外暈層 -->
-    <line x1="-10" y1="80" x2="130" y2="5" stroke="${glow}" stroke-width="30" stroke-linecap="round" opacity="0.4" filter="url(#asglow)"/>
-    <!-- 柔光層 -->
-    <line x1="-10" y1="80" x2="130" y2="5" stroke="${glow}" stroke-width="16" stroke-linecap="round" opacity="0.6" filter="url(#asglow)"/>
-    <!-- 核心漸層 -->
-    <line id="asc1" x1="-10" y1="80" x2="130" y2="5" stroke="url(#asg1)" stroke-width="6" stroke-linecap="round"/>
+    <!-- 外暈 -->
+    <line x1="-5" y1="75" x2="105" y2="2"  stroke="${glow}" stroke-width="36" stroke-linecap="round" opacity="0.45" filter="url(#slgf)"/>
+    <!-- 中暈 -->
+    <line x1="-5" y1="75" x2="105" y2="2"  stroke="${glow}" stroke-width="18" stroke-linecap="round" opacity="0.65" filter="url(#slgf2)"/>
+    <!-- 核心 -->
+    <line x1="-5" y1="75" x2="105" y2="2"  stroke="url(#slg${cardId})" stroke-width="7" stroke-linecap="round"/>
     <!-- 白光 -->
-    <line x1="-10" y1="80" x2="130" y2="5" stroke="white" stroke-width="1.5" stroke-linecap="round" opacity="0.9"/>
-    <!-- 第二條（偏移）-->
-    <line x1="-10" y1="70" x2="130" y2="-5" stroke="${glow}" stroke-width="8" stroke-linecap="round" opacity="0.25" filter="url(#asglow)"/>
-    <line x1="-10" y1="70" x2="130" y2="-5" stroke="white" stroke-width="1" stroke-linecap="round" opacity="0.4"/>
-    <!-- 第三條（偏移反方向）-->
-    <line x1="-10" y1="90" x2="130" y2="15" stroke="${glow}" stroke-width="8" stroke-linecap="round" opacity="0.2" filter="url(#asglow)"/>
+    <line x1="-5" y1="75" x2="105" y2="2"  stroke="white" stroke-width="1.8" stroke-linecap="round" opacity="0.95"/>
+    <!-- 第二條 -->
+    <line x1="-5" y1="65" x2="105" y2="-8" stroke="${glow}" stroke-width="12" stroke-linecap="round" opacity="0.3" filter="url(#slgf2)"/>
+    <line x1="-5" y1="65" x2="105" y2="-8" stroke="white" stroke-width="1.2" stroke-linecap="round" opacity="0.5"/>
+    <!-- 第三條 -->
+    <line x1="-5" y1="85" x2="105" y2="12" stroke="${glow}" stroke-width="10" stroke-linecap="round" opacity="0.25" filter="url(#slgf2)"/>
+    <line x1="-5" y1="85" x2="105" y2="12" stroke="white" stroke-width="1"   stroke-linecap="round" opacity="0.4"/>
   </svg>`;
-  overlay.style.borderRadius = '10px';
-  overlay.style.boxShadow = `0 0 28px 8px ${glow}88, inset 0 0 18px 6px ${glow}44`;
-  overlay.style.opacity = '0';
-  overlay.style.transition = 'opacity 50ms';
   raf2(() => {
     overlay.style.opacity = '1';
     setTimeout(() => {
-      overlay.style.transition = 'opacity 1300ms ease-in';
+      overlay.style.transition = 'opacity 1200ms ease-in';
       overlay.style.opacity = '0';
-      setTimeout(() => overlay.destroy(), 1400);
-    }, 150);
+      setTimeout(() => overlay.kill(), 1250);
+    }, 180);
   });
 }
 
-// ── 冰霜法師：全體冰凍，持續到冰凍效果結束 ──
-const _iceOverlays = {};
+// ── 冰霜法師：全體冰凍持續特效 ──
 function fxFreezeAll() {
   const gs = G.gameState;
   if (!gs) return;
-  // 清除舊特效
-  Object.values(_iceOverlays).forEach(o => o?.destroy());
-  Object.keys(_iceOverlays).forEach(k => delete _iceOverlays[k]);
-
-  // 本輪結束後消退（估算）
   const members = (gs.team||[]).length + (gs.enemies||[]).length;
-  const dur = Math.max(4000, members * 700);
+  const dur = Math.max(3500, members * 650);
 
   gs.enemies.forEach((e, i) => {
     if (e.hp <= 0) return;
-    const card = getFxCard(true, i);
-    if (!card) return;
-    const overlay = makePersistOverlay(card, 419);
-    // 冰晶粒子容器
-    overlay.innerHTML = `<div style="position:absolute;inset:0;border-radius:10px;background:linear-gradient(135deg,#bae6fd99,#0ea5e966,#38bdf877);border:2px solid #38bdf8bb;box-shadow:0 0 16px 5px #38bdf899,inset 0 0 12px 4px #bae6fd55"></div>
-      <div class="ice-particles" style="position:absolute;inset:0;overflow:hidden;border-radius:10px"></div>`;
+    const cardId = `fc-enemy-${i}`;
+    clearFx(`ice_${i}`);
+    const overlay = makePersistOverlay(cardId, 419);
+    overlay.style.borderRadius = '10px';
+    overlay.style.border = '2px solid #38bdf8cc';
+    overlay.style.boxShadow = '0 0 18px 6px #38bdf8aa, inset 0 0 14px 5px #bae6fd55';
+    overlay.style.background = 'linear-gradient(135deg,#bae6fd66,#0ea5e944,#38bdf833)';
     overlay.style.opacity = '0';
     overlay.style.transition = 'opacity 300ms';
     raf2(() => { overlay.style.opacity = '1'; });
 
-    // 持續生成冰晶
-    const particleEl = overlay.querySelector('.ice-particles');
+    // 持續冰晶粒子
     let running = true;
     const spawnIce = () => {
-      if (!running || !particleEl) return;
-      const star = document.createElement('div');
-      const px = 5 + Math.random() * 88, py = 5 + Math.random() * 78;
-      const size = 9 + Math.random() * 9;
-      star.style.cssText = `position:absolute;left:${px}%;top:${py}%;font-size:${size}px;color:hsl(${195+Math.random()*20},85%,${72+Math.random()*18}%);opacity:1;transition:transform ${700+Math.random()*500}ms ease-out,opacity ${700+Math.random()*500}ms ease-out;pointer-events:none`;
-      star.textContent = ['❄','❅','❆'][Math.floor(Math.random()*3)];
-      particleEl.appendChild(star);
-      raf2(() => { star.style.transform=`translateY(-${14+Math.random()*18}px) rotate(${Math.random()*360}deg)`; star.style.opacity='0'; });
-      setTimeout(() => star.remove(), 1300);
-      setTimeout(spawnIce, 180 + Math.random() * 280);
+      if (!running) return;
+      const p = document.createElement('div');
+      const px = 4+Math.random()*88, py = 4+Math.random()*78;
+      p.style.cssText = `position:absolute;left:${px}%;top:${py}%;font-size:${8+Math.random()*10}px;color:hsl(${198+Math.random()*16},85%,${70+Math.random()*20}%);opacity:1;pointer-events:none;transition:transform ${650+Math.random()*500}ms ease-out,opacity ${650+Math.random()*500}ms ease-out`;
+      p.textContent = ['❄','❅','❆'][Math.floor(Math.random()*3)];
+      overlay.appendChild(p);
+      raf2(() => { p.style.transform = `translateY(-${14+Math.random()*20}px) rotate(${Math.random()*360}deg)`; p.style.opacity = '0'; });
+      setTimeout(() => p.remove(), 1250);
+      setTimeout(spawnIce, 170+Math.random()*260);
     };
     spawnIce();
-    _iceOverlays[i] = overlay;
 
-    // 持續到冰凍結束
-    setTimeout(() => {
-      running = false;
-      overlay.style.transition = 'opacity 600ms';
-      overlay.style.opacity = '0';
-      setTimeout(() => { overlay.destroy(); delete _iceOverlays[i]; }, 650);
-    }, dur);
+    _activeFx[`ice_${i}`] = () => { running = false; overlay.kill(600); };
+    setTimeout(() => clearFx(`ice_${i}`), dur);
   });
 }
 
 // ── 精靈術師：藤蔓纏繞，持續 4 回合 ──
-const _vineOverlays = {};
 function fxVinesBind(targetIdx) {
-  clearPersistFx(`vine_${targetIdx}`);
-  const card = getFxCard(true, targetIdx);
-  if (!card) return;
+  const cardId = `fc-enemy-${targetIdx}`;
+  clearFx(`vine_${targetIdx}`);
   const gs = G.gameState;
   const members = (gs?.team||[]).length + (gs?.enemies||[]).length;
-  const dur = Math.max(6000, members * 600 * 4);
+  const dur = Math.max(5000, members * 600 * 4);
 
-  const overlay = makePersistOverlay(card, 419);
-  overlay.innerHTML = `<svg viewBox="0 0 120 90" width="100%" height="100%" xmlns="http://www.w3.org/2000/svg" style="overflow:visible">
-    <defs>
-      <filter id="vineglow"><feGaussianBlur stdDeviation="1.5"/></filter>
-    </defs>
-    <!-- 上邊藤蔓 -->
-    <path id="vt" d="M0,8 C15,-3 35,16 55,6 S90,-4 120,9" fill="none" stroke="#16a34a" stroke-width="2.5" stroke-linecap="round" filter="url(#vineglow)" stroke-dasharray="300" stroke-dashoffset="300"/>
-    <!-- 下邊藤蔓 -->
-    <path d="M0,82 C18,94 38,76 58,85 S95,96 120,82" fill="none" stroke="#15803d" stroke-width="2.5" stroke-linecap="round" filter="url(#vineglow)" stroke-dasharray="300" stroke-dashoffset="300"/>
-    <!-- 左邊藤蔓 -->
-    <path d="M7,0 C-3,18 13,38 4,58 S-6,82 8,90" fill="none" stroke="#22c55e" stroke-width="2" stroke-linecap="round" filter="url(#vineglow)" stroke-dasharray="250" stroke-dashoffset="250"/>
-    <!-- 右邊藤蔓 -->
-    <path d="M113,0 C125,16 109,40 116,60 S128,82 112,90" fill="none" stroke="#4ade80" stroke-width="2" stroke-linecap="round" filter="url(#vineglow)" stroke-dasharray="250" stroke-dashoffset="250"/>
-    <!-- 葉片 -->
-    <text x="28" y="14" font-size="11" opacity="0" style="transition:opacity 400ms">🌿</text>
-    <text x="72" y="8"  font-size="10" opacity="0" style="transition:opacity 400ms">🍃</text>
-    <text x="108" y="20" font-size="9" opacity="0" style="transition:opacity 400ms">🌿</text>
-    <text x="5"  y="45" font-size="10" opacity="0" style="transition:opacity 400ms">🍃</text>
-    <text x="108" y="55" font-size="9" opacity="0" style="transition:opacity 400ms">🌿</text>
-    <text x="20" y="86" font-size="11" opacity="0" style="transition:opacity 400ms">🍃</text>
-    <text x="75" y="88" font-size="10" opacity="0" style="transition:opacity 400ms">🌿</text>
-  </svg>`;
+  const overlay = makePersistOverlay(cardId, 419);
   overlay.style.borderRadius = '10px';
+  overlay.style.border = '1.5px solid #22c55e77';
   overlay.style.boxShadow = '0 0 12px 4px #16a34a77, inset 0 0 8px 2px #22c55e33';
-  overlay.style.border = '1.5px solid #22c55e55';
   overlay.style.opacity = '0';
   overlay.style.transition = 'opacity 350ms';
-
-  const svg = overlay.querySelector('svg');
-  const paths = svg.querySelectorAll('path');
-  const leaves = svg.querySelectorAll('text');
+  overlay.innerHTML = `<svg viewBox="0 0 100 80" width="100%" height="100%" xmlns="http://www.w3.org/2000/svg" style="position:absolute;inset:0;overflow:visible">
+    <defs><filter id="vf"><feGaussianBlur stdDeviation="1"/></filter></defs>
+    <path d="M0,7 C12,-2 28,14 45,6 S72,-3 100,8"   fill="none" stroke="#16a34a" stroke-width="2.5" stroke-linecap="round" filter="url(#vf)" stroke-dasharray="280" stroke-dashoffset="280" id="vp0"/>
+    <path d="M0,73 C15,85 32,68 50,76 S80,87 100,73"  fill="none" stroke="#15803d" stroke-width="2.5" stroke-linecap="round" filter="url(#vf)" stroke-dasharray="280" stroke-dashoffset="280" id="vp1"/>
+    <path d="M6,0 C-2,16 10,34 3,52 S-5,70 7,80"     fill="none" stroke="#22c55e" stroke-width="2"   stroke-linecap="round" filter="url(#vf)" stroke-dasharray="230" stroke-dashoffset="230" id="vp2"/>
+    <path d="M94,0 C104,18 90,38 97,56 S108,72 93,80" fill="none" stroke="#4ade80" stroke-width="2"   stroke-linecap="round" filter="url(#vf)" stroke-dasharray="230" stroke-dashoffset="230" id="vp3"/>
+    <path d="M10,4 Q30,25 20,45 T28,76"               fill="none" stroke="#86efac" stroke-width="1.5" stroke-linecap="round" stroke-dasharray="200" stroke-dashoffset="200" id="vp4"/>
+    <path d="M85,4 Q70,22 80,42 T72,76"               fill="none" stroke="#86efac" stroke-width="1.5" stroke-linecap="round" stroke-dasharray="200" stroke-dashoffset="200" id="vp5"/>
+    <text x="22" y="12"  font-size="11" opacity="0" id="vl0">🌿</text>
+    <text x="60" y="8"   font-size="10" opacity="0" id="vl1">🍃</text>
+    <text x="90" y="22"  font-size="9"  opacity="0" id="vl2">🌿</text>
+    <text x="4"  y="42"  font-size="10" opacity="0" id="vl3">🍃</text>
+    <text x="88" y="50"  font-size="9"  opacity="0" id="vl4">🌿</text>
+    <text x="15" y="76"  font-size="11" opacity="0" id="vl5">🍃</text>
+    <text x="65" y="78"  font-size="10" opacity="0" id="vl6">🌿</text>
+  </svg>`;
 
   raf2(() => {
     overlay.style.opacity = '1';
-    // 藤蔓生長動畫
-    paths.forEach((p, pi) => {
+    const svg = overlay.querySelector('svg');
+    // 藤蔓生長
+    for (let pi=0; pi<6; pi++) {
+      const p = svg.querySelector(`#vp${pi}`);
+      if (!p) continue;
       setTimeout(() => {
-        p.style.transition = `stroke-dashoffset ${350+pi*100}ms ease-out`;
+        p.style.transition = `stroke-dashoffset ${380+pi*110}ms ease-out`;
         p.style.strokeDashoffset = '0';
-      }, pi * 80);
-    });
-    // 葉片延遲出現
-    leaves.forEach((l, li) => {
-      setTimeout(() => { l.style.opacity = '0.9'; }, 400 + li * 100);
-    });
+      }, pi*90);
+    }
+    // 葉片
+    for (let li=0; li<7; li++) {
+      const l = svg.querySelector(`#vl${li}`);
+      if (!l) continue;
+      setTimeout(() => {
+        l.style.transition = 'opacity 300ms';
+        l.style.opacity = '0.9';
+      }, 500+li*90);
+    }
   });
 
-  _vineOverlays[targetIdx] = overlay;
-  _persistFx[`vine_${targetIdx}`] = () => {
-    overlay.style.transition = 'opacity 600ms';
-    overlay.style.opacity = '0';
-    setTimeout(() => { overlay.destroy(); delete _vineOverlays[targetIdx]; }, 650);
-  };
-
-  // 4 回合後消退
-  setTimeout(() => clearPersistFx(`vine_${targetIdx}`), dur);
+  _activeFx[`vine_${targetIdx}`] = () => overlay.kill(650);
+  setTimeout(() => clearFx(`vine_${targetIdx}`), dur);
 }
 
-// ── 爆炎法師：強烈烈焰爆炸 ──
+// ── 爆炎法師：烈焰爆炸特效 ──
 function fxFireBlast(fxEl, card, isChain=false) {
-  if (!card||!fxEl) return;
-  const W=card.offsetWidth||120, H=card.offsetHeight||90;
-  const cx=W/2, cy=H*0.45;
+  if (!card) return;
+  const cardId = card.id;
+  const W = card.offsetWidth||120, H = card.offsetHeight||90;
+  const cx = W/2, cy = H*0.45;
 
-  // 閃光
-  const flash=document.createElement('div');
-  flash.style.cssText=`position:absolute;inset:-6px;border-radius:12px;pointer-events:none;z-index:36;background:radial-gradient(circle,#fffb 0%,${isChain?'#ff770099':'#ff3300dd'} 40%,transparent 75%);opacity:0;transition:opacity 25ms`;
-  fxEl.appendChild(flash);
-  raf2(()=>{ flash.style.opacity='1'; });
-  setTimeout(()=>{ flash.style.transition='opacity 350ms'; flash.style.opacity='0'; setTimeout(()=>flash.remove(),400); },50);
+  // 閃光（直接在 fxEl 上，短暫即消）
+  if (fxEl) {
+    const flash = document.createElement('div');
+    flash.style.cssText = `position:absolute;inset:-4px;border-radius:12px;pointer-events:none;z-index:36;background:radial-gradient(circle,#fffb 0%,${isChain?'#ff770099':'#ff3300ee'} 35%,transparent 70%);opacity:0;transition:opacity 25ms`;
+    fxEl.appendChild(flash);
+    raf2(() => { flash.style.opacity='1'; });
+    setTimeout(() => { flash.style.transition='opacity 320ms'; flash.style.opacity='0'; setTimeout(()=>flash.remove(),380); }, 40);
+  }
 
-  // 衝擊波（固定到 body，不受 renderBattle 影響）
-  const ringOverlay = makePersistOverlay(card, 430);
-  const ringCols=['#ff2200','#ff5500','#ff8800','#ffcc00'];
-  [0,80,170,270].forEach((delay,ri)=>{
-    setTimeout(()=>{
-      const ring=document.createElement('div');
-      const sz=12;
-      ring.style.cssText=`position:absolute;left:calc(50% - ${sz/2}px);top:calc(45% - ${sz/2}px);width:${sz}px;height:${sz}px;border-radius:50%;border:${3-ri*0.5}px solid ${ringCols[ri]};box-shadow:0 0 ${14-ri*2}px ${ringCols[ri]}cc;transition:transform .5s cubic-bezier(.05,.7,.2,1),opacity .5s ease-out`;
-      ringOverlay.appendChild(ring);
-      raf2(()=>{ ring.style.transform=`scale(${isChain?6:9})`; ring.style.opacity='0'; });
-      setTimeout(()=>ring.remove(),580);
-    },delay);
-  });
-  setTimeout(()=>ringOverlay.destroy(), 850);
+  // 衝擊波 overlay（用 cardId，不受 renderBattle 影響）
+  if (cardId) {
+    const rOverlay = makePersistOverlay(cardId, 430);
+    const cols = ['#ff2200','#ff5500','#ff8800','#ffcc00'];
+    [0,75,160,260].forEach((delay,ri)=>{
+      setTimeout(()=>{
+        const ring = document.createElement('div');
+        const sz = 10;
+        ring.style.cssText = `position:absolute;left:calc(50% - ${sz/2}px);top:calc(45% - ${sz/2}px);width:${sz}px;height:${sz}px;border-radius:50%;border:${3-ri*0.5}px solid ${cols[ri]};box-shadow:0 0 ${16-ri*3}px ${cols[ri]}cc;transition:transform .55s cubic-bezier(.05,.75,.2,1),opacity .55s ease-out`;
+        rOverlay.appendChild(ring);
+        raf2(() => { ring.style.transform=`scale(${isChain?6:10})`; ring.style.opacity='0'; });
+        setTimeout(() => ring.remove(), 620);
+      }, delay);
+    });
+    // 火焰光暈
+    rOverlay.style.borderRadius = '10px';
+    rOverlay.style.boxShadow = isChain ? '0 0 28px 10px #ff660099' : '0 0 42px 18px #ff3300bb';
+    rOverlay.style.background = `radial-gradient(circle,${isChain?'#ff660022':'#ff330033'},transparent 65%)`;
+    rOverlay.style.opacity = '1';
+    rOverlay.style.transition = 'opacity 600ms ease-out';
+    setTimeout(()=>{ rOverlay.style.opacity='0'; setTimeout(()=>rOverlay.kill(),650); },80);
+  }
 
-  // 火花
-  const cnt=isChain?16:26;
-  for(let k=0;k<cnt;k++){
-    const angle=(360/cnt)*k+Math.random()*10;
-    const dist=45+Math.random()*(isChain?55:80);
-    const sz=2.5+Math.random()*6;
-    const rad=angle*Math.PI/180;
-    const cols=['#ff2200','#ff4400','#ff6600','#ff8800','#ffaa00','#ffcc00','#ffffff'];
+  // 火花粒子
+  const cnt = isChain ? 18 : 30;
+  for (let k=0; k<cnt; k++) {
+    const angle = (360/cnt)*k + Math.random()*10;
+    const dist  = 40+Math.random()*(isChain?55:85);
+    const sz    = 2+Math.random()*7;
+    const rad   = angle*Math.PI/180;
+    const cols  = ['#ff2200','#ff4400','#ff6600','#ff8800','#ffaa00','#ffcc00','#ffffff','#ff3300'];
     setTimeout(()=>{
       spawnParticle(card,{
         x:cx-sz/2, y:cy-sz/2, size:sz,
         color:cols[Math.floor(Math.random()*cols.length)],
         tx:Math.cos(rad)*dist, ty:Math.sin(rad)*dist,
-        dur:600+Math.random()*450
+        dur:600+Math.random()*500
       });
-    },Math.random()*100);
+    }, Math.random()*110);
   }
+
   // 上升火柱
-  for(let k=0;k<(isChain?6:14);k++){
+  const pillars = isChain ? 8 : 18;
+  for (let k=0; k<pillars; k++) {
     setTimeout(()=>{
       spawnParticle(card,{
-        x:cx+(Math.random()-.5)*W*0.7, y:cy+(Math.random()-.5)*H*0.3,
-        size:3+Math.random()*6,
-        color:['#ff3300','#ff6600','#ff9900','#ffcc00'][Math.floor(Math.random()*4)],
-        tx:(Math.random()-.5)*20, ty:-(40+Math.random()*60),
-        dur:550+Math.random()*450
+        x:cx+(Math.random()-.5)*W*0.8,
+        y:cy+(Math.random()-.5)*H*0.35,
+        size:3+Math.random()*7,
+        color:['#ff2200','#ff5500','#ff8800','#ffaa00','#ffdd00','#ffffff'][Math.floor(Math.random()*6)],
+        tx:(Math.random()-.5)*22,
+        ty:-(45+Math.random()*70),
+        dur:600+Math.random()*500
       });
-    },k*28);
+    }, k*25);
   }
 
-  // 震動
+  // 卡片震動
   let st=0;
   const sh=setInterval(()=>{
-    const mag=st<3?13:6;
+    const mag=st<3?14:7;
     card.style.transform=`translate(${(Math.random()-.5)*mag}px,${(Math.random()-.5)*mag*.6}px)`;
-    if(++st>8){clearInterval(sh);card.style.transform='';}
+    if(++st>9){clearInterval(sh);card.style.transform='';}
   },38);
-
-  // 火焰光暈（持續覆蓋層）
-  const glowOverlay = makePersistOverlay(card, 418);
-  glowOverlay.style.borderRadius='10px';
-  glowOverlay.style.boxShadow=isChain?'0 0 28px 10px #ff660099':'0 0 38px 16px #ff3300bb';
-  glowOverlay.style.background=`radial-gradient(circle,${isChain?'#ff660022':'#ff330033'},transparent 70%)`;
-  glowOverlay.style.opacity='1';
-  glowOverlay.style.transition='opacity 700ms ease-out';
-  setTimeout(()=>{ glowOverlay.style.opacity='0'; setTimeout(()=>glowOverlay.destroy(),750); },100);
 }
 
 function executeActiveSkill(actor, targetIdx) {
