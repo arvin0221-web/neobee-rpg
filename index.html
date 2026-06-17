@@ -724,7 +724,7 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
 
     <!-- VERSION FOOTER -->
     <div style="text-align:center;padding:3px 0;font-size:11px;color:var(--text3);letter-spacing:2px;cursor:default;user-select:none;display:inline-block;margin:0 auto;width:100%"
-      onclick="(function(){window._erudaTap=(window._erudaTap||0)+1;if(window._erudaTap>=5){window._erudaTap=0;if(window.eruda){eruda.show();return;}var s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/eruda';document.head.appendChild(s);s.onload=function(){eruda.init();eruda.show();}}})()">v1.1.96</div>
+      onclick="(function(){window._erudaTap=(window._erudaTap||0)+1;if(window._erudaTap>=5){window._erudaTap=0;if(window.eruda){eruda.show();return;}var s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/eruda';document.head.appendChild(s);s.onload=function(){eruda.init();eruda.show();}}})()">v1.1.100</div>
 
   </div>
 </div>
@@ -4884,6 +4884,35 @@ function hostProcessNextTurn() {
 
       const target = targets[Math.floor(Math.random() * targets.length)];
 
+      // ── 裝備副本 Boss 橫掃（8~10難度，rankIdx 7~9）──
+      if (!gs.isResourceDungeon && actor.isDungeonBoss) {
+        const rankIdx = actor.rankIdx || 0;
+        const sweepChance = rankIdx === 7 ? 0.20 : rankIdx === 8 ? 0.25 : rankIdx === 9 ? 0.30 : 0;
+        if (sweepChance > 0 && Math.random() < sweepChance) {
+          addLog(`💥 <span style="color:#ef4444;font-weight:900">Boss 釋放【橫掃】！對所有玩家造成傷害！</span>`);
+          const aliveTeam = gs.team.filter(m => m.hp > 0);
+          aliveTeam.forEach(m => {
+            const { dmg } = calcSingleHit(actor, m);
+            m.hp = Math.max(0, m.hp - dmg);
+            addLog(`  ▸ ${m.name} 受到 <span style="color:#ef4444">${dmg}</span> 點傷害${m.hp <= 0 ? '，陣亡！' : ''}`);
+            AUDIO.sfxHit && AUDIO.sfxHit();
+          });
+          gs.team.forEach((m) => {
+            if (m.hp <= 0) applyTrinketDeath(m, gs);
+          });
+          const allDead = gs.team.every(m => m.hp <= 0 || m.isSummon);
+          renderBattle(); writeBattleState();
+          if (allDead) {
+            addLog('💀 全隊陣亡！');
+            setTimeout(() => showDungeonResult(false), 600);
+          } else {
+            gs.currentTurn++;
+            setTimeout(() => hostProcessNextTurn(), 800);
+          }
+          return;
+        }
+      }
+
       // ── 資源副本 Boss 技能 ──
       if (gs.isResourceDungeon && actor.isDungeonBoss) {
         const rankIdx = actor.rankIdx || 0;
@@ -6526,11 +6555,11 @@ function getDecomposeMaterialPool(itemLevel, rarityMult) {
     3:  [['廢鐵',40,0.3],['生鐵',30,1],['熟鐵',20,2],['精鐵',10,3]],
     4:  [['生鐵',45,0.5],['熟鐵',35,1],['精鐵',20,3]],
     5:  [['生鐵',35,0.5],['熟鐵',35,1],['精鐵',25,2],['鋼鐵',5,4]],
-    6:  [['熟鐵',40,0.5],['精鐵',35,1],['鋼鐵',25,3]],
-    7:  [['熟鐵',35,0.3],['精鐵',30,1],['鋼鐵',20,2],['玄鐵',9,5],['秘銀',6,6]],
-    8:  [['精鐵',35,0.3],['鋼鐵',28,1],['玄鐵',22,4],['秘銀',15,5]],
-    9:  [['精鐵',30,0.3],['鋼鐵',25,1],['冰晶',18,5],['赤岩',15,5],['雷紋石',12,6]],
-    10: [['鋼鐵',30,0.5],['冰晶',24,4],['赤岩',24,4],['雷紋石',22,5]],
+    6:  [['熟鐵',38,0.5],['精鐵',32,1],['鋼鐵',22,3],['玄鐵',4,5],['秘銀',4,5]],
+    7:  [['熟鐵',35,0.3],['精鐵',30,1],['鋼鐵',20,2],['玄鐵',8,5],['秘銀',8,5]],
+    8:  [['精鐵',35,0.3],['鋼鐵',28,1],['玄鐵',19,4],['秘銀',19,4]],
+    9:  [['精鐵',28,0.3],['鋼鐵',22,1],['玄鐵',12,3],['秘銀',12,3],['冰晶',9,5],['赤岩',9,5],['雷紋石',9,5]],
+    10: [['鋼鐵',35,0.5],['玄鐵',15,3],['秘銀',15,3],['冰晶',10,4],['赤岩',10,4],['雷紋石',10,4]],
   };
   // rarityMult: 普通1 稀有1.2 超稀有1.4 史詩1.7 傳奇2 超凡3 超超超凡5
   // 稀有度對高級素材加成
