@@ -614,7 +614,7 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
               style="flex:1;text-align:center;padding:12px 6px;border-radius:10px;border:2px solid var(--border2);background:var(--surface2);cursor:pointer;transition:all 0.2s">
               <div style="font-size:18px">💰</div>
               <div style="font-weight:900;color:var(--text2);font-size:14px;margin-top:4px">資源副本</div>
-              <div style="font-size:11px;color:var(--text2);margin-top:2px">打Boss掉金幣</div>
+              <div style="font-size:11px;color:var(--text2);margin-top:2px">打Boss掉資源</div>
             </div>
           </div>
 
@@ -724,7 +724,7 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
 
     <!-- VERSION FOOTER -->
     <div style="text-align:center;padding:3px 0;font-size:11px;color:var(--text3);letter-spacing:2px;cursor:default;user-select:none;display:inline-block;margin:0 auto;width:100%"
-      onclick="(function(){window._erudaTap=(window._erudaTap||0)+1;if(window._erudaTap>=5){window._erudaTap=0;if(window.eruda){eruda.show();return;}var s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/eruda';document.head.appendChild(s);s.onload=function(){eruda.init();eruda.show();}}})()">v1.1.93</div>
+      onclick="(function(){window._erudaTap=(window._erudaTap||0)+1;if(window._erudaTap>=5){window._erudaTap=0;if(window.eruda){eruda.show();return;}var s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/eruda';document.head.appendChild(s);s.onload=function(){eruda.init();eruda.show();}}})()">v1.1.96</div>
 
   </div>
 </div>
@@ -1291,6 +1291,7 @@ const DUNGEON_BOSS = [
 
 // Player attribute points given before dungeon per rank
 const DUNGEON_PLAYER_PTS = [10,10,10,10,10,10,10,10,10,10];
+const RESOURCE_DUNGEON_PLAYER_PTS = [5,7,9,11,13,16,20,24,28,33];
 
 // ── 資源副本 Boss 設定 ──
 // HP: 100→300→900→2700→... (×3), ATK: 10→25→63→158→... (×2.5 四捨五入)
@@ -1298,9 +1299,14 @@ const RESOURCE_DUNGEON_BOSS = (() => {
   const configs = [];
   let hp = 100, atk = 10;
   for (let i = 0; i < 10; i++) {
-    configs.push({ hp, atk, def: 0 });
-    hp  = Math.round(hp  * 2);
-    atk = Math.round(atk * 2);
+    configs.push({ hp: Math.round(hp), atk: Math.round(atk), def: 0 });
+    if (i < 4) { // 黑鐵→青銅→白銀→黃金（前4關），下一關進白金
+      hp  *= 2;
+      atk *= 1.8;
+    } else {     // 白金→鑽石→翡翠→曜石→隕鐵→星岩
+      hp  *= 1.5;
+      atk *= 1.35;
+    }
   }
   return configs;
 })();
@@ -6058,6 +6064,7 @@ function updateResourceDungeonPreview() {
     ⚔ 攻擊：<span style="color:var(--red)">${b.atk}</span><br>
     🛡 防禦：<span style="color:var(--cyan)">0</span><br>
     ✨ 每回合技能觸發率：<span style="color:#a78bfa">${chance}%</span><br>
+    🎁 玩家獲得屬性點：<span style="color:var(--gold)">${RESOURCE_DUNGEON_PLAYER_PTS[idx]}</span><br>
     💰 勝利獎勵：<span style="color:#d97706;font-weight:900">${goldStr} 金幣</span><br>
     <div style="margin-top:6px;font-size:11px;color:var(--text2)">可能釋放技能：${RESOURCE_BOSS_SKILLS.map(s=>s.icon+s.name).join('、')}</div>`;
 }
@@ -6268,7 +6275,7 @@ async function initDungeon(members, roomId, rankIdx) {
     };
   }
 
-  const pts = DUNGEON_PLAYER_PTS[rankIdx];
+  const pts = (isResDun ? RESOURCE_DUNGEON_PLAYER_PTS : DUNGEON_PLAYER_PTS)[rankIdx];
   const team = [];
   for (const m of memVals) {
     if (m.isBot) {
@@ -6370,18 +6377,31 @@ function showDungeonResult(win) {
     titleEl.className   = 'result-title result-win';
 
     if (gs.isResourceDungeon) {
-      // 資源副本：掉金幣
-      const gold = RESOURCE_DUNGEON_GOLD[gs.dungeonRankIdx || 0];
+      // 資源副本：掉金幣 + 素材
+      const rankIdx = gs.dungeonRankIdx || 0;
+      const gold    = RESOURCE_DUNGEON_GOLD[rankIdx];
       const goldStr = gold >= 1e8 ? (gold/1e8).toFixed(0)+'億'
                     : gold >= 1e4 ? (gold/1e4).toFixed(0)+'萬' : gold.toLocaleString();
+      // 先顯示佔位，等非同步結算後更新素材顯示
       lootEl.innerHTML = `
         <div style="margin-bottom:12px;font-size:13px;color:var(--text2)">資源副本勝利！</div>
-        <div style="background:var(--bg2);border:1px solid #d97706;border-radius:12px;padding:20px;text-align:center">
-          <div style="font-size:32px">💰</div>
-          <div style="font-size:22px;font-weight:900;color:#fbbf24;margin-top:8px">+${goldStr} 金幣</div>
+        <div style="background:var(--bg2);border:1px solid #d97706;border-radius:12px;padding:16px;text-align:center">
+          <div style="font-size:28px">💰</div>
+          <div style="font-size:20px;font-weight:900;color:#fbbf24;margin-top:6px">+${goldStr} 金幣</div>
+        </div>
+        <div style="margin-top:10px;background:var(--bg2);border:1px solid var(--border2);border-radius:12px;padding:16px;text-align:center" id="resMatLoot">
+          <div style="color:var(--text2);font-size:13px">結算素材中...</div>
         </div>`;
       eqBtn.style.display = 'none';
-      awardResourceDungeonGold(gold);
+      awardResourceDungeonLoot(rankIdx).then(({ matId }) => {
+        const mat    = MATERIALS.find(m => m.id === matId);
+        const cls    = mat ? getMaterialClass(mat) : 'mat-white';
+        const matEl  = document.getElementById('resMatLoot');
+        if (matEl) matEl.innerHTML = `
+          <div style="font-size:11px;color:var(--text2);margin-bottom:6px">獲得素材</div>
+          <div style="font-size:22px">${mat?.icon || '🪨'}</div>
+          <div class="${cls}" style="font-size:18px;font-weight:900;margin-top:4px">${matId}</div>`;
+      });
     } else {
       // 裝備副本：掉裝備
       const item = rollEquipItem(gs.dungeonRankIdx);
@@ -6403,11 +6423,50 @@ function showDungeonResult(win) {
   }
 }
 
-async function awardResourceDungeonGold(gold) {
+// 資源副本素材掉落池（各難度，格式：[素材id, 相對權重]）
+const RESOURCE_DUNGEON_MAT_POOLS = [
+  // 1難度
+  [['廢鐵',60],['生鐵',30],['熟鐵',10]],
+  // 2難度
+  [['廢鐵',40],['生鐵',35],['熟鐵',18],['精鐵',7]],
+  // 3難度
+  [['生鐵',45],['熟鐵',35],['精鐵',20]],
+  // 4難度
+  [['生鐵',40],['熟鐵',35],['精鐵',20],['鋼鐵',5]],
+  // 5難度
+  [['熟鐵',42],['精鐵',35],['鋼鐵',23]],
+  // 6難度
+  [['熟鐵',44],['精鐵',32],['鋼鐵',16],['玄鐵',4],['秘銀',4]],
+  // 7難度
+  [['精鐵',44],['鋼鐵',28],['玄鐵',14],['秘銀',14]],
+  // 8難度（玄鐵/秘銀 > 冰晶/赤岩/雷紋石）
+  [['精鐵',28],['鋼鐵',24],['玄鐵',12],['秘銀',12],['冰晶',8],['赤岩',8],['雷紋石',8]],
+  // 9難度
+  [['鋼鐵',35],['玄鐵',10],['秘銀',10],['冰晶',15],['赤岩',15],['雷紋石',15]],
+  // 10難度（傳說六種各3%，其餘為相對權重）
+  [['鋼鐵',18],['玄鐵',8],['秘銀',8],['冰晶',6],['赤岩',6],['雷紋石',6],
+   ['太乙精鐵',3],['太初神髓',3],['震金',3],['混沌原晶',3],['不滅聖鐵',3],['弒神魔鐵',3]],
+];
+
+function rollResourceDungeonMat(rankIdx) {
+  const pool = RESOURCE_DUNGEON_MAT_POOLS[Math.min(rankIdx, 9)];
+  const total = pool.reduce((s,[,w]) => s+w, 0);
+  let r = Math.random() * total;
+  for (const [id, w] of pool) { r -= w; if (r <= 0) return id; }
+  return pool[0][0];
+}
+
+async function awardResourceDungeonLoot(rankIdx) {
+  const gold   = RESOURCE_DUNGEON_GOLD[rankIdx] || 0;
+  const matId  = rollResourceDungeonMat(rankIdx);
   const newGold = (G.player.gold || 0) + gold;
-  G.player.gold = newGold;
-  await update(ref(db, `players/${G.uid}`), { gold: newGold });
+  const mats   = { ...(G.player.materials || {}) };
+  mats[matId]  = (mats[matId] || 0) + 1;
+  G.player.gold      = newGold;
+  G.player.materials = mats;
+  await update(ref(db, `players/${G.uid}`), { gold: newGold, materials: mats });
   updateUI();
+  return { gold, matId };
 }
 
 async function awardDungeonLoot(item) {
