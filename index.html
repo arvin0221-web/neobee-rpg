@@ -157,6 +157,19 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
 .eq-rarity-超凡   { background:linear-gradient(90deg,#f87171,#fb923c,#fbbf24,#4ade80,#60a5fa,#c084fc);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;font-weight:900 }
 .eq-rarity-超超超凡{ background:linear-gradient(90deg,#f87171,#fb923c,#fbbf24,#4ade80,#60a5fa,#c084fc,#f87171);background-size:200%;-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;font-weight:900;animation:rainbowShift 1.5s linear infinite }
 @keyframes rainbowShift{0%{background-position:0%}100%{background-position:200%}}
+@keyframes shimmerGold{0%,100%{opacity:1}50%{opacity:.65}}
+@keyframes silverFlow{0%{text-shadow:0 0 4px #60a5fa}50%{text-shadow:0 0 10px #93c5fd,0 0 20px #60a5fa}100%{text-shadow:0 0 4px #60a5fa}}
+@keyframes iceGlow{0%,100%{text-shadow:0 0 6px #38bdf8}50%{text-shadow:0 0 14px #7dd3fc,0 0 24px #38bdf8}}
+@keyframes redPulse{0%,100%{text-shadow:0 0 6px #ef4444}50%{text-shadow:0 0 14px #fca5a5,0 0 24px #dc2626}}
+@keyframes lightning{0%{text-shadow:0 0 4px #eab308}33%{text-shadow:0 0 12px #fde047,0 0 22px #ca8a04}66%{text-shadow:0 0 6px #fbbf24}100%{text-shadow:0 0 4px #eab308}}
+.mat-rainbow{background:linear-gradient(90deg,#f87171,#fb923c,#fbbf24,#4ade80,#60a5fa,#c084fc,#f87171);background-size:200%;-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;font-weight:900;animation:rainbowShift 1.8s linear infinite}
+.mat-shimmer{color:#fbbf24;animation:shimmerGold 1.4s ease-in-out infinite;font-weight:700}
+.mat-silver-flow{color:#e5e7eb;animation:silverFlow 1.8s ease-in-out infinite;font-weight:700}
+.mat-ice-glow{color:#bae6fd;animation:iceGlow 1.8s ease-in-out infinite;font-weight:700}
+.mat-red-pulse{color:#fca5a5;animation:redPulse 1.4s ease-in-out infinite;font-weight:700}
+.mat-lightning{color:#fde68a;animation:lightning 0.9s ease-in-out infinite;font-weight:700}
+.mat-white{color:#e5e7eb;font-weight:700}
+.mat-card{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:10px 14px;display:flex;align-items:center;gap:10px}
 .eq-slot{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:12px 14px;display:flex;align-items:center;justify-content:space-between;gap:8px;min-height:56px}
 .eq-slot-label{font-size:11px;color:var(--text2);letter-spacing:1px;flex-shrink:0}
 .eq-slot-info{flex:1;min-width:0}
@@ -569,10 +582,17 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
             </div>
           </div>
           <!-- Inventory -->
-          <div class="card">
+          <div class="card" style="margin-bottom:16px">
             <div class="card-title">背包</div>
             <div id="equip-inventory" style="display:flex;flex-direction:column;gap:8px">
               <div style="color:var(--text2);font-size:13px">暫無裝備</div>
+            </div>
+          </div>
+          <!-- Materials -->
+          <div class="card">
+            <div class="card-title">素材背包</div>
+            <div id="material-inventory" style="display:grid;grid-template-columns:repeat(2,1fr);gap:8px">
+              <div style="color:var(--text2);font-size:13px;grid-column:1/-1">暫無素材</div>
             </div>
           </div>
         </div>
@@ -580,20 +600,54 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
 
       <!-- DUNGEON TAB -->
       <div id="tab-dungeon" class="hidden">
-        <div style="max-width:500px;margin:0 auto;text-align:center">
-          <div style="font-size:24px;font-weight:900;color:var(--gold);letter-spacing:4px;margin-bottom:8px">🏰 裝備副本</div>
-          <div style="font-size:13px;color:var(--text2);margin-bottom:24px;letter-spacing:1px">三人挑戰Boss・打倒即獲得裝備</div>
-          <div class="card" style="margin-bottom:16px;text-align:left">
-            <div class="card-title">選擇難度</div>
-            <div id="dungeon-diff-grid" style="display:grid;grid-template-columns:repeat(2,1fr);gap:8px"></div>
+        <div style="max-width:540px;margin:0 auto">
+          <div style="font-size:24px;font-weight:900;color:var(--gold);letter-spacing:4px;margin-bottom:16px;text-align:center">🏰 副本</div>
+          <!-- 副本類型切換 -->
+          <div style="display:flex;gap:8px;margin-bottom:20px">
+            <div id="dungeon-tab-equip" onclick="switchDungeonType('equip')"
+              style="flex:1;text-align:center;padding:12px 6px;border-radius:10px;border:2px solid var(--gold);background:var(--gold)22;cursor:pointer;transition:all 0.2s">
+              <div style="font-size:18px">⚔️</div>
+              <div style="font-weight:900;color:var(--gold);font-size:14px;margin-top:4px">裝備副本</div>
+              <div style="font-size:11px;color:var(--text2);margin-top:2px">打Boss掉裝備</div>
+            </div>
+            <div id="dungeon-tab-resource" onclick="switchDungeonType('resource')"
+              style="flex:1;text-align:center;padding:12px 6px;border-radius:10px;border:2px solid var(--border2);background:var(--surface2);cursor:pointer;transition:all 0.2s">
+              <div style="font-size:18px">💰</div>
+              <div style="font-weight:900;color:var(--text2);font-size:14px;margin-top:4px">資源副本</div>
+              <div style="font-size:11px;color:var(--text2);margin-top:2px">打Boss掉金幣</div>
+            </div>
           </div>
-          <div class="card" style="margin-bottom:16px;text-align:left;display:none" id="dungeon-boss-preview">
-            <div class="card-title">Boss 預覽</div>
-            <div id="dungeon-boss-stats" style="font-size:13px;line-height:2;color:var(--text2)"></div>
+
+          <!-- 裝備副本區 -->
+          <div id="dungeon-equip-section">
+            <div class="card" style="margin-bottom:16px;text-align:left">
+              <div class="card-title">選擇難度</div>
+              <div id="dungeon-diff-grid" style="display:grid;grid-template-columns:repeat(2,1fr);gap:8px"></div>
+            </div>
+            <div class="card" style="margin-bottom:16px;text-align:left;display:none" id="dungeon-boss-preview">
+              <div class="card-title">Boss 預覽</div>
+              <div id="dungeon-boss-stats" style="font-size:13px;line-height:2;color:var(--text2)"></div>
+            </div>
+            <button class="btn btn-primary" style="padding:16px;font-size:16px;width:100%" onclick="showCreateDungeon()">⚔️ 建立副本房間</button>
+            <div style="margin-top:12px">
+              <button class="btn btn-secondary" style="padding:12px;font-size:14px;width:100%;border-color:var(--accent2);color:var(--accent2)" onclick="showSearchDungeon()">🔍 搜尋副本房間</button>
+            </div>
           </div>
-          <button class="btn btn-primary" style="padding:16px;font-size:16px;width:100%" onclick="showCreateDungeon()">⚔️ 建立副本房間</button>
-          <div style="margin-top:12px">
-            <button class="btn btn-secondary" style="padding:12px;font-size:14px;width:100%;border-color:var(--accent2);color:var(--accent2)" onclick="showSearchDungeon()">🔍 搜尋副本房間</button>
+
+          <!-- 資源副本區 -->
+          <div id="dungeon-resource-section" style="display:none">
+            <div class="card" style="margin-bottom:16px;text-align:left">
+              <div class="card-title">選擇難度</div>
+              <div id="resource-dungeon-diff-grid" style="display:grid;grid-template-columns:repeat(2,1fr);gap:8px"></div>
+            </div>
+            <div class="card" style="margin-bottom:16px;text-align:left;display:none" id="resource-boss-preview">
+              <div class="card-title">Boss 預覽</div>
+              <div id="resource-boss-stats" style="font-size:13px;line-height:2;color:var(--text2)"></div>
+            </div>
+            <button class="btn btn-primary" style="padding:16px;font-size:16px;width:100%;background:linear-gradient(135deg,#d97706,#b45309)" onclick="showCreateResourceDungeon()">💰 建立資源副本房間</button>
+            <div style="margin-top:12px">
+              <button class="btn btn-secondary" style="padding:12px;font-size:14px;width:100%;border-color:#d97706;color:#d97706" onclick="showSearchResourceDungeon()">🔍 搜尋資源副本房間</button>
+            </div>
           </div>
         </div>
       </div>
@@ -670,7 +724,7 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
 
     <!-- VERSION FOOTER -->
     <div style="text-align:center;padding:3px 0;font-size:11px;color:var(--text3);letter-spacing:2px;cursor:default;user-select:none;display:inline-block;margin:0 auto;width:100%"
-      onclick="(function(){window._erudaTap=(window._erudaTap||0)+1;if(window._erudaTap>=5){window._erudaTap=0;if(window.eruda){eruda.show();return;}var s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/eruda';document.head.appendChild(s);s.onload=function(){eruda.init();eruda.show();}}})()">v1.1.89</div>
+      onclick="(function(){window._erudaTap=(window._erudaTap||0)+1;if(window._erudaTap>=5){window._erudaTap=0;if(window.eruda){eruda.show();return;}var s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/eruda';document.head.appendChild(s);s.onload=function(){eruda.init();eruda.show();}}})()">v1.1.91</div>
 
   </div>
 </div>
@@ -1237,6 +1291,96 @@ const DUNGEON_BOSS = [
 
 // Player attribute points given before dungeon per rank
 const DUNGEON_PLAYER_PTS = [10,10,10,10,10,10,10,10,10,10];
+
+// ── 資源副本 Boss 設定 ──
+// HP: 100→300→900→2700→... (×3), ATK: 10→25→63→158→... (×2.5 四捨五入)
+const RESOURCE_DUNGEON_BOSS = (() => {
+  const configs = [];
+  let hp = 100, atk = 10;
+  for (let i = 0; i < 10; i++) {
+    configs.push({ hp, atk, def: 0 });
+    hp  = Math.round(hp  * 3);
+    atk = Math.round(atk * 2.5);
+  }
+  return configs;
+})();
+
+// 資源副本：每回合技能觸發機率（%）
+const RESOURCE_BOSS_SKILL_CHANCE = [6,12,18,24,30,36,42,48,52,56];
+
+// 資源副本勝利掉落金幣
+const RESOURCE_DUNGEON_GOLD = [
+  10000, 50000, 250000, 1250000, 10000000,
+  50000000, 250000000, 1250000000, 5000000000, 25000000000
+];
+
+// 資源副本 Boss 技能定義
+const RESOURCE_BOSS_SKILLS = [
+  {
+    id: 'abyss_gaze', name: '深淵凝視',
+    desc: '使一個玩家兩回合不能行動',
+    icon: '👁',
+    apply(gs, addLog) {
+      const alive = gs.team.filter(m => m.hp > 0 && !m.isBot);
+      if (!alive.length) return;
+      const target = alive[Math.floor(Math.random() * alive.length)];
+      target._silencedTurns = (target._silencedTurns || 0) + 2;
+      addLog(`👁 <span style="color:#a78bfa">Boss 釋放【深淵凝視】！${target.name} 兩回合無法行動！</span>`);
+    }
+  },
+  {
+    id: 'royal_dominance', name: '帝王威懾',
+    desc: '使所有玩家一回合不能行動',
+    icon: '👑',
+    apply(gs, addLog) {
+      gs.team.forEach(m => {
+        if (m.hp > 0 && !m.isBot) m._silencedTurns = (m._silencedTurns || 0) + 1;
+      });
+      addLog(`👑 <span style="color:#fbbf24">Boss 釋放【帝王威懾】！所有玩家一回合無法行動！</span>`);
+    }
+  },
+  {
+    id: 'weak_point', name: '弱點打擊',
+    desc: '本次攻擊造成 2 倍傷害',
+    icon: '🎯',
+    dmgMult: 2
+  },
+  {
+    id: 'bone_crush', name: '碎骨重擊',
+    desc: '本次攻擊造成 3 倍傷害',
+    icon: '💥',
+    dmgMult: 3
+  },
+  {
+    id: 'god_slash', name: '弒神魔斬',
+    desc: '本次攻擊造成 5 倍傷害',
+    icon: '⚡',
+    dmgMult: 5
+  }
+];
+
+// ── 素材定義 ──
+const MATERIALS = [
+  // 白色系（普通金屬）
+  { id:'廢鐵',   tier:0, style:'color:#e5e7eb',                          icon:'🪨' },
+  { id:'生鐵',   tier:1, style:'color:#e5e7eb',                          icon:'🪨' },
+  { id:'熟鐵',   tier:2, style:'color:#e5e7eb',                          icon:'🔩' },
+  { id:'精鐵',   tier:3, style:'color:#e5e7eb',                          icon:'⚙️' },
+  { id:'鋼鐵',   tier:4, style:'color:#e5e7eb',                          icon:'🔧' },
+  // 金色/白色流動（稀有金屬）
+  { id:'玄鐵',   tier:5, style:'color:#fbbf24',                          icon:'💠', anim:'shimmer' },
+  { id:'秘銀',   tier:6, style:'color:#e5e7eb;text-shadow:0 0 6px #60a5fa,0 0 12px #3b82f6', icon:'🌙', anim:'silver-flow' },
+  { id:'冰晶',   tier:7, style:'color:#bae6fd;text-shadow:0 0 8px #38bdf8', icon:'❄️', anim:'ice-glow' },
+  { id:'赤岩',   tier:8, style:'color:#fca5a5;text-shadow:0 0 8px #ef4444', icon:'🔴', anim:'red-pulse' },
+  { id:'雷紋石', tier:9, style:'color:#fde68a;text-shadow:0 0 8px #eab308,0 0 16px #ca8a04', icon:'⚡', anim:'lightning' },
+  // 彩色流動（傳說素材）
+  { id:'太乙精鐵', tier:10, style:'', icon:'✨', anim:'rainbow' },
+  { id:'太初神髓', tier:11, style:'', icon:'🌌', anim:'rainbow' },
+  { id:'震金',     tier:12, style:'', icon:'🌠', anim:'rainbow' },
+  { id:'混沌原晶', tier:13, style:'', icon:'🔮', anim:'rainbow' },
+  { id:'不滅聖鐵', tier:14, style:'', icon:'⭐', anim:'rainbow' },
+  { id:'弒神魔鐵', tier:15, style:'', icon:'💀', anim:'rainbow' },
+];
 
 function rollRarity() {
   const total = RARITIES.reduce((s,r) => s + r.weight, 0);
@@ -3010,7 +3154,7 @@ function fxFreezeAll() {
   });
 }
 
-// ── 精靈術師：藤蔓纏繞，持續 4 回合 ──
+// ── 精靈術師：絢麗藤蔓纏繞，持續 4 回合，粒子樹葉不斷飄落 ──
 function fxVinesBind(targetIdx) {
   const cardId = `fc-enemy-${targetIdx}`;
   clearFx(`vine_${targetIdx}`);
@@ -3020,51 +3164,202 @@ function fxVinesBind(targetIdx) {
 
   const overlay = makePersistOverlay(cardId, 419);
   overlay.style.borderRadius = '10px';
-  overlay.style.border = '1.5px solid #22c55e77';
-  overlay.style.boxShadow = '0 0 12px 4px #16a34a77, inset 0 0 8px 2px #22c55e33';
+  overlay.style.overflow = 'hidden';
   overlay.style.opacity = '0';
-  overlay.style.transition = 'opacity 350ms';
-  overlay.innerHTML = `<svg viewBox="0 0 100 80" width="100%" height="100%" xmlns="http://www.w3.org/2000/svg" style="position:absolute;inset:0;overflow:visible">
-    <defs><filter id="vf"><feGaussianBlur stdDeviation="1"/></filter></defs>
-    <path d="M0,7 C12,-2 28,14 45,6 S72,-3 100,8"   fill="none" stroke="#16a34a" stroke-width="2.5" stroke-linecap="round" filter="url(#vf)" stroke-dasharray="280" stroke-dashoffset="280" id="vp0"/>
-    <path d="M0,73 C15,85 32,68 50,76 S80,87 100,73"  fill="none" stroke="#15803d" stroke-width="2.5" stroke-linecap="round" filter="url(#vf)" stroke-dasharray="280" stroke-dashoffset="280" id="vp1"/>
-    <path d="M6,0 C-2,16 10,34 3,52 S-5,70 7,80"     fill="none" stroke="#22c55e" stroke-width="2"   stroke-linecap="round" filter="url(#vf)" stroke-dasharray="230" stroke-dashoffset="230" id="vp2"/>
-    <path d="M94,0 C104,18 90,38 97,56 S108,72 93,80" fill="none" stroke="#4ade80" stroke-width="2"   stroke-linecap="round" filter="url(#vf)" stroke-dasharray="230" stroke-dashoffset="230" id="vp3"/>
-    <path d="M10,4 Q30,25 20,45 T28,76"               fill="none" stroke="#86efac" stroke-width="1.5" stroke-linecap="round" stroke-dasharray="200" stroke-dashoffset="200" id="vp4"/>
-    <path d="M85,4 Q70,22 80,42 T72,76"               fill="none" stroke="#86efac" stroke-width="1.5" stroke-linecap="round" stroke-dasharray="200" stroke-dashoffset="200" id="vp5"/>
-    <text x="22" y="12"  font-size="11" opacity="0" id="vl0">🌿</text>
-    <text x="60" y="8"   font-size="10" opacity="0" id="vl1">🍃</text>
-    <text x="90" y="22"  font-size="9"  opacity="0" id="vl2">🌿</text>
-    <text x="4"  y="42"  font-size="10" opacity="0" id="vl3">🍃</text>
-    <text x="88" y="50"  font-size="9"  opacity="0" id="vl4">🌿</text>
-    <text x="15" y="76"  font-size="11" opacity="0" id="vl5">🍃</text>
-    <text x="65" y="78"  font-size="10" opacity="0" id="vl6">🌿</text>
+  overlay.style.transition = 'opacity 400ms';
+
+  // SVG 藤蔓層：多條粗細不同的藤蔓，帶光暈
+  const uid = `v${Date.now().toString(36)}`;
+  overlay.innerHTML = `<svg id="vine_svg_${uid}" viewBox="0 0 120 90" preserveAspectRatio="none" width="100%" height="100%"
+    xmlns="http://www.w3.org/2000/svg" style="position:absolute;inset:0;pointer-events:none">
+    <defs>
+      <filter id="vglow_${uid}" x="-30%" y="-30%" width="160%" height="160%">
+        <feGaussianBlur stdDeviation="2.2" result="blur"/>
+        <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+      </filter>
+      <filter id="vglow2_${uid}" x="-40%" y="-40%" width="180%" height="180%">
+        <feGaussianBlur stdDeviation="3.5" result="blur"/>
+        <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+      </filter>
+      <!-- 左側主藤：從左上往右下螺旋 -->
+      <path id="vp0_${uid}" d="M-5,0 C10,12 5,30 15,42 S8,62 20,75 S35,88 45,95"/>
+      <!-- 右側主藤：從右上往左下 -->
+      <path id="vp1_${uid}" d="M125,0 C108,15 115,32 102,45 S110,65 98,78 S82,88 75,95"/>
+      <!-- 下方橫藤：從左到右纏繞 -->
+      <path id="vp2_${uid}" d="M-5,85 C20,72 40,88 60,78 S90,72 125,82"/>
+      <!-- 上方橫藤 -->
+      <path id="vp3_${uid}" d="M-5,8 C25,0 45,14 62,6 S95,0 125,10"/>
+      <!-- 中間斜藤 -->
+      <path id="vp4_${uid}" d="M-5,40 C18,28 30,55 52,44 S80,30 105,48 S118,62 125,55"/>
+      <!-- 細藤點綴 -->
+      <path id="vp5_${uid}" d="M10,-5 C6,18 20,35 12,52 S5,70 18,90"/>
+      <path id="vp6_${uid}" d="M108,-5 C114,20 100,38 110,55 S118,72 104,92"/>
+    </defs>
+    <!-- 光暈層（粗、半透明） -->
+    <use href="#vp0_${uid}" fill="none" stroke="#4ade80" stroke-width="7"  opacity="0.22" filter="url(#vglow2_${uid})" stroke-dasharray="300" stroke-dashoffset="300" id="vg0_${uid}"/>
+    <use href="#vp1_${uid}" fill="none" stroke="#22c55e" stroke-width="7"  opacity="0.22" filter="url(#vglow2_${uid})" stroke-dasharray="300" stroke-dashoffset="300" id="vg1_${uid}"/>
+    <use href="#vp2_${uid}" fill="none" stroke="#16a34a" stroke-width="6"  opacity="0.28" filter="url(#vglow2_${uid})" stroke-dasharray="280" stroke-dashoffset="280" id="vg2_${uid}"/>
+    <use href="#vp3_${uid}" fill="none" stroke="#4ade80" stroke-width="5"  opacity="0.25" filter="url(#vglow2_${uid})" stroke-dasharray="280" stroke-dashoffset="280" id="vg3_${uid}"/>
+    <use href="#vp4_${uid}" fill="none" stroke="#22c55e" stroke-width="5"  opacity="0.20" filter="url(#vglow2_${uid})" stroke-dasharray="320" stroke-dashoffset="320" id="vg4_${uid}"/>
+    <!-- 主幹層 -->
+    <use href="#vp0_${uid}" fill="none" stroke="#15803d" stroke-width="3.2" stroke-linecap="round" filter="url(#vglow_${uid})" stroke-dasharray="300" stroke-dashoffset="300" id="vm0_${uid}"/>
+    <use href="#vp1_${uid}" fill="none" stroke="#166534" stroke-width="3.2" stroke-linecap="round" filter="url(#vglow_${uid})" stroke-dasharray="300" stroke-dashoffset="300" id="vm1_${uid}"/>
+    <use href="#vp2_${uid}" fill="none" stroke="#15803d" stroke-width="2.8" stroke-linecap="round" filter="url(#vglow_${uid})" stroke-dasharray="280" stroke-dashoffset="280" id="vm2_${uid}"/>
+    <use href="#vp3_${uid}" fill="none" stroke="#166534" stroke-width="2.5" stroke-linecap="round" filter="url(#vglow_${uid})" stroke-dasharray="280" stroke-dashoffset="280" id="vm3_${uid}"/>
+    <use href="#vp4_${uid}" fill="none" stroke="#14532d" stroke-width="2.2" stroke-linecap="round" filter="url(#vglow_${uid})" stroke-dasharray="320" stroke-dashoffset="320" id="vm4_${uid}"/>
+    <!-- 亮邊層（最細、最亮） -->
+    <use href="#vp0_${uid}" fill="none" stroke="#86efac" stroke-width="1.2" stroke-linecap="round" opacity="0.8" stroke-dasharray="300" stroke-dashoffset="300" id="vl0_${uid}"/>
+    <use href="#vp1_${uid}" fill="none" stroke="#86efac" stroke-width="1.2" stroke-linecap="round" opacity="0.8" stroke-dasharray="300" stroke-dashoffset="300" id="vl1_${uid}"/>
+    <use href="#vp2_${uid}" fill="none" stroke="#bbf7d0" stroke-width="1.0" stroke-linecap="round" opacity="0.7" stroke-dasharray="280" stroke-dashoffset="280" id="vl2_${uid}"/>
+    <use href="#vp3_${uid}" fill="none" stroke="#bbf7d0" stroke-width="1.0" stroke-linecap="round" opacity="0.7" stroke-dasharray="280" stroke-dashoffset="280" id="vl3_${uid}"/>
+    <use href="#vp4_${uid}" fill="none" stroke="#86efac" stroke-width="0.9" stroke-linecap="round" opacity="0.6" stroke-dasharray="320" stroke-dashoffset="320" id="vl4_${uid}"/>
+    <!-- 細藤 -->
+    <use href="#vp5_${uid}" fill="none" stroke="#22c55e" stroke-width="1.8" stroke-linecap="round" filter="url(#vglow_${uid})" stroke-dasharray="200" stroke-dashoffset="200" id="vs0_${uid}"/>
+    <use href="#vp6_${uid}" fill="none" stroke="#22c55e" stroke-width="1.8" stroke-linecap="round" filter="url(#vglow_${uid})" stroke-dasharray="200" stroke-dashoffset="200" id="vs1_${uid}"/>
+    <use href="#vp5_${uid}" fill="none" stroke="#86efac" stroke-width="0.7" stroke-linecap="round" opacity="0.7" stroke-dasharray="200" stroke-dashoffset="200" id="vsl0_${uid}"/>
+    <use href="#vp6_${uid}" fill="none" stroke="#86efac" stroke-width="0.7" stroke-linecap="round" opacity="0.7" stroke-dasharray="200" stroke-dashoffset="200" id="vsl1_${uid}"/>
   </svg>`;
+
+  // 外框光暈
+  overlay.style.boxShadow = '0 0 18px 6px #22c55e55, inset 0 0 14px 4px #16a34a33';
+  overlay.style.border = '1.5px solid #22c55e88';
+
+  let running = true;
 
   raf2(() => {
     overlay.style.opacity = '1';
-    const svg = overlay.querySelector('svg');
-    // 藤蔓生長
-    for (let pi=0; pi<6; pi++) {
-      const p = svg.querySelector(`#vp${pi}`);
-      if (!p) continue;
-      setTimeout(() => {
-        p.style.transition = `stroke-dashoffset ${380+pi*110}ms ease-out`;
-        p.style.strokeDashoffset = '0';
-      }, pi*90);
+    const svg = document.getElementById(`vine_svg_${uid}`);
+    if (!svg) return;
+
+    // 藤蔓生長動畫：按順序展開每條藤
+    const allIds = [
+      ['vg0','vm0','vl0'], ['vg1','vm1','vl1'],
+      ['vg2','vm2','vl2'], ['vg3','vm3','vl3'],
+      ['vg4','vm4','vl4'],
+      ['vs0','vsl0'], ['vs1','vsl1']
+    ];
+    allIds.forEach((group, gi) => {
+      const delay = gi * 120;
+      const growDur = 380 + gi * 80;
+      group.forEach(id => {
+        const el = document.getElementById(`${id}_${uid}`);
+        if (!el) return;
+        setTimeout(() => {
+          el.style.transition = `stroke-dashoffset ${growDur}ms cubic-bezier(0.25,0.8,0.25,1)`;
+          el.style.strokeDashoffset = '0';
+        }, delay);
+      });
+    });
+
+    // ── 粒子樹葉：用 SVG polygon 模擬橢圓葉子，持續生成並飄落 ──
+    // 葉子形狀：小橢圓加莖
+    function spawnLeaf() {
+      if (!running) return;
+      const el = document.getElementById(`vine_svg_${uid}`);
+      if (!el) return;
+
+      // 隨機葉子屬性
+      const startX = 5 + Math.random() * 110; // 從卡片頂部隨機位置生出
+      const startY = -8 + Math.random() * 20;
+      const size = 3 + Math.random() * 5;       // 葉子大小
+      const swayAmp = 8 + Math.random() * 14;   // 飄動幅度
+      const fallDur = 1600 + Math.random() * 2000; // 飄落時長
+      const rotStart = Math.random() * 360;
+      const rotEnd = rotStart + (Math.random() > 0.5 ? 1 : -1) * (90 + Math.random() * 200);
+
+      // 顏色從深綠到亮綠
+      const greens = ['#14532d','#15803d','#16a34a','#22c55e','#4ade80','#86efac','#bbf7d0'];
+      const col = greens[Math.floor(Math.random() * greens.length)];
+      const col2 = greens[Math.min(greens.length-1, greens.indexOf(col)+1)];
+
+      // 用 SVG g + ellipse 表示葉子
+      const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+      g.style.transition = `none`;
+      // 葉身
+      const ellipse = document.createElementNS('http://www.w3.org/2000/svg', 'ellipse');
+      ellipse.setAttribute('cx', '0');
+      ellipse.setAttribute('cy', '0');
+      ellipse.setAttribute('rx', String(size));
+      ellipse.setAttribute('ry', String(size * 0.55));
+      ellipse.setAttribute('fill', col);
+      ellipse.setAttribute('opacity', '0.88');
+      // 葉脈
+      const vein = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+      vein.setAttribute('x1', String(-size * 0.85));
+      vein.setAttribute('y1', '0');
+      vein.setAttribute('x2', String(size * 0.85));
+      vein.setAttribute('y2', '0');
+      vein.setAttribute('stroke', col2);
+      vein.setAttribute('stroke-width', '0.5');
+      vein.setAttribute('opacity', '0.6');
+      // 葉莖
+      const stem = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+      stem.setAttribute('x1', '0');
+      stem.setAttribute('y1', '0');
+      stem.setAttribute('x2', '0');
+      stem.setAttribute('y2', String(size * 0.9));
+      stem.setAttribute('stroke', '#15803d');
+      stem.setAttribute('stroke-width', '0.6');
+
+      g.appendChild(ellipse);
+      g.appendChild(vein);
+      g.appendChild(stem);
+      el.appendChild(g);
+
+      // 初始位置和旋轉
+      g.setAttribute('transform', `translate(${startX},${startY}) rotate(${rotStart})`);
+
+      // 動畫：透過 requestAnimationFrame 手動更新位置，製造飄落+左右搖曳
+      const startTime = performance.now();
+      let opacity = 0;
+      const endY = 95 + Math.random() * 20; // 飄落終點
+
+      function tick(now) {
+        if (!running) { g.remove(); return; }
+        const elapsed = now - startTime;
+        const progress = Math.min(elapsed / fallDur, 1);
+
+        // Y：加速飄落（ease-in）
+        const y = startY + (endY - startY) * (progress * progress * 0.6 + progress * 0.4);
+        // X：正弦搖曳
+        const x = startX + Math.sin(progress * Math.PI * 3 + startX) * swayAmp;
+        // 旋轉：持續轉動
+        const rot = rotStart + (rotEnd - rotStart) * progress;
+
+        // 透明度：前10%淡入，後20%淡出
+        if (progress < 0.12) opacity = progress / 0.12;
+        else if (progress > 0.8) opacity = (1 - progress) / 0.2;
+        else opacity = 1;
+
+        ellipse.setAttribute('opacity', String(0.82 * opacity));
+        vein.setAttribute('opacity', String(0.55 * opacity));
+        stem.setAttribute('opacity', String(0.7 * opacity));
+        g.setAttribute('transform', `translate(${x},${y}) rotate(${rot})`);
+
+        if (progress < 1) {
+          requestAnimationFrame(tick);
+        } else {
+          g.remove();
+        }
+      }
+      requestAnimationFrame(tick);
+
+      // 下一片葉子
+      if (running) {
+        const nextDelay = 180 + Math.random() * 320;
+        setTimeout(spawnLeaf, nextDelay);
+      }
     }
-    // 葉片
-    for (let li=0; li<7; li++) {
-      const l = svg.querySelector(`#vl${li}`);
-      if (!l) continue;
-      setTimeout(() => {
-        l.style.transition = 'opacity 300ms';
-        l.style.opacity = '0.9';
-      }, 500+li*90);
-    }
+
+    // 延遲 500ms 後開始生成樹葉（等藤蔓生長完一些再出現）
+    setTimeout(() => { if (running) spawnLeaf(); }, 500);
+    setTimeout(() => { if (running) spawnLeaf(); }, 750); // 第二條流
   });
 
-  _activeFx[`vine_${targetIdx}`] = () => overlay.kill(650);
+  _activeFx[`vine_${targetIdx}`] = () => {
+    running = false;
+    overlay.kill(650);
+  };
   setTimeout(() => clearFx(`vine_${targetIdx}`), dur);
 }
 
@@ -3337,7 +3632,10 @@ function resetJobState(gs) {
       m._sacrificeApplied = false;
     }
   });
-  gs.enemies.forEach(e => { e.poisoned = e.poisoned||0; });
+  gs.enemies.forEach((e, i) => {
+    e.poisoned = e.poisoned||0;
+    clearFx(`vine_${i}`);  // 換關清除藤蔓特效
+  });
   gs._silenced        = {};
   gs._frozenThisRound = 0;
   gs._targetingSkill  = null;
@@ -3827,6 +4125,12 @@ function calcSingleHit(attacker, defender) {
     dmg = Math.round(dmg * 1.5);
   }
 
+  // 資源副本 Boss 技能傷害倍率（使用後清除）
+  if (attacker._skillDmgMult) {
+    dmg = Math.round(dmg * attacker._skillDmgMult);
+    attacker._skillDmgMult = 0;
+  }
+
   if (dmg < 1) dmg = 1;
   return { dmg, isCrit };
 }
@@ -3950,6 +4254,7 @@ function writeBattleState() {
       atk: e.atk, def: e.def, skills: e.skills||{}, dead: e.hp<=0,
       isDungeonBoss: e.isDungeonBoss||false, rankIdx: e.rankIdx||0,
       defMin: e.defMin||0, defMax: e.defMax||0,
+      isResourceDungeonBoss: e.isResourceDungeonBoss||false,
       poisoned: e.poisoned||0
     })),
     currentTurnIdx: gs.currentTurn,
@@ -4518,6 +4823,16 @@ function hostProcessNextTurn() {
     }
   }
 
+  // 資源副本 Boss 技能：玩家被控制（深淵凝視/帝王威懾）
+  if (t.type === 'team' && !actor.isBot && actor._silencedTurns > 0) {
+    actor._silencedTurns--;
+    addLog(`👁 <span style="color:#a78bfa">${actor.name} 被深淵凝視控制，無法行動！（剩餘 ${actor._silencedTurns} 回合）</span>`);
+    gs.currentTurn++;
+    renderBattle(); writeBattleState();
+    setTimeout(() => hostProcessNextTurn(), 500);
+    return;
+  }
+
   renderBattle();
 
   if (t.type === 'team' && !actor.isBot) {
@@ -4561,6 +4876,32 @@ function hostProcessNextTurn() {
       }
 
       const target = targets[Math.floor(Math.random() * targets.length)];
+
+      // ── 資源副本 Boss 技能 ──
+      if (gs.isResourceDungeon && actor.isDungeonBoss) {
+        const rankIdx = actor.rankIdx || 0;
+        const chance  = RESOURCE_BOSS_SKILL_CHANCE[rankIdx] / 100;
+        if (Math.random() < chance) {
+          // 分離出需要位移玩家才能行動的技能（深淵凝視/帝王威懾）
+          // 和直接增幅傷害的技能（弱點打擊/碎骨重擊/弒神魔斬）
+          const skill = RESOURCE_BOSS_SKILLS[Math.floor(Math.random() * RESOURCE_BOSS_SKILLS.length)];
+          if (skill.dmgMult) {
+            // 傷害倍率技能：儲存在 actor 上，calcDamage 會讀取
+            actor._skillDmgMult = skill.dmgMult;
+            addLog(`${skill.icon} <span style="color:#a78bfa;font-weight:900">Boss 釋放【${skill.name}】！本次攻擊造成 ${skill.dmgMult} 倍傷害！</span>`);
+            renderBattle(); writeBattleState();
+            hostPerformAttack(actor, target, false);
+          } else {
+            // 控制技能：立即套用，跳過攻擊
+            skill.apply(gs, addLog);
+            renderBattle(); writeBattleState();
+            gs.currentTurn++;
+            setTimeout(() => hostProcessNextTurn(), 600);
+          }
+          return;
+        }
+      }
+
       hostPerformAttack(actor, target, false);
     }, 800);
   }
@@ -5335,9 +5676,8 @@ function renderEquipTab() {
   const unequipped = inv.filter(i => !Object.values(eq).includes(i.uid));
   if (!unequipped.length) {
     invEl.innerHTML = '<div style="color:var(--text2);font-size:13px">背包中沒有裝備</div>';
-    return;
-  }
-  invEl.innerHTML = unequipped.map(item => `
+  } else {
+    invEl.innerHTML = unequipped.map(item => `
     <div class="eq-item-card" style="border-color:var(--rarity-border-${item.rarity})">
       <div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
         <div style="min-width:0;flex:1">
@@ -5353,6 +5693,42 @@ function renderEquipTab() {
         </div>
       </div>
     </div>`).join('');
+  }
+
+  // 素材背包
+  renderMaterialInventory();
+}
+
+function getMaterialClass(mat) {
+  if (mat.anim === 'rainbow')      return 'mat-rainbow';
+  if (mat.anim === 'shimmer')      return 'mat-shimmer';
+  if (mat.anim === 'silver-flow')  return 'mat-silver-flow';
+  if (mat.anim === 'ice-glow')     return 'mat-ice-glow';
+  if (mat.anim === 'red-pulse')    return 'mat-red-pulse';
+  if (mat.anim === 'lightning')    return 'mat-lightning';
+  return 'mat-white';
+}
+
+function renderMaterialInventory() {
+  const el = document.getElementById('material-inventory');
+  if (!el) return;
+  const mats = G.player.materials || {};
+  const owned = MATERIALS.filter(m => (mats[m.id] || 0) > 0);
+  if (!owned.length) {
+    el.innerHTML = '<div style="color:var(--text2);font-size:13px;grid-column:1/-1">暫無素材</div>';
+    return;
+  }
+  el.innerHTML = owned.map(m => {
+    const cnt = mats[m.id] || 0;
+    const cls = getMaterialClass(m);
+    return `<div class="mat-card">
+      <div style="font-size:20px">${m.icon}</div>
+      <div style="flex:1;min-width:0">
+        <div class="${cls}" style="font-size:13px">${m.id}</div>
+        <div style="font-size:11px;color:var(--text2);margin-top:2px">×${cnt}</div>
+      </div>
+    </div>`;
+  }).join('');
 }
 
 window.equipItem = async (uid) => {
@@ -5573,19 +5949,67 @@ window.G.dungeonDiff = 0; // selected rank index
 window.G.dungeonPendingLoot = null;
 
 function renderDungeonTab() {
+  // 裝備副本 grid
   const grid = document.getElementById('dungeon-diff-grid');
-  if (!grid) return;
-  grid.innerHTML = RANKS.map((r, i) => {
-    const col = getRankColor(r.key);
-    const sel = G.dungeonDiff === i;
-    return `<div class="dungeon-diff-btn" onclick="selectDungeonDiff(${i})"
-      style="border:${sel?'2':'1'}px solid ${col};background:${sel?col+'2a':'var(--surface2)'}">
-      <div style="font-weight:900;color:${col};font-size:15px">${r.name}</div>
-      <div style="font-size:11px;color:var(--text2);margin-top:4px">Boss HP ${DUNGEON_BOSS[i].hp}</div>
-    </div>`;
-  }).join('');
-  updateDungeonPreview();
+  if (grid) {
+    grid.innerHTML = RANKS.map((r, i) => {
+      const col = getRankColor(r.key);
+      const sel = G.dungeonDiff === i;
+      return `<div class="dungeon-diff-btn" onclick="selectDungeonDiff(${i})"
+        style="border:${sel?'2':'1'}px solid ${col};background:${sel?col+'2a':'var(--surface2)'}">
+        <div style="font-weight:900;color:${col};font-size:15px">${r.name}</div>
+        <div style="font-size:11px;color:var(--text2);margin-top:4px">Boss HP ${DUNGEON_BOSS[i].hp}</div>
+      </div>`;
+    }).join('');
+    updateDungeonPreview();
+  }
+  // 資源副本 grid
+  const rgrid = document.getElementById('resource-dungeon-diff-grid');
+  if (rgrid) {
+    rgrid.innerHTML = RANKS.map((r, i) => {
+      const col = getRankColor(r.key);
+      const sel = (G.resourceDungeonDiff||0) === i;
+      const b = RESOURCE_DUNGEON_BOSS[i];
+      const gold = RESOURCE_DUNGEON_GOLD[i];
+      const goldStr = gold >= 1e8 ? (gold/1e8).toFixed(0)+'億' : gold >= 1e4 ? (gold/1e4).toFixed(0)+'萬' : gold;
+      return `<div class="dungeon-diff-btn" onclick="selectResourceDungeonDiff(${i})"
+        style="border:${sel?'2':'1'}px solid ${col};background:${sel?col+'2a':'var(--surface2)'}">
+        <div style="font-weight:900;color:${col};font-size:15px">${r.name}</div>
+        <div style="font-size:11px;color:var(--text2);margin-top:2px">Boss HP ${b.hp}</div>
+        <div style="font-size:11px;color:#d97706;margin-top:2px">💰 ${goldStr}金</div>
+      </div>`;
+    }).join('');
+    updateResourceDungeonPreview();
+  }
 }
+
+window.switchDungeonType = (type) => {
+  G._dungeonType = type;
+  const eTab = document.getElementById('dungeon-tab-equip');
+  const rTab = document.getElementById('dungeon-tab-resource');
+  const eSec = document.getElementById('dungeon-equip-section');
+  const rSec = document.getElementById('dungeon-resource-section');
+  if (!eTab || !rTab || !eSec || !rSec) return;
+  if (type === 'equip') {
+    eTab.style.border = '2px solid var(--gold)';
+    eTab.style.background = 'var(--gold)22';
+    eTab.querySelector('div:nth-child(2)').style.color = 'var(--gold)';
+    rTab.style.border = '2px solid var(--border2)';
+    rTab.style.background = 'var(--surface2)';
+    rTab.querySelector('div:nth-child(2)').style.color = 'var(--text2)';
+    eSec.style.display = '';
+    rSec.style.display = 'none';
+  } else {
+    rTab.style.border = '2px solid #d97706';
+    rTab.style.background = '#d9770622';
+    rTab.querySelector('div:nth-child(2)').style.color = '#d97706';
+    eTab.style.border = '2px solid var(--border2)';
+    eTab.style.background = 'var(--surface2)';
+    eTab.querySelector('div:nth-child(2)').style.color = 'var(--text2)';
+    eSec.style.display = 'none';
+    rSec.style.display = '';
+  }
+};
 
 window.selectDungeonDiff = (idx) => {
   G.dungeonDiff = idx;
@@ -5607,6 +6031,93 @@ function updateDungeonPreview() {
     🛡 防禦：<span style="color:var(--cyan)">${b.defMin}~${b.defMax}</span>（每次受攻擊隨機）<br>
     🎁 玩家獲得屬性點：<span style="color:var(--gold)">${DUNGEON_PLAYER_PTS[G.dungeonDiff]}</span>`;
 }
+
+// ── 資源副本選難度 ──
+window.selectResourceDungeonDiff = (idx) => {
+  G.resourceDungeonDiff = idx;
+  renderDungeonTab();
+};
+
+function updateResourceDungeonPreview() {
+  const preview = document.getElementById('resource-boss-preview');
+  const statsEl = document.getElementById('resource-boss-stats');
+  if (!preview || !statsEl) return;
+  const idx = G.resourceDungeonDiff || 0;
+  const b   = RESOURCE_DUNGEON_BOSS[idx];
+  const r   = RANKS[idx];
+  const col = getRankColor(r.key);
+  const gold = RESOURCE_DUNGEON_GOLD[idx];
+  const goldStr = gold >= 1e8 ? (gold/1e8).toFixed(0)+'億'
+                : gold >= 1e4 ? (gold/1e4).toFixed(0)+'萬' : gold;
+  const chance = RESOURCE_BOSS_SKILL_CHANCE[idx];
+  preview.style.display = '';
+  statsEl.innerHTML = `
+    <span style="color:${col};font-weight:900">【${r.name}難度】</span><br>
+    ❤ 血量：<span style="color:var(--green)">${b.hp}</span><br>
+    ⚔ 攻擊：<span style="color:var(--red)">${b.atk}</span><br>
+    🛡 防禦：<span style="color:var(--cyan)">0</span><br>
+    ✨ 每回合技能觸發率：<span style="color:#a78bfa">${chance}%</span><br>
+    💰 勝利獎勵：<span style="color:#d97706;font-weight:900">${goldStr} 金幣</span><br>
+    <div style="margin-top:6px;font-size:11px;color:var(--text2)">可能釋放技能：${RESOURCE_BOSS_SKILLS.map(s=>s.icon+s.name).join('、')}</div>`;
+}
+
+// ── 建立資源副本房間 ──
+window.showCreateResourceDungeon = async () => {
+  const idx  = G.resourceDungeonDiff || 0;
+  const code = 'R' + genRoomCode();
+  G.teamId   = code;
+  G.isDungeon = true;
+  G.isResourceDungeon = true;
+  G.dungeonRankIdx    = idx;
+  const b = RESOURCE_DUNGEON_BOSS[idx];
+  const roomData = {
+    status: 'waiting', leader: G.uid, public: true,
+    isDungeon: true, isResourceDungeon: true,
+    dungeonRankIdx: idx,
+    bossHp: b.hp, bossAtk: b.atk, bossDef: 0, bossMaxHp: b.hp,
+    createdAt: Date.now(),
+    members: { [G.uid]: { name: G.player.name, uid: G.uid, isBot: false, ready: false } }
+  };
+  await set(ref(db, `rooms2/${code}`), roomData);
+  showLobby(code);
+};
+
+// ── 搜尋資源副本房間 ──
+window.showSearchResourceDungeon = () => {
+  document.getElementById('joinDungeonCodeInput').value = '';
+  document.getElementById('joinDungeonCodeMsg').textContent = '';
+  document.getElementById('openDungeonsList').innerHTML = '<div style="text-align:center;color:var(--text2);padding:16px">載入中...</div>';
+  openModal('searchDungeonModal');
+  loadOpenResourceDungeons();
+};
+
+window.loadOpenResourceDungeons = async () => {
+  const listEl = document.getElementById('openDungeonsList');
+  const snap = await get(ref(db, 'rooms2'));
+  if (!snap.exists()) { listEl.innerHTML = '<div style="color:var(--text2);font-size:13px;padding:8px">目前沒有資源副本房間</div>'; return; }
+  const rooms = snap.val();
+  const open = Object.entries(rooms)
+    .filter(([id, r]) => r.status === 'waiting' && r.isResourceDungeon === true && r.public === true)
+    .sort((a,b) => (b[1].createdAt||0) - (a[1].createdAt||0));
+  if (!open.length) { listEl.innerHTML = '<div style="color:var(--text2);font-size:13px;padding:8px">目前沒有公開資源副本房間</div>'; return; }
+  listEl.innerHTML = open.map(([id, r]) => {
+    const members = Object.values(r.members||{}).filter(m=>!m.isBot);
+    const count   = members.length;
+    const rName   = RANKS[r.dungeonRankIdx||0]?.name || '黑鐵';
+    const rCol    = getRankColor(RANKS[r.dungeonRankIdx||0]?.key || '鐵');
+    const gold    = RESOURCE_DUNGEON_GOLD[r.dungeonRankIdx||0];
+    const goldStr = gold >= 1e8 ? (gold/1e8).toFixed(0)+'億' : gold >= 1e4 ? (gold/1e4).toFixed(0)+'萬' : gold;
+    const full    = count >= 3;
+    return `<div style="display:flex;align-items:center;justify-content:space-between;background:var(--bg2);border-radius:8px;padding:10px 12px;margin-bottom:8px;gap:8px">
+      <div style="flex:1">
+        <div style="font-weight:700;color:#d97706;font-size:13px">${id} 💰資源副本</div>
+        <div style="font-size:11px;color:${rCol};margin-top:2px">${rName} 難度 · ${count}/3 人 · ${goldStr}金</div>
+      </div>
+      ${full ? `<button class="btn btn-secondary btn-sm" disabled>已滿</button>`
+             : `<button class="btn btn-primary btn-sm" onclick="requestJoinDungeon('${id}')">申請加入</button>`}
+    </div>`;
+  }).join('');
+};
 
 window.showCreateDungeon = async () => {
   const code = 'D' + genRoomCode();
@@ -5734,14 +6245,25 @@ async function initDungeon(members, roomId, rankIdx) {
     } catch(e) { playerSkillsMap[uid]={}; playerEquipMapD[uid]={inventory:[],equipped:{}}; }
   }));
 
-  // Build boss
-  const bCfg = DUNGEON_BOSS[rankIdx];
-  const boss = {
-    name:'Boss', isMonster:true, isDungeonBoss:true,
-    hp:bCfg.hp, maxHp:bCfg.hp, atk:bCfg.atk,
-    def:bCfg.defMin, defMin:bCfg.defMin, defMax:bCfg.defMax,
-    skills:{}, rankIdx
-  };
+  // Build boss — 依副本類型選擇設定
+  const isResDun = !!(G.isResourceDungeon);
+  let boss;
+  if (isResDun) {
+    const bCfg = RESOURCE_DUNGEON_BOSS[rankIdx];
+    boss = {
+      name:'混沌魔神', isMonster:true, isDungeonBoss:true, isResourceDungeonBoss:true,
+      hp:bCfg.hp, maxHp:bCfg.hp, atk:bCfg.atk, def:0, defMin:0, defMax:0,
+      skills:{}, rankIdx
+    };
+  } else {
+    const bCfg = DUNGEON_BOSS[rankIdx];
+    boss = {
+      name:'Boss', isMonster:true, isDungeonBoss:true,
+      hp:bCfg.hp, maxHp:bCfg.hp, atk:bCfg.atk,
+      def:bCfg.defMin, defMin:bCfg.defMin, defMax:bCfg.defMax,
+      skills:{}, rankIdx
+    };
+  }
 
   const pts = DUNGEON_PLAYER_PTS[rankIdx];
   const team = [];
@@ -5795,6 +6317,7 @@ async function initDungeon(members, roomId, rankIdx) {
     battleActive:false, roomId, pendingAlloc:true, log:[],
     selectedEnemy:-1, isHost:iAmHost, hostName:hostUid,
     roundNum:1, startStage:1, isDungeon:true, dungeonRankIdx:rankIdx,
+    isResourceDungeon: isResDun,
     _guildLevel: dungeonGuildLevel
   };
   if (iAmHost) {
@@ -5838,27 +6361,50 @@ function showDungeonResult(win) {
   const lootEl  = document.getElementById('dungeonLootArea');
   const eqBtn   = document.getElementById('dungeonEquipBtn');
   overlay.classList.remove('hidden');
+
   if (win) {
     titleEl.textContent = '🎉 Boss 擊倒！';
     titleEl.className   = 'result-title result-win';
-    // Roll loot
-    const item = rollEquipItem(gs.dungeonRankIdx);
-    G.dungeonPendingLoot = item;
-    lootEl.innerHTML = `
-      <div style="margin-bottom:12px;font-size:13px;color:var(--text2)">獲得裝備掉落：</div>
-      <div style="background:var(--bg2);border:1px solid var(--border2);border-radius:12px;padding:16px;text-align:left">
-        <div class="${item.rarityClass}" style="font-size:18px;font-weight:900">${item.icon} ${item.name}</div>
-        <div style="font-size:12px;color:var(--text2);margin-top:4px">Lv${item.level} · ${rarityLabel(item)} · ${item.desc}</div>
-      </div>`;
-    eqBtn.style.display = '';
-    // Award loot to inventory
-    awardDungeonLoot(item);
+
+    if (gs.isResourceDungeon) {
+      // 資源副本：掉金幣
+      const gold = RESOURCE_DUNGEON_GOLD[gs.dungeonRankIdx || 0];
+      const goldStr = gold >= 1e8 ? (gold/1e8).toFixed(0)+'億'
+                    : gold >= 1e4 ? (gold/1e4).toFixed(0)+'萬' : gold.toLocaleString();
+      lootEl.innerHTML = `
+        <div style="margin-bottom:12px;font-size:13px;color:var(--text2)">資源副本勝利！</div>
+        <div style="background:var(--bg2);border:1px solid #d97706;border-radius:12px;padding:20px;text-align:center">
+          <div style="font-size:32px">💰</div>
+          <div style="font-size:22px;font-weight:900;color:#fbbf24;margin-top:8px">+${goldStr} 金幣</div>
+        </div>`;
+      eqBtn.style.display = 'none';
+      awardResourceDungeonGold(gold);
+    } else {
+      // 裝備副本：掉裝備
+      const item = rollEquipItem(gs.dungeonRankIdx);
+      G.dungeonPendingLoot = item;
+      lootEl.innerHTML = `
+        <div style="margin-bottom:12px;font-size:13px;color:var(--text2)">獲得裝備掉落：</div>
+        <div style="background:var(--bg2);border:1px solid var(--border2);border-radius:12px;padding:16px;text-align:left">
+          <div class="${item.rarityClass}" style="font-size:18px;font-weight:900">${item.icon} ${item.name}</div>
+          <div style="font-size:12px;color:var(--text2);margin-top:4px">Lv${item.level} · ${rarityLabel(item)} · ${item.desc}</div>
+        </div>`;
+      eqBtn.style.display = '';
+      awardDungeonLoot(item);
+    }
   } else {
     titleEl.textContent = '💀 Boss 挑戰失敗';
     titleEl.className   = 'result-title result-lose';
     lootEl.innerHTML    = '<div style="color:var(--text2)">隊伍全員陣亡，本次無掉落</div>';
     eqBtn.style.display = 'none';
   }
+}
+
+async function awardResourceDungeonGold(gold) {
+  const newGold = (G.player.gold || 0) + gold;
+  G.player.gold = newGold;
+  await update(ref(db, `players/${G.uid}`), { gold: newGold });
+  updateUI();
 }
 
 async function awardDungeonLoot(item) {
@@ -7251,21 +7797,7 @@ async function listenGuildJoinRequests() {
   });
 }
 
-function dbg(msg) {
-  // 顯示在畫面上的 debug 訊息
-  let el = document.getElementById('_dbgOverlay');
-  if (!el) {
-    el = document.createElement('div');
-    el.id = '_dbgOverlay';
-    el.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:99999;background:#000c;color:#0f0;font-size:11px;padding:6px;max-height:40vh;overflow-y:auto;font-family:monospace;pointer-events:none';
-    document.body.appendChild(el);
-  }
-  const line = document.createElement('div');
-  line.textContent = new Date().toLocaleTimeString() + ' ' + msg;
-  el.appendChild(line);
-  el.scrollTop = el.scrollHeight;
-  console.log('[DBG]', msg);
-}
+function dbg(msg) { /* debug removed */ }
 
 window.approveGuildJoin = async (gid, uid, name) => {
   dbg('approveGuildJoin start gid='+gid+' uid='+uid.slice(0,8));
