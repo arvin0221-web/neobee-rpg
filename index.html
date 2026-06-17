@@ -724,7 +724,7 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
 
     <!-- VERSION FOOTER -->
     <div style="text-align:center;padding:3px 0;font-size:11px;color:var(--text3);letter-spacing:2px;cursor:default;user-select:none;display:inline-block;margin:0 auto;width:100%"
-      onclick="(function(){window._erudaTap=(window._erudaTap||0)+1;if(window._erudaTap>=5){window._erudaTap=0;if(window.eruda){eruda.show();return;}var s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/eruda';document.head.appendChild(s);s.onload=function(){eruda.init();eruda.show();}}})()">v1.1.91</div>
+      onclick="(function(){window._erudaTap=(window._erudaTap||0)+1;if(window._erudaTap>=5){window._erudaTap=0;if(window.eruda){eruda.show();return;}var s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/eruda';document.head.appendChild(s);s.onload=function(){eruda.init();eruda.show();}}})()">v1.1.93</div>
 
   </div>
 </div>
@@ -1299,8 +1299,8 @@ const RESOURCE_DUNGEON_BOSS = (() => {
   let hp = 100, atk = 10;
   for (let i = 0; i < 10; i++) {
     configs.push({ hp, atk, def: 0 });
-    hp  = Math.round(hp  * 3);
-    atk = Math.round(atk * 2.5);
+    hp  = Math.round(hp  * 2);
+    atk = Math.round(atk * 2);
   }
   return configs;
 })();
@@ -2621,6 +2621,7 @@ async function startGameFromRoom(room, code) {
   });
 
   if (room.isDungeon) {
+    G.isResourceDungeon = !!(room.isResourceDungeon);
     await initDungeon(members, code, room.dungeonRankIdx || 0);
   } else if (room.isPvp) {
     await initPvp(room, code);
@@ -5689,7 +5690,7 @@ function renderEquipTab() {
         </div>
         <div style="display:flex;flex-direction:column;gap:4px;flex-shrink:0">
           <button class="btn btn-primary btn-sm" onclick="event.stopPropagation();equipItem('${item.uid}')">裝備</button>
-          <button class="btn btn-danger btn-sm" onclick="event.stopPropagation();confirmDeleteItem('${item.uid}')">刪除</button>
+          <button class="btn btn-sm" style="background:linear-gradient(135deg,#15803d,#22c55e);color:#fff" onclick="event.stopPropagation();confirmDeleteItem('${item.uid}')">🔨分解</button>
         </div>
       </div>
     </div>`).join('');
@@ -6069,17 +6070,19 @@ window.showCreateResourceDungeon = async () => {
   G.isDungeon = true;
   G.isResourceDungeon = true;
   G.dungeonRankIdx    = idx;
-  const b = RESOURCE_DUNGEON_BOSS[idx];
-  const roomData = {
-    status: 'waiting', leader: G.uid, public: true,
+  const rank = RANKS[idx];
+  const room = {
+    status: 'waiting', public: true,
     isDungeon: true, isResourceDungeon: true,
     dungeonRankIdx: idx,
-    bossHp: b.hp, bossAtk: b.atk, bossDef: 0, bossMaxHp: b.hp,
-    createdAt: Date.now(),
-    members: { [G.uid]: { name: G.player.name, uid: G.uid, isBot: false, ready: false } }
+    createdAt: Date.now(), startStage: 1, leader: G.uid,
+    members: { [G.uid]: { name: G.player.name, uid: G.uid, rankKey: rank.key, rankName: rank.name, isBot: false, ready: false } }
   };
-  await set(ref(db, `rooms2/${code}`), roomData);
-  showLobby(code);
+  await set(ref(db, `rooms2/${code}`), room);
+  listenToRoom(code);
+  showRoomWaiting(code, true, 1);
+  document.getElementById('matchTitle').textContent = '💰 資源副本等待室';
+  document.getElementById('matchSub').textContent = `${rank.name} 難度 · 代碼：${code}`;
 };
 
 // ── 搜尋資源副本房間 ──
@@ -6141,7 +6144,7 @@ window.loadOpenDungeons = async () => {
   if (!snap.exists()) { listEl.innerHTML = '<div style="color:var(--text2);font-size:13px;padding:8px">目前沒有副本房間</div>'; return; }
   const rooms = snap.val();
   const open = Object.entries(rooms)
-    .filter(([id, r]) => r.status === 'waiting' && r.isDungeon === true && r.public === true)
+    .filter(([id, r]) => r.status === 'waiting' && r.isDungeon === true && !r.isResourceDungeon && r.public === true)
     .sort((a,b) => (b[1].createdAt||0) - (a[1].createdAt||0));
   if (!open.length) { listEl.innerHTML = '<div style="color:var(--text2);font-size:13px;padding:8px">目前沒有公開副本房間</div>'; return; }
   listEl.innerHTML = open.map(([id, r]) => {
@@ -6451,50 +6454,125 @@ window.exitDungeon = async () => {
 };
 
 
+// ── 分解系統 ──
+// 各等級（1~10）分解的素材池，每個 entry：[素材id, 相對權重]
+// 稀有度倍率讓高稀有的高級素材出率更高
+function getDecomposeMaterialPool(itemLevel, rarityMult) {
+  // tier 0~4 = 廢鐵~鋼鐵（普通）, tier 5~6 = 玄鐵/秘銀, tier 7~9 = 冰晶/赤岩/雷紋石
+  // base pools by level (weights, then scaled by rarity)
+  // 格式：[材料id, 基礎權重, 稀有度加成係數]（加成係數越大 = 稀有度越影響它）
+  const pools = {
+    1:  [['廢鐵',60,0.5],['生鐵',30,1],['熟鐵',10,2]],
+    2:  [['廢鐵',45,0.3],['生鐵',35,1],['熟鐵',20,2]],
+    3:  [['廢鐵',40,0.3],['生鐵',30,1],['熟鐵',20,2],['精鐵',10,3]],
+    4:  [['生鐵',45,0.5],['熟鐵',35,1],['精鐵',20,3]],
+    5:  [['生鐵',35,0.5],['熟鐵',35,1],['精鐵',25,2],['鋼鐵',5,4]],
+    6:  [['熟鐵',40,0.5],['精鐵',35,1],['鋼鐵',25,3]],
+    7:  [['熟鐵',35,0.3],['精鐵',30,1],['鋼鐵',20,2],['玄鐵',9,5],['秘銀',6,6]],
+    8:  [['精鐵',35,0.3],['鋼鐵',28,1],['玄鐵',22,4],['秘銀',15,5]],
+    9:  [['精鐵',30,0.3],['鋼鐵',25,1],['冰晶',18,5],['赤岩',15,5],['雷紋石',12,6]],
+    10: [['鋼鐵',30,0.5],['冰晶',24,4],['赤岩',24,4],['雷紋石',22,5]],
+  };
+  // rarityMult: 普通1 稀有1.2 超稀有1.4 史詩1.7 傳奇2 超凡3 超超超凡5
+  // 稀有度對高級素材加成
+  const pool = pools[itemLevel] || pools[1];
+  return pool.map(([id, baseW, bonus]) => {
+    const w = baseW + bonus * (rarityMult - 1) * 8;
+    return [id, Math.max(0.5, w)];
+  });
+}
+
+function rollDecomposeMaterial(itemLevel, rarityMult) {
+  const pool = getDecomposeMaterialPool(itemLevel, rarityMult);
+  const total = pool.reduce((s, [,w]) => s + w, 0);
+  let r = Math.random() * total;
+  for (const [id, w] of pool) {
+    r -= w;
+    if (r <= 0) return id;
+  }
+  return pool[0][0];
+}
+
+// 預覽分解會得到什麼（顯示在確認框）
+function previewDecompose(itemLevel, rarityMult) {
+  const pool = getDecomposeMaterialPool(itemLevel, rarityMult);
+  const total = pool.reduce((s, [,w]) => s + w, 0);
+  // 只顯示機率 >= 1% 的項目
+  return pool
+    .map(([id, w]) => ({ id, pct: Math.round(w / total * 100) }))
+    .filter(x => x.pct >= 1)
+    .sort((a, b) => b.pct - a.pct);
+}
+
 window.confirmDeleteItem = (uid) => {
   const inv = G.player.inventory || [];
   const item = inv.find(i => i.uid === uid);
   if (!item) return;
-  // Reuse existing confirm modal pattern — build inline confirm
   const existing = document.getElementById('deleteItemConfirmModal');
   if (existing) existing.remove();
+
+  const rarityMult = RARITIES.find(r => r.id === item.rarity)?.mult || 1;
+  const preview = previewDecompose(item.level, rarityMult);
+  const previewHtml = preview.map(({ id, pct }) => {
+    const mat = MATERIALS.find(m => m.id === id);
+    const cls = mat ? getMaterialClass(mat) : 'mat-white';
+    return `<span class="${cls}" style="font-size:12px">${mat?.icon||'🪨'} ${id} <span style="color:var(--text2)">${pct}%</span></span>`;
+  }).join('<span style="color:var(--text2);margin:0 4px">·</span>');
+
   const modal = document.createElement('div');
   modal.id = 'deleteItemConfirmModal';
   modal.className = 'modal-overlay';
   modal.style.zIndex = '9999';
   modal.innerHTML = `
-    <div class="modal-card" style="max-width:360px;text-align:center">
-      <div class="modal-title" style="color:var(--red)">🗑 刪除裝備</div>
-      <div style="margin:12px 0 20px;font-size:14px;color:var(--text2)">
-        確定要刪除<br>
+    <div class="modal-card" style="max-width:380px;text-align:center">
+      <div class="modal-title" style="color:#22c55e">🔨 分解裝備</div>
+      <div style="margin:12px 0 6px;font-size:14px;color:var(--text2)">確定分解</div>
+      <div style="margin-bottom:12px">
         <span class="${item.rarityClass}" style="font-weight:700;font-size:16px">${item.icon} ${item.name}</span>
         <span class="${item.rarityClass}" style="font-size:11px;border:1px solid currentColor;border-radius:4px;padding:1px 6px;margin-left:4px">Lv${item.level} ${item.rarity}</span>
-        <br><span style="font-size:12px;color:var(--red);margin-top:6px;display:block">此操作無法復原</span>
+      </div>
+      <div style="background:var(--bg2);border-radius:10px;padding:12px;margin-bottom:16px">
+        <div style="font-size:11px;color:var(--text2);margin-bottom:8px">可能獲得</div>
+        <div style="display:flex;flex-wrap:wrap;gap:6px;justify-content:center">${previewHtml}</div>
       </div>
       <div class="modal-actions">
-        <button class="btn btn-danger" onclick="deleteItem('${uid}')">確認刪除</button>
+        <button class="btn btn-primary" style="background:linear-gradient(135deg,#15803d,#22c55e)" onclick="decomposeItem('${uid}')">🔨 確認分解</button>
         <button class="btn btn-secondary" onclick="document.getElementById('deleteItemConfirmModal').remove()">取消</button>
       </div>
     </div>`;
   document.body.appendChild(modal);
 };
 
-window.deleteItem = async (uid) => {
+window.decomposeItem = async (uid) => {
   document.getElementById('deleteItemConfirmModal')?.remove();
-  // Remove from inventory
   let inv = [...(G.player.inventory || [])];
+  const item = inv.find(i => i.uid === uid);
+  if (!item) return;
+
+  const rarityMult = RARITIES.find(r => r.id === item.rarity)?.mult || 1;
+  const matId = rollDecomposeMaterial(item.level, rarityMult);
+
+  // 從背包移除
   inv = inv.filter(i => i.uid !== uid);
   G.player.inventory = inv;
-  // Also unequip if equipped
   const eq = { ...(G.player.equipped || {}) };
   for (const [slot, eUid] of Object.entries(eq)) {
     if (eUid === uid) delete eq[slot];
   }
   G.player.equipped = eq;
-  await update(ref(db, `players/${G.uid}`), { inventory: inv, equipped: eq });
+
+  // 加入素材
+  const mats = { ...(G.player.materials || {}) };
+  mats[matId] = (mats[matId] || 0) + 1;
+  G.player.materials = mats;
+
+  await update(ref(db, `players/${G.uid}`), { inventory: inv, equipped: eq, materials: mats });
   renderEquipTab();
   updateUI();
-  notify('裝備已刪除', 'ok');
+
+  const mat = MATERIALS.find(m => m.id === matId);
+  const cls = mat ? getMaterialClass(mat) : 'mat-white';
+  notify(`🔨 分解成功！獲得 <span class="${cls}">${mat?.icon||'🪨'} ${matId}</span>`, 'ok');
 };
 
 // ===== BOT JOB SELECTION (solo mode) =====
@@ -7507,7 +7585,7 @@ window.doRegister        = doRegister;
 window.doLogout          = doLogout;
 window.renderEquipTab    = renderEquipTab;
 window.confirmDeleteItem = confirmDeleteItem;
-window.deleteItem        = deleteItem;
+window.decomposeItem     = decomposeItem;
 window.populateWaitingRoomFriends = populateWaitingRoomFriends;
 window.renderDungeonTab  = renderDungeonTab;
 window.selectDungeonDiff = selectDungeonDiff;
