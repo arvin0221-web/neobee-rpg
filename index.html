@@ -724,7 +724,7 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
 
     <!-- VERSION FOOTER -->
     <div style="text-align:center;padding:3px 0;font-size:11px;color:var(--text3);letter-spacing:2px;cursor:default;user-select:none;display:inline-block;margin:0 auto;width:100%"
-      onclick="(function(){window._erudaTap=(window._erudaTap||0)+1;if(window._erudaTap>=5){window._erudaTap=0;if(window.eruda){eruda.show();return;}var s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/eruda';document.head.appendChild(s);s.onload=function(){eruda.init();eruda.show();}}})()">v1.1.100</div>
+      onclick="(function(){window._erudaTap=(window._erudaTap||0)+1;if(window._erudaTap>=5){window._erudaTap=0;if(window.eruda){eruda.show();return;}var s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/eruda';document.head.appendChild(s);s.onload=function(){eruda.init();eruda.show();}}})()">v1.1.103</div>
 
   </div>
 </div>
@@ -1532,10 +1532,8 @@ function showMsg(id, msg, type='err') {
 window.closeModal = (id) => document.getElementById(id).classList.add('hidden');
 window.openModal  = (id) => document.getElementById(id).classList.remove('hidden');
 function fmtBig(n) {
-  if (n >= 1e11) return (n/1e11).toFixed(0)+'千億';
-  if (n >= 1e10) return (n/1e10).toFixed(0)+'百億';
-  if (n >= 1e8) return (n/1e8).toFixed(1)+'億';
-  if (n >= 1e4) return (n/1e4).toFixed(1)+'萬';
+  if (n >= 1e8) return (n/1e8).toFixed(n % 1e8 === 0 ? 0 : 1)+'億';
+  if (n >= 1e4) return (n/1e4).toFixed(n % 1e4 === 0 ? 0 : 1)+'萬';
   return String(n);
 }
 
@@ -1722,7 +1720,7 @@ function updateUI() {
       tbody.dataset.built = '1';
       tbody.innerHTML = RANKS.map(r => {
         const c = getRankColor(r.key);
-        const expStr = r.exp === 0 ? '0' : r.exp.toLocaleString();
+        const expStr = r.exp === 0 ? '0' : fmtBig(r.exp);
         return `<tr class="rank-row" data-key="${r.key}" style="border-bottom:1px solid var(--border)22;transition:background .2s">
           <td style="padding:7px 8px;font-weight:700;color:${c}">${r.name}</td>
           <td style="padding:7px 8px;text-align:right;color:var(--text2)">${expStr}</td>
@@ -4126,8 +4124,9 @@ function calcSingleHit(attacker, defender) {
     }
   }
 
-  // Boss 狂暴：第八關(rankIdx>=7)且血量低於50%，傷害+50%
-  if (attacker.isDungeonBoss && (attacker.rankIdx||0) >= 7 &&
+  // Boss 狂暴：第八關(rankIdx>=7)且血量低於50%，傷害+50%（僅裝備副本）
+  if (attacker.isDungeonBoss && !G.gameState?.isResourceDungeon &&
+      (attacker.rankIdx||0) >= 7 &&
       attacker.maxHp > 0 && attacker.hp / attacker.maxHp < 0.5) {
     dmg = Math.round(dmg * 1.5);
   }
@@ -4254,7 +4253,8 @@ function writeBattleState() {
       isSummon: m.isSummon||false, summonerUid: m.summonerUid||null,
       summonRevives: m.summonRevives||0,
       poisoned: m.poisoned||0, _sacrificeApplied: m._sacrificeApplied||false,
-      _baseAtk: m._baseAtk||null, _baseDef: m._baseDef||null
+      _baseAtk: m._baseAtk||null, _baseDef: m._baseDef||null,
+      _silencedTurns: m._silencedTurns||0
     })),
     enemies: gs.enemies.map(e => ({
       name: e.name, hp: e.hp, maxHp: e.maxHp,
@@ -4408,6 +4408,7 @@ function applyBattleState(state) {
       gs.team[i]._baseDef  = ft._baseDef || null;
       gs.team[i].isSummon  = ft.isSummon || false;
       gs.team[i].summonRevives = ft.summonRevives || 0;
+      gs.team[i]._silencedTurns = ft._silencedTurns || 0;
     });
     // 若 host 端召喚物死亡被移除，非 host 端也同步移除
     if (state.team.length < gs.team.length) {
@@ -4588,8 +4589,9 @@ function hostPerformAttack(attacker, defender, isSlash) {
   if (defender.isDungeonBoss) {
     defender.def = Math.floor(Math.random() * (defender.defMax - defender.defMin + 1)) + defender.defMin;
   }
-  // Boss berserk warning log (first time entering berserk per battle)
-  if (attacker.isDungeonBoss && (attacker.rankIdx||0) >= 7 &&
+  // Boss berserk warning log (first time entering berserk per battle, 裝備副本限定)
+  if (attacker.isDungeonBoss && !G.gameState?.isResourceDungeon &&
+      (attacker.rankIdx||0) >= 7 &&
       attacker.maxHp > 0 && attacker.hp / attacker.maxHp < 0.5 &&
       !attacker._berserkLogged) {
     attacker._berserkLogged = true;
@@ -4914,25 +4916,23 @@ function hostProcessNextTurn() {
       }
 
       // ── 資源副本 Boss 技能 ──
-      if (gs.isResourceDungeon && actor.isDungeonBoss) {
+      if ((gs.isResourceDungeon || actor.isResourceDungeonBoss) && actor.isDungeonBoss) {
         const rankIdx = actor.rankIdx || 0;
         const chance  = RESOURCE_BOSS_SKILL_CHANCE[rankIdx] / 100;
         if (Math.random() < chance) {
-          // 分離出需要位移玩家才能行動的技能（深淵凝視/帝王威懾）
-          // 和直接增幅傷害的技能（弱點打擊/碎骨重擊/弒神魔斬）
           const skill = RESOURCE_BOSS_SKILLS[Math.floor(Math.random() * RESOURCE_BOSS_SKILLS.length)];
           if (skill.dmgMult) {
-            // 傷害倍率技能：儲存在 actor 上，calcDamage 會讀取
+            // 傷害倍率技能：儲存在 actor 上，calcSingleHit 會讀取
             actor._skillDmgMult = skill.dmgMult;
             addLog(`${skill.icon} <span style="color:#a78bfa;font-weight:900">Boss 釋放【${skill.name}】！本次攻擊造成 ${skill.dmgMult} 倍傷害！</span>`);
             renderBattle(); writeBattleState();
             hostPerformAttack(actor, target, false);
           } else {
-            // 控制技能：立即套用，跳過攻擊
+            // 控制技能：立即套用，跳過本次攻擊
             skill.apply(gs, addLog);
             renderBattle(); writeBattleState();
             gs.currentTurn++;
-            setTimeout(() => hostProcessNextTurn(), 600);
+            setTimeout(() => hostProcessNextTurn(), 800);
           }
           return;
         }
@@ -5464,7 +5464,7 @@ function renderBattle() {
     const enemyRankColor = isPvpEnemy ? getRankColor(e.rankKey||'鐵') : 'var(--text2)';
     const enemyIcon = isPvpEnemy ? (e.isBot ? '🤖' : '👤') : '👾';
     const jobIcon = isPvpEnemy && e.job ? ` ${JOBS_DEF.find(j=>j.id===e.job)?.icon||''}` : '';
-    const isBerserk = e.isDungeonBoss && (e.rankIdx||0) >= 7 && e.maxHp > 0 && e.hp/e.maxHp < 0.5;
+    const isBerserk = e.isDungeonBoss && !gs.isResourceDungeon && (e.rankIdx||0) >= 7 && e.maxHp > 0 && e.hp/e.maxHp < 0.5;
     const berserkTag = isBerserk ? '<span style="color:#ef4444;font-size:10px;font-weight:900;margin-left:4px">💢狂暴</span>' : '';
     const ePoisoned = e.poisoned > 0;
     ePanel.innerHTML += `<div class="fighter-card enemy ${e.hp>0?'alive':'dead'} ${isActive?'active-turn':''} ${isSelected?'target-selected':''} ${isBerserk?'berserk-border':''} ${ePoisoned?'poisoned-card':''}" id="fc-enemy-${i}" style="position:relative${isBerserk?';border-color:#ef4444;box-shadow:0 0 10px #ef444466':''}" onclick="clickEnemy(${i})">
@@ -5495,7 +5495,7 @@ function showStageResult(win) {
   document.getElementById('resultTitle').textContent = win ? '勝利！' : '落敗...';
   document.getElementById('resultTitle').className = `result-title ${win ? 'result-win' : 'result-lose'}`;
   if (win) {
-    document.getElementById('resultRewards').innerHTML = `🎉 獲得 <span class="gold">${cfg.exp}</span> 經驗 + <span class="gold">${cfg.gold}</span> 金幣`;
+    document.getElementById('resultRewards').innerHTML = `🎉 獲得 <span class="gold">${fmtBig(cfg.exp)}</span> 經驗 + <span class="gold">${fmtBig(cfg.gold)}</span> 金幣`;
     document.getElementById('nextStageBtn').classList.toggle('hidden', gs.stage >= STAGE_CONFIG.length);
     awardRewards(cfg.exp, cfg.gold);
   } else {
